@@ -4,7 +4,15 @@ import { goto } from '$app/navigation';
 
 function createPersistentStore<T>(key: string, initialValue: T) {
   const storedValue = browser ? localStorage.getItem(key) : null;
-  const parsedValue = storedValue ? JSON.parse(storedValue) : initialValue;
+  let parsedValue = initialValue;
+  if (storedValue) {
+    try {
+      parsedValue = JSON.parse(storedValue);
+    } catch {
+      // If not valid JSON, use the stored value as is (for backward compatibility)
+      parsedValue = storedValue as T;
+    }
+  }
 
   const store = writable<T>(parsedValue);
 
