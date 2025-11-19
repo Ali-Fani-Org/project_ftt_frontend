@@ -64,6 +64,32 @@ export interface PaginatedTimeEntries {
   results: TimeEntry[];
 }
 
+export interface FeatureFlag {
+  id: number;
+  key: string;
+  name: string;
+  description: string;
+  is_enabled: boolean;
+  rollout_percentage: number;
+  user_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FeatureFlagsResponse {
+  enabled_features: FeatureFlag[];
+  disabled_features: FeatureFlag[];
+  total_features: number;
+}
+
+export interface FeatureFlagCheck {
+  feature_key: string;
+  feature_name: string;
+  is_enabled: boolean;
+  feature_enabled_globally: boolean;
+  user_has_access: boolean;
+}
+
 export const auth = {
   login: async (username: string, password: string) => {
     const response = await ky.post(`${get(baseUrl)}/auth/token/login/`, {
@@ -104,4 +130,18 @@ export const timeEntries = {
   getCurrentActive: async () => {
     return await api.get('api/time_entries/current_active/').json<TimeEntry>();
   },
+};
+
+export const featureFlags = {
+  getMyFeatures: async (): Promise<FeatureFlagsResponse> => {
+    return await api.get('api/feature-flags/user-features/my_features/').json<FeatureFlagsResponse>();
+  },
+  
+  checkFeature: async (featureKey: string): Promise<FeatureFlagCheck> => {
+    return await api.get(`api/feature-flags/user-features/${featureKey}/check/`).json<FeatureFlagCheck>();
+  },
+  
+  logAccess: async (featureKey: string): Promise<{ message: string; feature_key: string; feature_name: string }> => {
+    return await api.post(`api/feature-flags/user-features/${featureKey}/log-access/`).json<{ message: string; feature_key: string; feature_name: string }>();
+  }
 };

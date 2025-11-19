@@ -54,3 +54,152 @@ export const logout = () => {
   user.set(null);
   goto('/');
 };
+
+// Feature flags store
+export interface FeatureFlagsState {
+  enabledFeatures: Set<string>;
+  disabledFeatures: Set<string>;
+  loading: boolean;
+  error: string | null;
+  lastUpdated: Date | null;
+}
+
+function createFeatureFlagsStore() {
+  const { subscribe, set, update } = writable<FeatureFlagsState>({
+    enabledFeatures: new Set(),
+    disabledFeatures: new Set(),
+    loading: false,
+    error: null,
+    lastUpdated: null,
+  });
+
+  let cacheTimer: NodeJS.Timeout | null = null;
+
+  return {
+    subscribe,
+    
+    // Load all features for the current user
+    loadFeatures: async () => {
+      update(state => ({ ...state, loading: true, error: null }));
+      
+      try {
+        const { featureFlags } = await import('./api');
+        const response = await featureFlags.getMyFeatures();
+        
+        const enabledKeys = new Set(response.enabled_features.map(f => f.key));
+        const disabledKeys = new Set(response.disabled_features.map(f => f.key));
+        
+        update(state => ({
+          ...state,
+          enabledFeatures: enabledKeys,
+          disabledFeatures: disabledKeys,
+          loading: false,
+          error: null,
+          lastUpdated: new Date(),
+        }));
+      } catch (error) {
+        console.error('Failed to load feature flags:', error);
+        update(state => ({
+          ...state,
+          loading: false,
+          error: 'Failed to load feature flags',
+        }));
+      }
+    },
+    
+    // Check if a specific feature is enabled
+    isFeatureEnabled: async (featureKey: string): Promise<boolean> => {
+      let isEnabled = false;
+      
+      // First check local cache
+      update(state => {
+        if (state.enabledFeatures.has(featureKey)) {
+          isEnabled = true;
+        } else if (state.disabledFeatures.has(featureKey)) {
+          isEnabled = false;
+        }
+        return state;
+      });
+      
+      // If not in cache, check with API
+      if (!isEnabled) {
+        try {
+          const { featureFlags } = await import('./api');
+          const check = await featureFlags.checkFeature(featureKey);
+          isEnabled = check.is_enabled && check.user_has_access;
+          
+          // Update cache
+          update(state => {
+            const newEnabled = new Set(state.enabledFeatures);
+            const newDisabled = new Set(state.disabledFeatures);
+            
+            if (isEnabled) {
+              newEnabled.add(featureKey);
+              newDisabled.delete(featureKey);
+            } else {
+              newDisabled.add(featureKey);
+              newEnabled.delete(featureKey);
+            }
+            
+            return {
+              ...state,
+              enabledFeatures: newEnabled,
+              disabledFeatures: newDisabled,
+            };
+          });
+        } catch (error) {
+          console.error(`Failed to check feature flag ${featureKey}:`, error);
+          // Return false on error (fail secure)
+          isEnabled = false;
+        }
+      }
+      
+      return isEnabled;
+    },
+    
+    // Log feature access
+    logFeatureAccess: async (featureKey: string) => {
+      try {
+        const { featureFlags } = await import('./api');
+        await featureFlags.logAccess(featureKey);
+      } catch (error) {
+        console.error(`Failed to log access for feature ${featureKey}:`, error);
+        // Don't throw - logging failure shouldn't break UX
+      }
+    },
+    
+    // Clear cache and refresh
+    refresh: () => {
+      if (cacheTimer) {
+        clearTimeout(cacheTimer);
+      }
+      cacheTimer = setTimeout(() => {
+        import('./stores').then(({ createFeatureFlagsStore }) => {
+          // Trigger reload
+        });
+      }, 60000); // Auto-refresh every minute
+    },
+    
+    // Clear state
+    clear: () => {
+      set({
+        enabledFeatures: new Set(),
+        disabledFeatures: new Set(),
+        loading: false,
+        error: null,
+        lastUpdated: null,
+      });
+    }
+  };
+}
+
+export const featureFlagsStore = createFeatureFlagsStore();
+
+// Helper function to check if process monitor UI is enabled
+export const isProcessMonitorUIEnabled = () => featureFlagsStore.isFeatureEnabled('process-monitor-ui');
+
+// Helper function to check if process monitor backend is enabled
+export const isProcessMonitorBackendEnabled = () => featureFlagsStore.isFeatureEnabled('process-monitor-backend');
+
+// Helper function to check if devtools is enabled
+export const isDevtoolsEnabled = () => featureFlagsStore.isFeatureEnabled('devtools');

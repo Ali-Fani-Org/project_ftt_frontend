@@ -2,7 +2,7 @@
    import { onMount } from 'svelte';
    import { get } from 'svelte/store';
    import { goto } from '$app/navigation';
-   import { authToken, user, showSettings, timeEntriesDisplayMode, logout } from '$lib/stores';
+   import { authToken, user, showSettings, timeEntriesDisplayMode, logout, featureFlagsStore, isDevtoolsEnabled } from '$lib/stores';
    import { projects, timeEntries, type Project, type TimeEntry } from '$lib/api';
    import { preventDefault } from '$lib/commands.svelte';
    import TasksModal from '$lib/TasksModal.svelte';
@@ -28,6 +28,11 @@
   // Tasks modal
   let showTasksModal = $state(false);
 
+  // Feature flags state
+  let showProcessMonitorButton = $state(false);
+  let showDevtoolsButton = $state(false);
+  let loadingFeatureFlags = $state(true);
+
 
   onMount(async () => {
       console.log('Dashboard onMount started at', new Date().toISOString());
@@ -40,8 +45,22 @@
       try {
         loadingProjects = true;
         loadingActiveEntry = true;
+        loadingFeatureFlags = true;
 
-        // Load both in parallel
+        // Load feature flags first
+        await featureFlagsStore.loadFeatures();
+        showProcessMonitorButton = await featureFlagsStore.isFeatureEnabled('process-monitor-ui');
+        showDevtoolsButton = await featureFlagsStore.isFeatureEnabled('devtools');
+        console.log('Feature flags loaded:', {
+          processMonitorUI: showProcessMonitorButton,
+          devtools: showDevtoolsButton
+        });
+        // Temporary: Always show devtools button for testing
+        showDevtoolsButton = true;
+        console.log('Devtools button will be shown:', showDevtoolsButton);
+        loadingFeatureFlags = false;
+
+        // Load both projects and active entry in parallel
         const [projectsResult, activeResult] = await Promise.allSettled([
           projects.list(),
           (async () => {
@@ -77,6 +96,7 @@
         error = 'Failed to load data';
         loadingProjects = false;
         loadingActiveEntry = false;
+        loadingFeatureFlags = false;
       }
 
      // Listen for events from Tauri
@@ -112,7 +132,7 @@
          });
        }, 1000);
      }
-   });
+    });
 
   function startTimer() {
     if (activeEntry) {
@@ -212,6 +232,63 @@
     }
   };
 
+  const openProcessMonitor = async () => {
+    // Log feature access
+    try {
+      await featureFlagsStore.logFeatureAccess('process-monitor-ui');
+      await featureFlagsStore.logFeatureAccess('process-monitor-backend');
+    } catch (error) {
+      console.error('Failed to log process monitor access:', error);
+    }
+    
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      getCurrentWindow(); // Test if running in Tauri
+      console.log('Detected Tauri environment, opening process monitor window');
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const webview = new WebviewWindow('process-monitor', {
+        url: `${window.location.origin}/processes`,
+        title: 'System Process Monitor',
+        width: 1000,
+        height: 700,
+        resizable: true,
+        decorations: false,
+        fullscreen: false,
+        contentProtected: true,
+      });
+      console.log('Process monitor WebviewWindow created:', webview);
+    } catch {
+      console.log('Web environment, opening new tab');
+      window.open('/processes', '_blank');
+    }
+  };
+
+  const openDevtools = async () => {
+    // Log feature access
+    try {
+      await featureFlagsStore.logFeatureAccess('devtools');
+    } catch (error) {
+      console.error('Failed to log devtools access:', error);
+    }
+
+    // Try Tauri first, fallback to web browser
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('toggle_devtools');
+    } catch {
+      // Web browser fallback - F12 toggle
+      const event = new KeyboardEvent('keydown', {
+        key: 'F12',
+        code: 'F12',
+        keyCode: 123,
+        which: 123,
+        bubbles: true,
+        cancelable: true
+      });
+      window.dispatchEvent(event);
+    }
+  };
+
 </script>
 
 {#if loadingProjects}
@@ -245,6 +322,22 @@
            </svg>
            Time Entries
          </button>
+         {#if !loadingFeatureFlags && showProcessMonitorButton}
+           <button class="btn btn-ghost" onclick={openProcessMonitor}>
+             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+             </svg>
+             Process Monitor
+           </button>
+         {/if}
+         {#if !loadingFeatureFlags && showDevtoolsButton}
+           <button class="btn btn-ghost" onclick={openDevtools} title="Toggle Developer Tools">
+             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+             </svg>
+             DevTools
+           </button>
+         {/if}
          <button class="btn btn-ghost" onclick={() => showSettings.set(true)}>
            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>

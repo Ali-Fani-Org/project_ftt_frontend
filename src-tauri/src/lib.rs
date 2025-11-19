@@ -75,7 +75,7 @@ pub fn run() {
 
              Ok(())
          })
-        .invoke_handler(tauri::generate_handler![greet, get_timer_state, stop_timer])
+        .invoke_handler(tauri::generate_handler![greet, get_timer_state, stop_timer, get_processes, toggle_devtools])
         .on_window_event(|_window, _event| {
             // Close is handled in frontend
         })

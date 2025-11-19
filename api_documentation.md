@@ -114,227 +114,194 @@ Authorization: Token <your_token>
 
 **Query Parameters:**
 - `cursor` (optional): Cursor for pagination. Use the 'next' or 'previous' cursor from a previous response.
-- `limit` (optional): Number of results to return per page (max 100, default 20).
+# API Documentation
 
-**Response (200 OK):**
+This document describes the public API surface for this project, including the new Feature Flags subsystem added in the latest commit. The backend uses Django REST Framework and token-based authentication by default.
+
+Base URL
+```
+http://localhost:8000
+```
+
+Authentication
+
+- The API uses token authentication.
+- Include an `Authorization` header on protected endpoints:
+
+```
+Authorization: Token <your_token>
+```
+
+User & Auth endpoints (provided by Djoser)
+
+- `POST /auth/users/` — register a new user
+- `POST /auth/token/login/` — obtain `auth_token`
+- `GET /auth/users/me/` — current user info (authenticated)
+
+Core API routing notes
+
+- Main router (projects, time entries) is mounted at `/api/` via `config.api_router`.
+- The Feature Flags API is mounted separately at `/api/feature-flags/` via `feature_flags.urls` to keep better control over URL structure and custom actions.
+- OpenAPI schema endpoints:
+  - `GET /api/schema/` — raw OpenAPI JSON/YAML (Spectacular)
+  - `GET /api/schema/swagger-ui/` — Swagger UI
+  - `GET /api/schema/redoc/` — Redoc UI
+
+Feature Flags API (new)
+-----------------------
+
+Base path for feature flags: `/api/feature-flags/`
+
+The feature flags app exposes a ViewSet registered under the `user-features` prefix. The main programmatic endpoints to use from the frontend are:
+
+- `GET /api/feature-flags/user-features/my_features/`
+  - Description: Returns the full collection of feature flags for the authenticated user, split into `enabled_features` and `disabled_features`.
+  - Auth: required
+  - Response (200):
+
 ```json
 {
-  "next": "http://localhost:8000/api/time_entries/?cursor=cD0yMDI1LTEwLTI1KzE3JTNBNTglM0EwMCUyQjAwJTNBMDA%3D",
-  "previous": null,
-  "results": [
+  "enabled_features": [
     {
       "id": 1,
-      "title": "Task Title",
-      "description": "Task description",
-      "start_time": "2024-01-01T10:00:00Z",
-      "end_time": "2024-01-01T11:30:00Z",
-      "duration": "01:30:00",
-      "is_active": false,
-      "user": "username",
-      "project": "Project Title",
-      "tags": ["tag1", "tag2"]
+      "key": "example-feature",
+      "name": "Example Feature",
+      "description": "Does something",
+      "is_enabled": true,
+      "rollout_percentage": 100,
+      "user_count": 12,
+      "created_at": "2025-11-18T20:10:00Z",
+      "updated_at": "2025-11-18T20:30:00Z"
     }
-  ]
+  ],
+  "disabled_features": [],
+  "total_features": 1
 }
 ```
 
-**Pagination Notes:**
-- `next`: URL for the next page of results (null if no more pages)
-- `previous`: URL for the previous page of results (null if on first page)
-- `results`: Array of time entry objects (up to the limit specified)
-- Use the full URL provided in `next` or `previous` for subsequent requests
-- Cursor-based pagination ensures consistent results even when new entries are added
+- `GET /api/feature-flags/user-features/{feature_key}/check/`
+  - Description: Check whether the feature identified by `{feature_key}` is enabled for the current user.
+  - Notes: The `pk` path parameter is used as the feature *key* (string), not the numeric DB id.
+  - Auth: required
+  - Successful response (200):
 
-### Get Single Time Entry
-**Endpoint:** `GET /api/time_entries/{id}/`
-
-**Description:** Retrieves a specific time entry by ID.
-
-**Headers:**
-```
-Authorization: Token <your_token>
-```
-
-**Response (200 OK):** Same format as individual item in list above.
-
-**Error Responses:**
-- `404 Not Found`: Time entry doesn't exist or doesn't belong to user
-
-### Start a New Time Entry (Timer)
-**Endpoint:** `POST /api/time_entries/`
-
-**Description:** Creates and starts a new timer. Automatically stops any existing active timer for the user.
-
-**Headers:**
-```
-Authorization: Token <your_token>
-```
-
-**Request Body:**
 ```json
 {
-  "title": "string (required)",
-  "description": "string (optional)",
-  "project": "integer (required, project ID)",
-  "tags": ["integer"] (optional, array of tag IDs)
+  "feature_key": "example-feature",
+  "feature_name": "Example Feature",
+  "is_enabled": true,
+  "feature_enabled_globally": true,
+  "user_has_access": true
 }
 ```
 
-**Validation Rules:**
-- `project` must be a project where the user is a member
-- `tags` must be tags owned by the user
-- User cannot have more than one active time entry
+  - If not found (404): the response contains an `error` message and `is_enabled: false`.
 
-**Response (201 Created):**
+- `POST /api/feature-flags/user-features/{feature_key}/log-access/`
+  - Description: Records that the current user accessed the feature. Useful for analytics / usage tracking. The view will create a `UserFeatureAccess` entry if one does not already exist.
+  - Auth: required
+  - Request body: none
+  - Successful response (200):
+
 ```json
 {
-  "id": 1,
-  "title": "Task Title",
-  "description": "Task description",
-  "start_time": "2024-01-01T10:00:00Z",
-  "end_time": null,
-  "duration": null,
-  "is_active": true,
-  "user": "username",
-  "project": "Project Title",
-  "tags": ["tag1"]
+  "message": "Feature access logged successfully",
+  "feature_key": "example-feature",
+  "feature_name": "Example Feature"
 }
 ```
 
-**Error Responses:**
-- `400 Bad Request`: Validation errors (invalid project, tags, or existing active timer)
+Implementation & behavior notes
+--------------------------------
 
-### Stop a Running Timer
-**Endpoint:** `POST /api/time_entries/{id}/stop/`
+- Caching: Several helpers implement caching to improve performance. Default cache timeout is 300 seconds (5 minutes) and can be overridden by the `FEATURE_FLAG_CACHE_TIMEOUT` setting.
+  - Cache keys used by the implementation include:
+    - `all_feature_flags` — cached list of flags
+    - `featureflag_by_key_{key}` — cached flag by key
+    - `featureflag_serializer_{id}` — serialized flag cache
+    - `featureflag_user_count_{id}` — cached user count for a flag
 
-**Description:** Stops the specified timer by setting end_time to current time.
+- Cache invalidation: model signals invalidate relevant keys on `post_save`/`post_delete` for `FeatureFlag` and on `post_save` for `UserFeatureAccess`.
 
-**Headers:**
-```
-Authorization: Token <your_token>
-```
+- Feature resolution rules (from `FeatureFlag.is_enabled_for_user`):
+  - If `is_enabled` is False => feature disabled for everyone.
+  - If `rollout_percentage` >= 100 => user is considered if present in the `users` M2M.
+  - Currently rollout logic is simple: user access depends on membership in the flag's `users` relation. (Future percentage-based rollout is planned.)
 
-**Request Body:** None
+Data models (feature flags)
+---------------------------
 
-**Response (200 OK):**
-```json
-{
-  "id": 1,
-  "title": "Task Title",
-  "description": "Task description",
-  "start_time": "2024-01-01T10:00:00Z",
-  "end_time": "2024-01-01T11:30:00Z",
-  "duration": "01:30:00",
-  "is_active": false,
-  "user": "username",
-  "project": "Project Title",
-  "tags": ["tag1"]
-}
-```
+- `FeatureFlag` fields (important ones):
+  - `id` (int)
+  - `name` (string)
+  - `key` (string, unique) — used in API calls and URLs (auto-generated from name if empty)
+  - `description` (text)
+  - `is_enabled` (bool)
+  - `rollout_percentage` (int 0-100)
+  - `users` (M2M to User) — user-specific assignment
+  - `created_at`, `updated_at`
 
-**Error Responses:**
-- `400 Bad Request`: Timer is already stopped
-- `404 Not Found`: Time entry doesn't exist or doesn't belong to user
+- `UserFeatureAccess` (usage logging):
+  - `user`, `feature_flag`, `accessed_at`, `ip_address`, `user_agent`
 
-### Get Current Active Time Entry
-**Endpoint:** `GET /api/time_entries/current_active/`
+Admin & management
+-------------------
 
-**Description:** Retrieves the currently active (running) time entry for the authenticated user.
+- Feature flags can be managed in the Django admin site (`/admin/`) using the provided `FeatureFlag` model and its serializer for admin operations. Admin create/update operations will invalidate caches as implemented in the serializers and signals.
 
-**Headers:**
-```
-Authorization: Token <your_token>
-```
+Other existing APIs (unchanged)
+------------------------------
 
-**Response (200 OK):** Same format as single time entry.
+- Projects API: registered via `config.api_router` at `/api/projects/` (see `projects.api.views.ProjectViewSet`).
+- Time Entries API: registered via `config.api_router` at `/api/time_entries/` (see `time_entries.api.views.TimeEntryViewSet`).
 
-**Error Responses:**
-- `404 Not Found`: No active time entry exists
+Common error responses
+----------------------
 
-## Data Models
+- `200 OK` — success
+- `201 Created` — resource created
+- `400 Bad Request` — validation error
+- `401 Unauthorized` — missing or invalid token
+- `404 Not Found` — resource not found
+- `500 Internal Server Error` — server error
 
-### User
-- `id`: Integer (primary key)
-- `username`: String (unique, required)
-- `first_name`: String
-- `last_name`: String
-- `profile_image`: Image URL or null
+Error format examples
 
-### Project
-- `id`: Integer (primary key)
-- `title`: String (max 256 chars)
-- `description`: Text (optional)
-- `is_active`: Boolean (default true)
-- `created_at`: DateTime
-- `members`: Many-to-many relationship with User (through ProjectMembership)
+Validation error example:
 
-### TimeEntry
-- `id`: Integer (primary key)
-- `title`: String (max 256 chars)
-- `description`: Text
-- `start_time`: DateTime (auto-set on creation)
-- `end_time`: DateTime or null
-- `duration`: Duration (calculated field: end_time - start_time)
-- `is_active`: Boolean (default true)
-- `user`: Foreign Key to User
-- `project`: Foreign Key to Project
-- `tags`: Many-to-many with Tag
-
-### Tag
-- `id`: Integer (primary key)
-- `title`: String (max 128 chars)
-- `tag`: String (max 3 chars, uppercase)
-- `user`: Foreign Key to User (tags are user-specific)
-
-## Error Handling
-
-### Common HTTP Status Codes
-- `200 OK`: Success
-- `201 Created`: Resource created
-- `400 Bad Request`: Validation error or invalid request
-- `401 Unauthorized`: Missing or invalid token
-- `404 Not Found`: Resource not found
-- `500 Internal Server Error`: Server error
-
-### Error Response Format
-```json
-{
-  "detail": "Error message"
-}
-```
-
-Or for validation errors:
 ```json
 {
   "field_name": ["Error message"]
 }
 ```
 
-## Business Rules
+Generic error example:
 
-1. **Single Active Timer**: A user can only have one active time entry at a time. Starting a new timer automatically stops any existing active timer.
+```json
+{
+  "detail": "Error message"
+}
+```
 
-2. **Project Membership**: Users can only create time entries for projects they are members of.
+Quick usage examples
+--------------------
 
-3. **Tag Ownership**: Users can only use tags they own.
+1. Authenticate via `POST /auth/token/login/` to obtain `auth_token`.
+2. Call `GET /api/feature-flags/user-features/my_features/` to fetch flags for the current user.
+3. Use `GET /api/feature-flags/user-features/{feature_key}/check/` client-side to gate behavior.
+4. Optionally `POST /api/feature-flags/user-features/{feature_key}/log-access/` to record usage.
 
-4. **Timer Precision**: Start and end times are stored without microseconds (second precision).
+Configuration & debugging
+-------------------------
 
-5. **Authentication Required**: All API endpoints except user registration and login require authentication.
+- OpenAPI schema (Spectacular) available at `/api/schema/` and interactive UIs at `/api/schema/swagger-ui/` and `/api/schema/redoc/`.
+- Feature flag cache TTL: set `FEATURE_FLAG_CACHE_TIMEOUT` in Django settings to override the default 300 seconds.
 
-## Example Usage Flow
+---
 
-1. **Register/Login** to get authentication token
-2. **Get projects** to see available projects
-3. **Start timer** with POST to `/api/time_entries/`
-4. **Check active timer** with GET to `/api/time_entries/current_active/`
-5. **Stop timer** with POST to `/api/time_entries/{id}/stop/`
-6. **View time entries** with GET to `/api/time_entries/`
+If you want, I can also:
 
-## Development Notes
+- add example curl / fetch snippets for the feature-flag endpoints,
+- generate a small Postman collection JSON for these endpoints, or
+- run the test suite for the `feature_flags` app to validate behavior.
 
-- The API uses Django REST Framework with drf-spectacular for OpenAPI schema generation
-- Swagger UI available at `/api/schema/swagger-ui/`
-- Redoc available at `/api/schema/redoc/`
-- Time zone is set to Asia/Tehran (UTC+3:30)
-- Database is SQLite for development

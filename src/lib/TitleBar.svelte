@@ -1,17 +1,23 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import { getCurrentWindow } from '@tauri-apps/api/window';
-	import { minimizeToTray, closeToTray } from '$lib/stores';
-	import { Minus, Maximize2, Minimize2, X, Pin, PinOff } from '@lucide/svelte';
+ 	import { onMount, onDestroy } from 'svelte';
+ 	import { getCurrentWindow } from '@tauri-apps/api/window';
+ 	import { minimizeToTray, closeToTray } from '$lib/stores';
+ 	import { Minus, Maximize2, Minimize2, X, Pin, PinOff } from '@lucide/svelte';
 
-	let appWindow: any;
-	let title = '';
-	let minimizeToTrayValue = false;
-	let closeToTrayValue = false;
-	let isTimeEntriesWindow = false;
-	let isAlwaysOnTop = false;
-	let isMaximized = false;
-	let unlistenResize: (() => void) | null = null;
+ 	interface Props {
+ 		window?: any;
+ 	}
+
+ 	let { window: propWindow }: Props = $props();
+
+ 	let appWindow: any;
+ 	let title = $state('');
+ 	let minimizeToTrayValue = $state(false);
+ 	let closeToTrayValue = $state(false);
+ 	let isTimeEntriesWindow = $state(false);
+ 	let isAlwaysOnTop = $state(false);
+ 	let isMaximized = $state(false);
+ 	let unlistenResize: (() => void) | null = $state(null);
 
 	const unsubscribeMin = minimizeToTray.subscribe(value => {
 		minimizeToTrayValue = value;
@@ -30,11 +36,18 @@
 	});
 
 	onMount(async () => {
-	  appWindow = getCurrentWindow();
-	  title = await appWindow.title();
-	  isTimeEntriesWindow = title === 'Time Entries';
-	  isAlwaysOnTop = await appWindow.isAlwaysOnTop();
-	  isMaximized = await appWindow.isMaximized();
+	  try {
+	    appWindow = propWindow || getCurrentWindow();
+	    console.log('TitleBar: Got window:', appWindow, 'propWindow provided:', !!propWindow);
+	    title = await appWindow.title();
+	    console.log('TitleBar: Window title:', title);
+	    isTimeEntriesWindow = title === 'Time Entries';
+	    isAlwaysOnTop = await appWindow.isAlwaysOnTop();
+	    isMaximized = await appWindow.isMaximized();
+	    console.log('TitleBar: Initialized for window:', title);
+	  } catch (error) {
+	    console.error('TitleBar: Failed to initialize:', error);
+	  }
 
 	  // Listen for window resize/maximize events to update icon state
 	  unlistenResize = await appWindow.listen('tauri://resize', async () => {
@@ -67,8 +80,10 @@
 	  console.log('Close clicked, closeToTrayValue:', closeToTrayValue);
 	  console.log('appWindow:', appWindow);
 	  if (closeToTrayValue) {
+	    console.log('Hiding window to tray');
 	    appWindow?.hide();
 	  } else {
+	    console.log('Closing window');
 	    appWindow?.close();
 	  }
 	}

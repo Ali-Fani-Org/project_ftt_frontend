@@ -4,7 +4,8 @@
   "description": "enables the default permissions",
   "windows": [
     "main",
-    "time-entries"
+    "time-entries",
+    "process-monitor"
   ],
   "permissions": [
     "core:default",
