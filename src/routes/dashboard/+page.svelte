@@ -1,250 +1,151 @@
 <script lang="ts">
-   import { onMount } from 'svelte';
-   import { get } from 'svelte/store';
-   import { goto } from '$app/navigation';
-  import { authToken, user, showSettings, timeEntriesDisplayMode, logout, featureFlagsStore } from '$lib/stores';
-   import { projects, timeEntries, type Project, type TimeEntry } from '$lib/api';
-   import { preventDefault } from '$lib/commands.svelte';
-   import TasksModal from '$lib/TasksModal.svelte';
+  import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { goto } from '$app/navigation';
+  import { user, timeEntriesDisplayMode, featureFlagsStore } from '$lib/stores';
+  import { projects, timeEntries, type Project, type TimeEntry } from '$lib/api';
+  import TasksModal from '$lib/TasksModal.svelte';
 
-  let activeEntry = $state<TimeEntry | null>(null);
   let projectsList = $state<Project[]>([]);
-  let loadingProjects = $state(true);
-  let loadingActiveEntry = $state(false);
+  let recentEntries = $state<TimeEntry[]>([]);
+  let todayEntries = $state<TimeEntry[]>([]);
+  let activeEntry = $state<TimeEntry | null>(null);
+  let loading = $state(true);
   let error = $state('');
-
-  // Form data
-  let title = $state('');
-  let description = $state('');
-  let selectedProject = $state<number | null>(null);
-
-  // Timer
-  let elapsed = $state(0);
-  let timerInterval = $state<any>(null);
-
-  // Mobile menu
-  let menuOpen = $state(false);
-
-  // Tasks modal
   let showTasksModal = $state(false);
-
-  // Feature flags state
+  
+  // Stats
+  let totalHoursToday = $state(0);
+  let completedTasksToday = $state(0);
+  let activeProject = $state<string>('None');
+  
+  // Feature flags
   let showProcessMonitorButton = $state(false);
   let loadingFeatureFlags = $state(true);
 
-
+  // Note: Authentication is now handled globally in the layout
   onMount(async () => {
-      console.log('Dashboard onMount started at', new Date().toISOString());
-      const token = get(authToken);
-      if (!token) {
-        goto('/');
-        return;
-      }
-
-      try {
-        loadingProjects = true;
-        loadingActiveEntry = true;
-        loadingFeatureFlags = true;
-
-        // Load feature flags first
-        await featureFlagsStore.loadFeatures();
-        showProcessMonitorButton = await featureFlagsStore.isFeatureEnabled('process-monitor-ui');
-        console.log('Feature flags loaded:', { processMonitorUI: showProcessMonitorButton });
-        loadingFeatureFlags = false;
-
-        // Load both projects and active entry in parallel
-        const [projectsResult, activeResult] = await Promise.allSettled([
-          projects.list(),
-          (async () => {
-            try {
-              return await timeEntries.getCurrentActive();
-            } catch {
-              return null;
-            }
-          })()
-        ]);
-
-        if (projectsResult.status === 'fulfilled') {
-          projectsList = projectsResult.value;
-          console.log('Projects loaded at', new Date().toISOString());
-        } else {
-          throw projectsResult.reason;
-        }
-
-        loadingProjects = false;
-
-        if (activeResult.status === 'fulfilled') {
-          activeEntry = activeResult.value;
-          if (activeEntry) startTimer();
-          console.log('Active entry loaded at', new Date().toISOString(), activeEntry ? 'with active entry' : 'no active entry');
-        } else {
-          activeEntry = null;
-          console.log('Active entry failed at', new Date().toISOString());
-        }
-
-        loadingActiveEntry = false;
-      } catch (err) {
-        console.log('Error loading data at', new Date().toISOString(), err);
-        error = 'Failed to load data';
-        loadingProjects = false;
-        loadingActiveEntry = false;
-        loadingFeatureFlags = false;
-      }
-
-     // Listen for events from Tauri
-     if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-       const { listen, emit } = await import('@tauri-apps/api/event');
-       listen('stop-timer', (event) => {
-         console.log('Received stop-timer event from tray:', event);
-         onStopTimer();
-       });
-
-       listen('request-timer-state', (event) => {
-         console.log('Received request-timer-state event from tray:', event);
-         // Respond with current timer state
-         const timerState = activeEntry ? {
-           active: true,
-           title: activeEntry.title,
-           start_time: activeEntry.start_time
-         } : {
-           active: false,
-           title: null
-         };
-         console.log('Sending timer state response:', timerState);
-         emit('timer-state-response', timerState);
-       });
-
-      // Listen for backend-triggered devtools opening.
-      listen('open-devtools', () => {
-        try {
-          // Try to use Tauri-side devtools API if exposed
-          // otherwise fall back to dispatching an F12 key event.
-          const ev = new KeyboardEvent('keydown', {
-            key: 'F12',
-            code: 'F12',
-            keyCode: 123,
-            which: 123,
-            bubbles: true,
-            cancelable: true
-          });
-          window.dispatchEvent(ev);
-        } catch (err) {
-          console.error('Failed to open devtools from event:', err);
-        }
-      });
-
-       // Test event emission
-       console.log('Testing event emission...');
-       setTimeout(() => {
-         emit('test-event', 'hello from frontend').then(() => {
-           console.log('Test event emitted successfully');
-         }).catch(err => {
-           console.error('Failed to emit test event:', err);
-         });
-       }, 1000);
-     }
-    });
-
-  function startTimer() {
-    if (activeEntry) {
-      const startTime = new Date(activeEntry.start_time).getTime();
-      elapsed = Math.floor((Date.now() - startTime) / 1000)
-      timerInterval = setInterval(() => {
-        elapsed = Math.floor((Date.now() - startTime) / 1000);
-      }, 1000);
-    }
-  }
-
-  function formatTime(seconds: number): string {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  const onStartTimer = preventDefault(async () => {
-    if (!selectedProject || !title) return;
-
     try {
-      activeEntry = await timeEntries.start({
-        title,
-        description,
-        project: selectedProject,
-      });
-      startTimer();
-      // Emit event to Tauri
-      if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-        const { emit } = await import('@tauri-apps/api/event');
-        console.log('Emitting timer-started event:', activeEntry.title);
-        await emit('timer-started', { title: activeEntry.title, start_time: activeEntry.start_time });
+      loading = true;
+      loadingFeatureFlags = true;
+
+      // Load feature flags
+      await featureFlagsStore.loadFeatures();
+      showProcessMonitorButton = await featureFlagsStore.isFeatureEnabled('process-monitor-ui');
+      loadingFeatureFlags = false;
+
+      // Load projects and entries in parallel
+      const [projectsResult, entriesResult, activeResult] = await Promise.allSettled([
+        projects.list(),
+        timeEntries.list(),
+        (async () => {
+          try {
+            return await timeEntries.getCurrentActive();
+          } catch {
+            return null;
+          }
+        })()
+      ]);
+
+      if (projectsResult.status === 'fulfilled') {
+        projectsList = projectsResult.value;
       }
-      // Reset form
-      title = '';
-      description = '';
-      selectedProject = null;
+
+      if (entriesResult.status === 'fulfilled') {
+        const data = entriesResult.value;
+        recentEntries = data.results.slice(0, 5); // Get last 5 entries
+        todayEntries = filterTodayEntries(data.results);
+        calculateStats(todayEntries, activeResult.status === 'fulfilled' ? activeResult.value : null);
+      }
+
+      if (activeResult.status === 'fulfilled') {
+        activeEntry = activeResult.value;
+      }
+
+      loading = false;
     } catch (err) {
-      error = 'Failed to start timer';
+      console.error('Dashboard loading error:', err);
+      error = 'Failed to load dashboard data';
+      loading = false;
     }
   });
 
-  const onStopTimer = async () => {
-    if (!activeEntry) return;
+  function filterTodayEntries(entries: TimeEntry[]): TimeEntry[] {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    try {
-      await timeEntries.stop(activeEntry.id);
-      activeEntry = null;
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
+    return entries.filter(entry => {
+      const entryDate = new Date(entry.start_time);
+      return entryDate >= today && entryDate < tomorrow;
+    });
+  }
+
+  function calculateStats(entries: TimeEntry[], active: TimeEntry | null) {
+    // Calculate completed tasks today
+    completedTasksToday = entries.filter(entry => !entry.is_active).length;
+
+    // Calculate total hours today
+    let totalSeconds = 0;
+    for (const entry of entries) {
+      if (entry.duration) {
+        const duration = parseDuration(entry.duration);
+        totalSeconds += duration;
+      } else if (entry.is_active && active?.id === entry.id) {
+        // For active entry, calculate from start time to now
+        const startTime = new Date(entry.start_time).getTime();
+        totalSeconds += Math.floor((Date.now() - startTime) / 1000);
       }
-      elapsed = 0;
-      // Emit event to Tauri
-      if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-        const { emit } = await import('@tauri-apps/api/event');
-        console.log('Emitting timer-stopped event');
-        await emit('timer-stopped', {});
-      }
-    } catch (err) {
-      error = 'Failed to stop timer';
     }
-  };
+    totalHoursToday = Math.floor(totalSeconds / 3600 * 10) / 10; // Round to 1 decimal
+
+    // Get active project
+    if (active) {
+      const project = projectsList.find(p => p.title === active.project);
+      activeProject = project?.title || active.project || 'Unknown';
+    }
+  }
+
+  function parseDuration(duration: string): number {
+    // Parse duration like "02:30:45" (HH:MM:SS)
+    const parts = duration.split(':').map(Number);
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+
+  function formatDuration(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  }
+
+  function formatDate(dateStr: string): string {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffTime = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return 'Today';
+    } else if (diffDays === 1) {
+      return 'Yesterday';
+    } else if (diffDays < 7) {
+      return `${diffDays} days ago`;
+    } else {
+      return date.toLocaleDateString();
+    }
+  }
 
   const openTimeEntries = async () => {
-    console.log('openTimeEntries called, mode:', get(timeEntriesDisplayMode));
     const mode = get(timeEntriesDisplayMode);
-
     if (mode === 'modal') {
-      console.log('Opening tasks in modal');
       showTasksModal = true;
       return;
     }
-
-    // Default to window/tab mode
-    try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      getCurrentWindow(); // Test if running in Tauri
-      console.log('Detected Tauri environment, opening new window');
-      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      console.log('WebviewWindow imported successfully');
-      const webview = new WebviewWindow('time-entries', {
-        url: `${window.location.origin}/tasks`,
-        title: 'Time Entries',
-        width: 1000,
-        height: 700,
-        resizable: true,
-        decorations: false,
-        fullscreen: false,
-        contentProtected: true,
-      });
-      console.log('WebviewWindow created:', webview);
-    } catch {
-      console.log('Web environment, opening new tab');
-      window.open('/tasks', '_blank');
-    }
+    goto('/entries');
   };
 
   const openProcessMonitor = async () => {
-    // Log feature access
     try {
       await featureFlagsStore.logFeatureAccess('process-monitor-ui');
       await featureFlagsStore.logFeatureAccess('process-monitor-backend');
@@ -254,8 +155,7 @@
     
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      getCurrentWindow(); // Test if running in Tauri
-      console.log('Detected Tauri environment, opening process monitor window');
+      getCurrentWindow();
       const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
       const webview = new WebviewWindow('process-monitor', {
         url: `${window.location.origin}/processes`,
@@ -267,144 +167,182 @@
         fullscreen: false,
         contentProtected: true,
       });
-      console.log('Process monitor WebviewWindow created:', webview);
     } catch {
-      console.log('Web environment, opening new tab');
       window.open('/processes', '_blank');
     }
   };
 
-  // DevTools control removed from dashboard. Use Settings to inspect the
-  // feature flag and the backend will only open devtools when allowed.
-
+  function getGreeting(): string {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
 </script>
 
-{#if loadingProjects}
-   <div class="flex justify-center items-center min-h-screen">
-     <span class="loading loading-spinner loading-lg"></span>
-   </div>
-{:else}
-   <div class="container mx-auto p-4">
-     <div class="navbar bg-base-100">
-       <div class="navbar-start">
-         <h1 class="text-xl font-bold">Time Tracker</h1>
-       </div>
-       <div class="navbar-end md:hidden">
-         <details class="dropdown dropdown-end">
-           <summary class="btn btn-ghost">
-             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-             </svg>
-           </summary>
-           <ul class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
-             <li><span>Welcome, {get(user)?.first_name}!</span></li>
-             <li><button onclick={() => showSettings.set(true)}>Settings</button></li>
-           </ul>
-         </details>
-       </div>
-       <div class="navbar-end hidden md:flex">
-         <span class="mr-4">Welcome, {get(user)?.first_name}!</span>
-         <button class="btn btn-ghost" onclick={openTimeEntries}>
-           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-           </svg>
-           Time Entries
-         </button>
-         {#if !loadingFeatureFlags && showProcessMonitorButton}
-           <button class="btn btn-ghost" onclick={openProcessMonitor}>
-             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-             </svg>
-             Process Monitor
-           </button>
-         {/if}
-        <!-- DevTools button removed; controlled via feature flags and Settings modal -->
-         <button class="btn btn-ghost" onclick={() => showSettings.set(true)}>
-           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-           </svg>
-           Settings
-         </button>
-       </div>
-     </div>
+<div class="container mx-auto p-4 lg:p-8">
+  <!-- Header -->
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-primary">Dashboard</h1>
+    <p class="text-base-content/70">{getGreeting()}, {$user?.first_name || 'User'}!</p>
+  </div>
 
-     {#if error}
-       <div class="alert alert-error mt-4">
-         <span>{error}</span>
-       </div>
-     {:else}
-       {#if loadingActiveEntry}
-         <div class="card bg-base-200 shadow-xl mt-8">
-           <div class="card-body">
-             <h2 class="card-title">Checking for active timer...</h2>
-             <div class="flex justify-center">
-               <span class="loading loading-spinner loading-lg"></span>
-             </div>
-           </div>
-         </div>
-       {:else if activeEntry}
-         <div class="card bg-primary text-primary-content mt-8">
-           <div class="card-body">
-             <h2 class="card-title">Active Timer</h2>
-             <p>{activeEntry.title}</p>
-             <p class="text-4xl font-mono">{formatTime(elapsed)}</p>
-             <div class="card-actions justify-end">
-               <button class="btn btn-secondary" onclick={onStopTimer}>Stop Timer</button>
-             </div>
-           </div>
-         </div>
-       {:else}
-         <div class="card bg-base-100 shadow-xl mt-8">
-           <div class="card-body">
-             <h2 class="card-title">Start New Timer</h2>
-             <form onsubmit={onStartTimer}>
-               <div class="form-control">
-                 <label class="label" for="title">
-                   <span class="label-text">Title</span>
-                 </label>
-                 <input
-                   id="title"
-                   bind:value={title}
-                   type="text"
-                   placeholder="Task title"
-                   class="input input-bordered"
-                   required
-                 />
-               </div>
-               <div class="form-control">
-                 <label class="label" for="description">
-                   <span class="label-text">Description (optional)</span>
-                 </label>
-                 <textarea
-                   id="description"
-                   bind:value={description}
-                   placeholder="Task description"
-                   class="textarea textarea-bordered"
-                 ></textarea>
-               </div>
-               <div class="form-control">
-                 <label class="label" for="project">
-                   <span class="label-text">Project</span>
-                 </label>
-                 <select id="project" bind:value={selectedProject} class="select select-bordered" required>
-                   <option value={null}>Select a project</option>
-                   {#each projectsList as project}
-                     <option value={project.id}>{project.title}</option>
-                   {/each}
-                 </select>
-               </div>
-               <div class="form-control mt-6">
-                 <button class="btn btn-primary" type="submit">Start Timer</button>
-               </div>
-             </form>
-           </div>
-         </div>
-       {/if}
-     {/if}
-   </div>
- {/if}
+  {#if loading}
+    <div class="flex justify-center items-center min-h-[50vh]">
+      <span class="loading loading-spinner loading-lg"></span>
+    </div>
+  {:else if error}
+    <div class="alert alert-error">
+      <span>{error}</span>
+    </div>
+  {:else}
+    <!-- Quick Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="card-title text-sm font-normal text-base-content/70">Hours Today</h3>
+              <p class="text-3xl font-bold text-primary">{totalHoursToday}h</p>
+            </div>
+            <div class="avatar placeholder bg-primary/10 rounded-full p-4">
+              <svg class="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
 
- {#if showTasksModal}
-   <TasksModal on:close={() => showTasksModal = false} />
- {/if}
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="card-title text-sm font-normal text-base-content/70">Tasks Completed</h3>
+              <p class="text-3xl font-bold text-secondary">{completedTasksToday}</p>
+            </div>
+            <div class="avatar placeholder bg-secondary/10 rounded-full p-4">
+              <svg class="w-8 h-8 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="card-title text-sm font-normal text-base-content/70">Active Project</h3>
+              <p class="text-lg font-semibold truncate">{activeProject}</p>
+            </div>
+            <div class="avatar placeholder bg-accent/10 rounded-full p-4">
+              <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Activity & Quick Actions -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <!-- Recent Entries -->
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <h2 class="card-title mb-4">Recent Activity</h2>
+          {#if recentEntries.length > 0}
+            <div class="space-y-3">
+              {#each recentEntries as entry}
+                <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
+                  <div class="flex-1">
+                    <h4 class="font-medium text-sm">{entry.title}</h4>
+                    <p class="text-xs text-base-content/60">{entry.project} • {formatDate(entry.start_time)}</p>
+                  </div>
+                  <div class="flex items-center space-x-2">
+                    <span class="badge {entry.is_active ? 'badge-success' : 'badge-neutral'} text-xs">
+                      {entry.is_active ? 'Active' : 'Done'}
+                    </span>
+                  </div>
+                </div>
+              {/each}
+            </div>
+            <div class="card-actions mt-4">
+              <button class="btn btn-outline btn-sm" onclick={openTimeEntries}>
+                View All Entries
+              </button>
+            </div>
+          {:else}
+            <div class="text-center py-8 text-base-content/50">
+              <svg class="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <p>No recent entries</p>
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <h2 class="card-title mb-4">Quick Actions</h2>
+          <div class="space-y-3">
+            <button class="btn btn-primary btn-block justify-start" onclick={() => goto('/timer')}>
+              <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293H15M9 10V9a2 2 0 012-2h2a2 2 0 012 2v1"></path>
+              </svg>
+              Start New Timer
+            </button>
+
+            <button class="btn btn-outline btn-block justify-start" onclick={openTimeEntries}>
+              <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+              </svg>
+              View All Entries
+            </button>
+
+            <button class="btn btn-outline btn-block justify-start" onclick={() => goto('/settings')}>
+              <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+              </svg>
+              Settings
+            </button>
+
+            {#if !loadingFeatureFlags && showProcessMonitorButton}
+              <button class="btn btn-outline btn-block justify-start" onclick={openProcessMonitor}>
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                </svg>
+                Process Monitor
+              </button>
+            {/if}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Timer Card -->
+    {#if activeEntry}
+      <div class="card bg-primary text-primary-content mt-8">
+        <div class="card-body">
+          <h2 class="card-title">Currently Tracking</h2>
+          <p class="text-lg">{activeEntry.title}</p>
+          <p class="text-sm opacity-70">{activeEntry.project}</p>
+          <div class="card-actions justify-end">
+            <button class="btn btn-secondary" onclick={() => goto('/timer')}>
+              View in Timer
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
+  {/if}
+
+  {#if showTasksModal}
+    <TasksModal on:close={() => showTasksModal = false} />
+  {/if}
+</div>

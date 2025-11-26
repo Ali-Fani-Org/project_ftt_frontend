@@ -1,30 +1,63 @@
 import ky from 'ky';
-import { authToken, baseUrl } from './stores';
+import { authToken, baseUrl, globalLogout } from './stores';
 import { get, writable } from 'svelte/store';
 
-const apiStore = writable(ky.create({
-  prefixUrl: get(baseUrl),
-  hooks: {
-    beforeRequest: [
-      (request) => {
-        const token = get(authToken);
-        if (token) {
-          request.headers.set('Authorization', `Token ${token}`);
-        }
-      },
-    ],
-  },
-}));
+// Create API client with 401 handling
+const createApiClient = () => {
+  return ky.create({
+    prefixUrl: get(baseUrl),
+    hooks: {
+      beforeRequest: [
+        (request: any) => {
+          const token = get(authToken);
+          if (token) {
+            request.headers.set('Authorization', `Token ${token}`);
+          }
+        },
+      ],
+      afterResponse: [
+        async (request: any, options: any, response: any) => {
+          // Check if response is 401 Unauthorized
+          if (response.status === 401) {
+            console.warn('Received 401 Unauthorized, logging out user');
+            
+            // Perform logout using global function with autoLogout flag
+            globalLogout(true);
+            
+            // Throw an error to prevent further processing
+            throw new Error('Authentication failed');
+          }
+        },
+      ],
+    },
+  });
+};
+
+const apiStore = writable(createApiClient());
 
 baseUrl.subscribe((url) => {
   apiStore.set(ky.create({
     prefixUrl: url,
     hooks: {
       beforeRequest: [
-        (request) => {
+        (request: any) => {
           const token = get(authToken);
           if (token) {
             request.headers.set('Authorization', `Token ${token}`);
+          }
+        },
+      ],
+      afterResponse: [
+        async (request: any, options: any, response: any) => {
+          // Check if response is 401 Unauthorized
+          if (response.status === 401) {
+            console.warn('Received 401 Unauthorized, logging out user');
+            
+            // Perform logout using global function with autoLogout flag
+            globalLogout(true);
+            
+            // Throw an error to prevent further processing
+            throw new Error('Authentication failed');
           }
         },
       ],

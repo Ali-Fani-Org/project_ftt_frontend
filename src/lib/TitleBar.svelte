@@ -1,23 +1,23 @@
 <script lang="ts">
- 	import { onMount, onDestroy } from 'svelte';
- 	import { getCurrentWindow } from '@tauri-apps/api/window';
- 	import { minimizeToTray, closeToTray } from '$lib/stores';
- 	import { Minus, Maximize2, Minimize2, X, Pin, PinOff } from '@lucide/svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { getCurrentWindow } from '@tauri-apps/api/window';
+	import { minimizeToTray, closeToTray } from '$lib/stores';
+	import { Minus, Maximize2, Minimize2, X, Pin, PinOff } from '@lucide/svelte';
 
- 	interface Props {
- 		window?: any;
- 	}
+	interface Props {
+		window?: any;
+	}
 
- 	let { window: propWindow }: Props = $props();
+	let { window: propWindow }: Props = $props();
 
- 	let appWindow: any;
- 	let title = $state('');
- 	let minimizeToTrayValue = $state(false);
- 	let closeToTrayValue = $state(false);
- 	let isTimeEntriesWindow = $state(false);
- 	let isAlwaysOnTop = $state(false);
- 	let isMaximized = $state(false);
- 	let unlistenResize: (() => void) | null = $state(null);
+	let appWindow: any;
+	let title = $state('');
+	let minimizeToTrayValue = $state(false);
+	let closeToTrayValue = $state(false);
+	let isTimeEntriesWindow = $state(false);
+	let isAlwaysOnTop = $state(false);
+	let isMaximized = $state(false);
+	let unlistenResize: (() => void) | null = $state(null);
 
 	const unsubscribeMin = minimizeToTray.subscribe(value => {
 		minimizeToTrayValue = value;
@@ -174,12 +174,7 @@
 
 	.controls {
 		position: absolute;
-		right: 0;
-		display: flex;
-		align-items: center;
-	}
-
-	.controls {
+		right: 4px;
 		display: flex;
 		align-items: center;
 	}

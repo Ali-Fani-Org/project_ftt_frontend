@@ -37,7 +37,7 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 }
 
 export const authToken = createPersistentStore<string | null>('authToken', null);
-export const user = createPersistentStore<{ id: number; username: string; first_name: string; last_name: string } | null>('user', null);
+export const user = createPersistentStore<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null } | null>('user', null);
 
 export const baseUrl = createPersistentStore<string>('baseUrl', 'http://localhost:8000');
 export const theme = createPersistentStore<string>('theme', 'light');
@@ -47,13 +47,34 @@ export const closeToTray = createPersistentStore<boolean>('closeToTray', false);
 export const autostart = createPersistentStore<boolean>('autostart', false);
 export const timeEntriesDisplayMode = createPersistentStore<string>('timeEntriesDisplayMode', 'window');
 
-export const showSettings = writable(false);
+// Logout alert state
+export const logoutAlert = writable<{show: boolean, message: string}>({show: false, message: ''});
 
-export const logout = () => {
+// Global logout function that can be used by API hooks
+export function globalLogout(autoLogout = false) {
+  // Clear all localStorage and sessionStorage
+  if (browser) {
+    localStorage.clear();
+    sessionStorage.clear();
+  }
+  
+  // Reset stores
   authToken.set(null);
   user.set(null);
+  
+  // Show alert if this was an automatic logout (401 response)
+  if (autoLogout) {
+    logoutAlert.set({
+      show: true,
+      message: 'Your session has expired. Please log in again.'
+    });
+  }
+  
+  // Redirect to login page
   goto('/');
-};
+}
+
+export const logout = () => globalLogout(false);
 
 // Feature flags store
 export interface FeatureFlagsState {

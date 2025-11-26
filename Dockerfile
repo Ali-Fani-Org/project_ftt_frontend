@@ -1,29 +1,23 @@
 # Build stage
-FROM oven/bun:1 AS builder
-
+FROM node:20-slim AS builder
 WORKDIR /app
 
-# Copy package files
+# Install build deps (cache package manifests)
 COPY package*.json ./
-COPY bun.lockb ./
-
-# Install dependencies using bun
-RUN bun install --frozen-lockfile
+COPY pnpm-lock.yaml* ./
+RUN npm ci --silent
 
 # Copy source
 COPY . .
 
-# Build the app
-RUN bun run build
+# Build
+ENV NODE_ENV=production
+RUN npm run build
 
 # Production stage
 FROM nginx:alpine
-
-# Copy custom nginx config to listen on port 3000
 COPY nginx.conf /etc/nginx/nginx.conf
-
-# Copy built static files to nginx
+# Copy build output (adjust if your output dir differs)
 COPY --from=builder /app/build /usr/share/nginx/html
 
-# Expose port 3000
 EXPOSE 3000
