@@ -17,6 +17,8 @@ export interface NotificationService {
   connect(): Promise<void>;
   disconnect(): void;
   isConnected(): boolean;
+  isConnecting?: boolean;
+  getLastError?: () => string | null;
 }
 
 /**
@@ -25,11 +27,15 @@ export interface NotificationService {
  */
 class TauriNotificationService implements NotificationService {
   private abortController: AbortController | null = null;
-  private isConnecting = false;
+  isConnecting = false;
   private connected = false;
   private serviceId = Math.random().toString(36).substr(2, 9);
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
+  private connectionStartTime: number | null = null;
+  private connectionTimeout: number = 10000; // 10 second timeout for Cloudflare
+  private timeoutHandle: any = null;
+  private lastError: string | null = null;
 
   constructor() {
     // Only initialize in browser environment
@@ -50,7 +56,10 @@ class TauriNotificationService implements NotificationService {
     }
 
     this.isConnecting = true;
-    console.log(`[NotificationService ${this.serviceId}] Starting connection attempt`);
+    this.connectionStartTime = Date.now();
+    this.lastError = null;
+    
+    console.log(`[NotificationService ${this.serviceId}] Starting connection attempt at ${this.connectionStartTime}`);
 
     let connectionError = false;
 
@@ -63,11 +72,15 @@ class TauriNotificationService implements NotificationService {
       if (!token) {
         console.warn(`[NotificationService ${this.serviceId}] No auth token available for notification connection`);
         this.isConnecting = false;
+        this.connectionStartTime = null;
         return;
       }
 
       // Create abort controller for this connection
       this.abortController = new AbortController();
+      
+      // Set up timeout to detect Cloudflare blocking
+      this.setupConnectionTimeout();
       
       // Create SSE connection with proper Authorization header using fetch
       const url = `${base}/api/notifications/sse/`;
@@ -83,7 +96,29 @@ class TauriNotificationService implements NotificationService {
         signal: this.abortController.signal
       });
 
+      // Clear timeout if we got a response
+      this.clearConnectionTimeout();
+
+      console.log(`[NotificationService ${this.serviceId}] Response status: ${response.status}, statusText: ${response.statusText}`);
+
+      // Handle Cloudflare-specific error codes
+      if (response.status === 408) {
+        throw new Error(`Cloudflare timeout - SSE connection timed out after ${this.connectionTimeout}ms`);
+      }
+      
+      if (response.status === 499) {
+        throw new Error(`Cloudflare proxy timeout - connection closed by proxy`);
+      }
+      
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        throw new Error(`Cloudflare proxy error - ${response.status} ${response.statusText}`);
+      }
+
       if (!response.ok) {
+        // Check if this is likely a Cloudflare block
+        if (response.status === 403 || response.status === 429) {
+          throw new Error(`Possible Cloudflare blocking - ${response.status} ${response.statusText}. Check Cloudflare Security settings.`);
+        }
         throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
       }
 
@@ -151,14 +186,26 @@ class TauriNotificationService implements NotificationService {
 
     } catch (error: any) {
       connectionError = true;
+      const elapsed = this.connectionStartTime ? Date.now() - this.connectionStartTime : 0;
+      
       if (error.name === 'AbortError') {
         console.log(`[NotificationService ${this.serviceId}] SSE connection aborted`);
+      } else if (error.message && error.message.includes('Cloudflare')) {
+        // Handle Cloudflare-specific errors
+        this.lastError = error.message;
+        console.error(`[NotificationService ${this.serviceId}] ❌ Cloudflare SSE error after ${elapsed}ms:`, error.message);
       } else {
-        console.error(`[NotificationService ${this.serviceId}] ❌ Failed to connect to notification SSE:`, error);
-        this.handleReconnect();
+        // Handle general connection errors
+        this.lastError = error.message || 'Unknown connection error';
+        console.error(`[NotificationService ${this.serviceId}] ❌ Failed to connect to notification SSE after ${elapsed}ms:`, error);
       }
+      
+      this.handleReconnect();
     } finally {
       this.isConnecting = false;
+      this.connectionStartTime = null;
+      this.clearConnectionTimeout();
+      
       // Only reset connection state if there was an actual error
       // If the stream ended normally, keep the connection state
       if (connectionError) {
@@ -169,6 +216,7 @@ class TauriNotificationService implements NotificationService {
 
   disconnect(): void {
     console.log(`[NotificationService ${this.serviceId}] disconnect() called`);
+    this.clearConnectionTimeout();
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
@@ -176,6 +224,7 @@ class TauriNotificationService implements NotificationService {
     }
     this.connected = false;
     this.isConnecting = false;
+    this.connectionStartTime = null;
   }
 
   isConnected(): boolean {
@@ -274,7 +323,8 @@ class TauriNotificationService implements NotificationService {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       
-      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000); // Max 30 seconds
+      // Cloudflare-specific delay - longer initial delays to avoid overwhelming proxy
+      const delay = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), 60000); // Max 60 seconds
       
       console.log(`[NotificationService ${this.serviceId}] ⏰ Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
       
@@ -285,6 +335,35 @@ class TauriNotificationService implements NotificationService {
     } else {
       console.error(`[NotificationService ${this.serviceId}] 🚫 Max reconnection attempts reached. Giving up.`);
     }
+  }
+
+  private setupConnectionTimeout(): void {
+    this.clearConnectionTimeout();
+    
+    this.timeoutHandle = setTimeout(() => {
+      const elapsed = Date.now() - (this.connectionStartTime || Date.now());
+      console.error(`[NotificationService ${this.serviceId}] ❌ Connection timeout after ${elapsed}ms (Cloudflare likely blocking SSE)`);
+      
+      this.lastError = `Connection timeout - Cloudflare may be blocking SSE connections. Check Cloudflare configuration.`;
+      this.abortController?.abort();
+      this.isConnecting = false;
+      this.connected = false;
+      this.connectionStartTime = null;
+      
+      // Trigger reconnection with error information
+      this.handleReconnect();
+    }, this.connectionTimeout) as any;
+  }
+
+  private clearConnectionTimeout(): void {
+    if (this.timeoutHandle) {
+      clearTimeout(this.timeoutHandle);
+      this.timeoutHandle = null;
+    }
+  }
+
+  getLastError(): string | null {
+    return this.lastError;
   }
 }
 

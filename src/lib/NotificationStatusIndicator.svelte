@@ -14,7 +14,7 @@
   let authTokenValue: string | null = null;
 
   // Subscribe to auth token changes
-  const unsubscribeAuth = authToken.subscribe(value => {
+  const unsubscribeAuth = authToken.subscribe((value: string | null) => {
     authTokenValue = value;
     updateState();
   });
@@ -60,19 +60,25 @@
 
     try {
       const serviceConnected = notificationService.isConnected();
-      const isConnecting = (notificationService as any).isConnecting;
+      const isConnecting = notificationService.isConnecting ?? false;
       
-      // Determine state based on both connected and connecting status
+      // Get last error if available
+      const lastError = notificationService.getLastError?.();
+      
+      // Determine state based on connection status and errors
       if (serviceConnected === true) {
         state = 'connected';
       } else if (isConnecting === true) {
         state = 'connecting';
+      } else if (lastError && (lastError.includes('Cloudflare') || lastError.includes('timeout'))) {
+        state = 'error';
       } else if (serviceConnected === false && isConnecting === false) {
         state = 'disconnected';
       } else {
         state = 'error';
       }
-    } catch {
+    } catch (error) {
+      console.error('NotificationStatusIndicator: Error updating state:', error);
       state = 'error';
     }
   }
@@ -231,6 +237,12 @@
             {notificationService ? 'Available' : 'Not Available'}
           </span>
         </div>
+        {#if state === 'error' && notificationService?.getLastError?.()}
+          <div class="mt-2 p-2 bg-error/10 rounded border border-error/20">
+            <div class="font-medium text-error text-xs">Cloudflare Error:</div>
+            <div class="text-error/80 text-xs break-words">{notificationService.getLastError()}</div>
+          </div>
+        {/if}
       </div>
       
       <div class="mt-3 pt-3 border-t border-base-300 flex gap-2">
