@@ -2,38 +2,149 @@ import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 
-function createPersistentStore<T>(key: string, initialValue: T) {
-  const storedValue = browser ? localStorage.getItem(key) : null;
-  let parsedValue = initialValue;
-  if (storedValue) {
+// Initialize Tauri settings store
+let tauriSettingsStore: any = null;
+let tauriSettingsInitialized = false;
+
+async function initializeTauriSettingsStore() {
+  if (tauriSettingsInitialized) return tauriSettingsStore;
+  
+  if (typeof window !== 'undefined' && (window as any).__TAURI__) {
     try {
-      parsedValue = JSON.parse(storedValue);
-    } catch {
-      // If not valid JSON, use the stored value as is (for backward compatibility)
-      parsedValue = storedValue as T;
+      const { LazyStore } = await import('@tauri-apps/plugin-store');
+      tauriSettingsStore = new LazyStore('settings.json');
+      await tauriSettingsStore.load();
+      tauriSettingsInitialized = true;
+      console.log('✅ Tauri settings store initialized');
+    } catch (e) {
+      console.error('Failed to initialize Tauri settings store:', e);
+      tauriSettingsInitialized = true; // Prevent repeated failed attempts
     }
   }
+  
+  return tauriSettingsStore;
+}
 
-  const store = writable<T>(parsedValue);
-
-  store.subscribe(async (value) => {
-    if (browser) {
-      localStorage.setItem(key, JSON.stringify(value));
-      // Also save to Tauri store if available
-      if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-        try {
-          const { LazyStore } = await import('@tauri-apps/plugin-store');
-          const tauriStore = new LazyStore('auth.json');
-          await tauriStore.set(key, value);
-          await tauriStore.save();
-        } catch (e) {
-          console.error('Failed to save to Tauri store', e);
-        }
+async function getTauriSetting<T>(key: string, initialValue: T): Promise<T> {
+  try {
+    const store = await initializeTauriSettingsStore();
+    if (store) {
+      const value = await store.get(key);
+      if (value !== undefined && value !== null) {
+        console.log(`✅ Loaded setting ${key} from Tauri store:`, value);
+        return value as T;
       }
     }
-  });
+  } catch (e) {
+    console.error(`Failed to load setting ${key} from Tauri store:`, e);
+  }
+  
+  // Fallback to localStorage for web development
+  if (browser) {
+    try {
+      const storedValue = localStorage.getItem(key);
+      if (storedValue) {
+        const parsedValue = JSON.parse(storedValue);
+        console.log(`✅ Loaded setting ${key} from localStorage (fallback):`, parsedValue);
+        return parsedValue;
+      }
+    } catch (e) {
+      console.error(`Failed to load setting ${key} from localStorage:`, e);
+    }
+  }
+  
+  console.log(`🔄 Using default value for ${key}:`, initialValue);
+  return initialValue;
+}
 
-  return store;
+async function setTauriSetting(key: string, value: any): Promise<void> {
+  try {
+    const store = await initializeTauriSettingsStore();
+    if (store) {
+      await store.set(key, value);
+      await store.save();
+      console.log(`✅ Saved setting ${key} to Tauri store:`, value);
+    }
+  } catch (e) {
+    console.error(`Failed to save setting ${key} to Tauri store:`, e);
+  }
+  
+  // Also save to localStorage as fallback for web development
+  if (browser) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      console.log(`✅ Saved setting ${key} to localStorage (fallback)`);
+    } catch (e) {
+      console.error(`Failed to save setting ${key} to localStorage:`, e);
+    }
+  }
+}
+
+function createPersistentStore<T>(key: string, initialValue: T) {
+  let store: any;
+  let isInitialized = false;
+
+  // Create the store with proper initialization
+  const createStore = async () => {
+    const loadedValue = await getTauriSetting(key, initialValue);
+    store = writable<T>(loadedValue);
+    isInitialized = true;
+
+    // Subscribe to changes and save to Tauri store
+    store.subscribe((value: T) => {
+      if (isInitialized) {
+        setTauriSetting(key, value);
+      }
+    });
+
+    return store;
+  };
+
+  // Initialize asynchronously
+  createStore();
+
+  // Return a proxy that will be properly initialized
+  return {
+    subscribe: (run: any) => {
+      if (!isInitialized) {
+        // If not initialized yet, wait for it
+        const initInterval = setInterval(() => {
+          if (isInitialized) {
+            clearInterval(initInterval);
+            return store.subscribe(run);
+          }
+        }, 10);
+        return () => clearInterval(initInterval);
+      }
+      return store.subscribe(run);
+    },
+    set: (value: T) => {
+      if (!isInitialized) {
+        // Wait for initialization
+        const initInterval = setInterval(() => {
+          if (isInitialized) {
+            clearInterval(initInterval);
+            store.set(value);
+          }
+        }, 10);
+        return;
+      }
+      store.set(value);
+    },
+    update: (fn: any) => {
+      if (!isInitialized) {
+        // Wait for initialization
+        const initInterval = setInterval(() => {
+          if (isInitialized) {
+            clearInterval(initInterval);
+            store.update(fn);
+          }
+        }, 10);
+        return;
+      }
+      store.update(fn);
+    }
+  };
 }
 
 export const authToken = createPersistentStore<string | null>('authToken', null);

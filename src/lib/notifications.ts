@@ -326,7 +326,7 @@ console.log('🚀 Notification module loaded');
 getNotificationService(); // Initialize the service
 
 // Auto-connect when auth token changes
-authToken.subscribe((token) => {
+authToken.subscribe((token: string | null) => {
   console.log(`🔑 Auth token changed: ${token ? 'TOKEN_AVAILABLE' : 'NO_TOKEN'}`);
   console.log(`🔍 Global service available: ${!!globalNotificationService}`);
   

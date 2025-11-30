@@ -35,7 +35,7 @@ const createApiClient = () => {
 
 const apiStore = writable(createApiClient());
 
-baseUrl.subscribe((url) => {
+baseUrl.subscribe((url: string) => {
   apiStore.set(ky.create({
     prefixUrl: url,
     hooks: {
