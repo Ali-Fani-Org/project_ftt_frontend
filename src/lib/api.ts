@@ -124,6 +124,15 @@ export interface FeatureFlagCheck {
   user_has_access: boolean;
 }
 
+export interface Notification {
+  id: string;
+  type: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS' | 'CRITICAL' | 'OTHER';
+  message: string;
+  created_at: string;
+  read: boolean;
+  delivered_at: string | null;
+}
+
 export const auth = {
   login: async (username: string, password: string) => {
     const response = await ky.post(`${get(baseUrl)}/auth/token/login/`, {
@@ -185,5 +194,11 @@ export const featureFlags = {
   
   logAccess: async (featureKey: string): Promise<{ message: string; feature_key: string; feature_name: string }> => {
     return await api.post(`api/feature-flags/user-features/${featureKey}/log-access/`).json<{ message: string; feature_key: string; feature_name: string }>();
+  }
+};
+
+export const notifications = {
+  acknowledge: async (notificationId: string): Promise<{ message: string }> => {
+    return await api.post(`api/notifications/${notificationId}/acknowledge/`).json<{ message: string }>();
   }
 };

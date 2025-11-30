@@ -9,6 +9,7 @@
 	import TitleBar from '$lib/TitleBar.svelte';
 	import Sidebar from '$lib/Sidebar.svelte';
 	import Navbar from '$lib/Navbar.svelte';
+	import '$lib/notifications'; // Initialize notification service
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -57,7 +58,7 @@
 				const token = await tauriStore.get<string | null>('authToken');
 				console.log('Token loaded at', new Date().toISOString(), token ? 'with token' : 'no token');
 				if (token) authToken.set(token);
-				const userData = await tauriStore.get<{ id: number; username: string; first_name: string; last_name: string } | null>('user');
+				const userData = await tauriStore.get<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null } | null>('user');
 				console.log('User loaded at', new Date().toISOString(), userData ? 'with user' : 'no user');
 				if (userData) user.set(userData);
 			} catch (e) {

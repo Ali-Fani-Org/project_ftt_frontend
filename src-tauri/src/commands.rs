@@ -36,6 +36,13 @@ pub struct ActivityLog {
     pub activity_state: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct NotificationData {
+    pub title: String,
+    pub body: String,
+    pub notification_type: String,
+}
+
 #[tauri::command]
 pub fn greet(name: String) -> String {
     format!("Hello, {}!", name)
@@ -56,6 +63,33 @@ pub fn get_timer_state() -> TimerState {
 pub fn stop_timer() -> Result<(), String> {
     // TODO: Implement timer stopping
     // For now, just emit event to frontend
+    Ok(())
+}
+
+#[tauri::command]
+pub fn show_notification(app: tauri::AppHandle, title: String, body: String, notification_type: String) -> Result<(), String> {
+    // Show native notification using Tauri's notification API
+    use tauri_plugin_notification::NotificationExt;
+    
+    // Map notification types to appropriate titles
+    let title_suffix = match notification_type.as_str() {
+        "ERROR" | "CRITICAL" => "Error",
+        "WARNING" => "Warning", 
+        "SUCCESS" => "Success",
+        "INFO" => "Info",
+        _ => "Notification",
+    };
+    
+    let full_title = format!("Time Tracker - {}", title_suffix);
+    
+    app.notification()
+        .builder()
+        .title(&full_title)
+        .body(&body)
+        .show()
+        .map_err(|e| format!("Failed to show notification: {}", e))?;
+    
+    println!("Notification shown: {} - {}", full_title, body);
     Ok(())
 }
 

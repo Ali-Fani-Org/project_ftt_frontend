@@ -139,6 +139,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
              if cfg!(debug_assertions) {
                  app.handle().plugin(
@@ -159,7 +160,7 @@ pub fn run() {
 
              Ok(())
          })
-        .invoke_handler(tauri::generate_handler![greet, get_timer_state, stop_timer, get_processes, toggle_devtools, get_idle_status, get_idle_time, is_user_idle, create_activity_log])
+        .invoke_handler(tauri::generate_handler![greet, get_timer_state, stop_timer, get_processes, toggle_devtools, get_idle_status, get_idle_time, is_user_idle, create_activity_log, show_notification])
         .on_window_event(|_window, _event| {
             // Close is handled in frontend
         })
