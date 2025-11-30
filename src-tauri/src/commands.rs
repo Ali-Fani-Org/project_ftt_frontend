@@ -1,6 +1,8 @@
+use crate::constants::*;
+
 use serde::{Deserialize, Serialize};
-use sysinfo::System;
 use tauri::Emitter;
+use user_idle::UserIdle;
 
 #[derive(Serialize, Deserialize)]
 pub struct TimerState {
@@ -15,6 +17,23 @@ pub struct ProcessInfo {
     pub name: String,
     pub cpu_usage: f32,
     pub memory_usage: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct IdleStatus {
+    pub is_idle: bool,
+    pub idle_time_seconds: u64,
+    pub last_update: String,
+    pub session_start: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ActivityLog {
+    pub timestamp: String,
+    pub idle_time_seconds: u64,
+    pub is_idle: bool,
+    pub session_duration_seconds: u64,
+    pub activity_state: String,
 }
 
 #[tauri::command]
@@ -41,8 +60,53 @@ pub fn stop_timer() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn get_idle_status() -> Result<IdleStatus, String> {
+    match UserIdle::get_time() {
+        Ok(idle_time) => {
+            let idle_seconds = idle_time.as_seconds();
+            let is_idle = idle_seconds >= IDLE_THRESHOLD_SECONDS; // Using constant
+            
+            Ok(IdleStatus {
+                is_idle,
+                idle_time_seconds: idle_seconds,
+                last_update: chrono::Utc::now().to_rfc3339(),
+                session_start: chrono::Utc::now().to_rfc3339(), // TODO: Track actual session start
+            })
+        }
+        Err(e) => Err(format!("Failed to get idle status: {}", e)),
+    }
+}
+
+#[tauri::command]
+pub fn get_idle_time() -> Result<u64, String> {
+    match UserIdle::get_time() {
+        Ok(idle_time) => Ok(idle_time.as_seconds()),
+        Err(e) => Err(format!("Failed to get idle time: {}", e)),
+    }
+}
+
+#[tauri::command]
+pub fn is_user_idle() -> Result<bool, String> {
+    match UserIdle::get_time() {
+        Ok(idle_time) => Ok(idle_time.as_seconds() >= IDLE_THRESHOLD_SECONDS), // Using constant
+        Err(e) => Err(format!("Failed to check idle status: {}", e)),
+    }
+}
+
+#[tauri::command]
+pub fn create_activity_log(idle_time_seconds: u64, is_idle: bool) -> Result<ActivityLog, String> {
+    Ok(ActivityLog {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        idle_time_seconds,
+        is_idle,
+        session_duration_seconds: idle_time_seconds, // Simplified for now
+        activity_state: if is_idle { "idle".to_string() } else { "active".to_string() },
+    })
+}
+
+#[tauri::command]
 pub fn get_processes() -> Result<Vec<ProcessInfo>, String> {
-    let mut sys = System::new();
+    let mut sys = sysinfo::System::new();
     sys.refresh_processes();
 
     let mut processes: Vec<ProcessInfo> = Vec::new();

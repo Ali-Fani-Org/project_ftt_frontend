@@ -57,7 +57,4 @@
     </div>
   {/if}
 
-  <!-- Right section: Date/Time and Theme toggle -->
-  <div class="navbar-end space-x-2">
-  </div>
 </nav>

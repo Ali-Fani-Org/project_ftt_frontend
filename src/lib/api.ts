@@ -69,6 +69,7 @@ const api = {
   get: (url: string, options?: any) => get(apiStore).get(url, options),
   post: (url: string, options?: any) => get(apiStore).post(url, options),
   put: (url: string, options?: any) => get(apiStore).put(url, options),
+  patch: (url: string, options?: any) => get(apiStore).patch(url, options),
   delete: (url: string, options?: any) => get(apiStore).delete(url, options),
 };
 
@@ -137,6 +138,14 @@ export const auth = {
   },
   getUser: async () => {
     return await api.get('auth/users/me/').json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
+  },
+  updateUser: async (data: { username?: string; first_name?: string; last_name?: string; profile_image?: string | null }) => {
+    // Use PUT to replace or update the resource; many DRF endpoints also accept PATCH
+    return await api.put('auth/users/me/', { json: data }).json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
+  },
+  updateUserForm: async (form: FormData) => {
+    // Use PATCH with form data to support partial updates and file upload.
+    return await api.patch('auth/users/me/', { body: form }).json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
   },
 };
 

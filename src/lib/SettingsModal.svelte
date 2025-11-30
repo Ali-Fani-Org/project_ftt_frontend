@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart, timeEntriesDisplayMode, logout } from './stores';
+	import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart, logout } from './stores';
 	import { enable, disable } from '@tauri-apps/plugin-autostart';
 	import { createEventDispatcher } from 'svelte';
 	import { onMount } from 'svelte';
@@ -14,7 +14,6 @@
 	let localMinimizeToTray = $state($minimizeToTray);
 	let localCloseToTray = $state($closeToTray);
 	let localAutostart = $state($autostart);
-	let localTimeEntriesDisplayMode = $state($timeEntriesDisplayMode);
 	let appVersion = $state('');
 	let showLogoutConfirm = $state(false);
 
@@ -63,12 +62,6 @@
 
 	let themes = $derived([...builtInThemes, ...Object.keys($customThemes), 'custom']);
 
-	const timeEntriesDisplayModes = [
-		{ value: 'window', label: 'New Window/Tab' },
-		{ value: 'modal', label: 'Modal Dialog' },
-		// Future options can be added here
-	];
-
 	// Preview theme
 	$effect(() => {
 		if (enablePreview && localTheme && localTheme !== $theme) {
@@ -105,7 +98,6 @@
 		minimizeToTray.set(localMinimizeToTray);
 		closeToTray.set(localCloseToTray);
 		autostart.set(localAutostart);
-		timeEntriesDisplayMode.set(localTimeEntriesDisplayMode);
 		try {
 			if (localAutostart) {
 				await enable();
@@ -199,19 +191,6 @@
 					<input type="checkbox" bind:checked={localAutostart} class="checkbox" />
 				</label>
 			</div>
-		</div>
-
-
-
-		<div class="form-control">
-			<label class="label" for="timeEntriesDisplayMode">
-				<span class="label-text">Time Entries Display Mode</span>
-			</label>
-			<select id="timeEntriesDisplayMode" bind:value={localTimeEntriesDisplayMode} class="select select-bordered">
-				{#each timeEntriesDisplayModes as mode}
-					<option value={mode.value}>{mode.label}</option>
-				{/each}
-			</select>
 		</div>
 
 		{#if Object.keys($customThemes).length > 0}

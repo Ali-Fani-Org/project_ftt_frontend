@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { Clock, BarChart3, FileText, Settings, Sun, Moon, LogOut } from '@lucide/svelte';
-  import { user, logout, theme } from '$lib/stores';
+  import { Clock, BarChart3, FileText, Settings, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Menu } from '@lucide/svelte';
+  import { user, logout, theme, sidebarCollapsed } from '$lib/stores';
+  import UserInfoModal from './UserInfoModal.svelte';
   import { getAuthContext } from './auth-context';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -19,6 +20,18 @@
   let isAltPressed = $state(false);
   let isHoveringAvatar = $state(false);
   let showEasterEgg = $state(false);
+
+  // Sidebar state - using the new persistent store
+  let isCollapsed = $state(get(sidebarCollapsed));
+  let isMobile = $state(false);
+
+  // Subscribe to sidebar collapsed state changes
+  $effect(() => {
+    const unsubscribe = sidebarCollapsed.subscribe((value) => {
+      isCollapsed = value;
+    });
+    return unsubscribe;
+  });
 
   // Update time every second
   onMount(() => {
@@ -41,6 +54,19 @@
     updateDateTime();
     const timer = setInterval(updateDateTime, 1000);
     
+    // Check if mobile
+    const checkMobile = () => {
+      isMobile = window.innerWidth < 768; // md breakpoint
+      // Auto-expand on mobile if collapsed
+      if (isMobile && isCollapsed) {
+        sidebarCollapsed.set(false);
+      }
+    };
+    
+    // Initial check
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
     // Keyboard event listeners for Alt key easter egg
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Alt') {
@@ -62,6 +88,7 @@
     
     return () => {
       clearInterval(timer);
+      window.removeEventListener('resize', checkMobile);
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('keyup', handleKeyUp);
     };
@@ -70,6 +97,11 @@
   // Update easter egg visibility based on Alt key and hover state
   function updateEasterEggState() {
     showEasterEgg = isAltPressed && isHoveringAvatar;
+  }
+
+  // Sidebar toggle function
+  function toggleSidebar() {
+    sidebarCollapsed.set(!isCollapsed);
   }
 
   // Theme toggle function
@@ -124,6 +156,19 @@
 
   let currentPath = $derived($page.url.pathname);
 
+  // Return true if the current path represents or starts with the given href
+  function normalizePath(path: string) {
+    if (!path) return '/';
+    return path.replace(/\/+$/, '') || '/';
+  }
+
+  function isActivePath(href: string) {
+    const cp = normalizePath(currentPath || '');
+    const h = normalizePath(href);
+    if (cp === h) return true;
+    return h !== '/' && cp.startsWith(h + '/');
+  }
+
   function navigate(href: string) {
     goto(href);
     // Drawer will automatically close on mobile after navigation due to the overlay click
@@ -154,19 +199,32 @@
     updateEasterEggState();
   }
 
-  // Get user display name for upper section (first + last, or username if missing)
-  function getUserDisplayName() {
+  // Get separate first and last names for line-by-line display
+  function getFirstName() {
     const currentUser = get(user);
-    if (currentUser?.first_name && currentUser?.last_name) {
-      return `${currentUser.first_name} ${currentUser.last_name}`;
-    }
-    return currentUser?.username || 'User';
+    return currentUser?.first_name || '';
   }
 
-  // Get username for bottom section
+  function getLastName() {
+    const currentUser = get(user);
+    return currentUser?.last_name || '';
+  }
+
+  // Get username for bottom section (always show username)
   function getUsername() {
     const currentUser = get(user);
-    return currentUser?.username || 'user@example.com';
+    return currentUser?.username || '';
+  }
+
+  // Modal state for user info
+  let showUserModal = $state(false);
+
+  function openUserModal() {
+    showUserModal = true;
+  }
+
+  function closeUserModal() {
+    showUserModal = false;
   }
 </script>
 
@@ -175,95 +233,152 @@
   <!-- Overlay for closing drawer -->
   <label for="app-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
   
-  <!-- Sidebar content with proper width -->
-  <div class="flex min-h-full w-80 flex-col items-start bg-base-200 transition-all duration-300">
-    <!-- Sidebar header with app name -->
-    <div class="p-4 border-b border-base-300 w-full">
-      <h2 class="text-xl font-bold text-primary">Time Tracker</h2>
+  <!-- Sidebar content with dynamic width -->
+  <div class="flex min-h-full flex-col items-start bg-base-200 transition-all duration-300 ease-in-out {isCollapsed ? 'w-16' : 'w-80'}">
+    <!-- Sidebar header with app name and toggle button -->
+    <div class="p-4 border-b border-base-300 w-full flex items-center {isCollapsed ? 'justify-center' : 'justify-between'}">
+      {#if !isCollapsed}
+        <h2 class="text-xl font-bold text-primary truncate">Time Tracker</h2>
+      {/if}
+      
+      <!-- Toggle button (always visible) -->
+      <button
+        class="btn btn-ghost {isCollapsed ? 'mx-auto' : ''}"
+        onclick={toggleSidebar}
+        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {#if isCollapsed}
+          <Menu class="w-4 h-4" />
+        {:else}
+          <ChevronLeft class="w-4 h-4" />
+        {/if}
+      </button>
     </div>
     
     <!-- Navigation -->
     <ul class="menu w-full grow p-2 space-y-1">
       {#each navItems as item}
-        <li>
+        <li class="{isActivePath(item.href) ? 'active' : ''} hover:bg-transparent">
+          <!--
+            Important: don't set hover styles on already-selected nav items.
+            When an item is selected we apply `bg-primary text-primary-content`,
+            and hover classes like `hover:bg-base-300` will override that on hover
+            and break the visual theme. We only apply the hover effect for
+            non-selected items below.
+          -->
           <button
-            class="flex items-center space-x-3 rounded-lg transition-colors {currentPath === item.href ? 'bg-primary text-primary-content' : 'hover:bg-base-300'}"
+            aria-current={isActivePath(item.href) ? 'page' : undefined}
+            class="flex items-center rounded-lg transition-all duration-200 {isActivePath(item.href) ? 'bg-primary text-primary-content hover:bg-primary hover:text-primary-content' : 'hover:bg-base-300'} {isCollapsed ? 'justify-center px-2 w-full' : 'px-3 space-x-3'}"
             onclick={() => navigate(item.href)}
-            title={currentPath === item.href ? '' : item.name}
+            title={isCollapsed ? item.name : (isActivePath(item.href) ? '' : item.name)}
+            aria-label={item.name}
           >
-            <svelte:component this={item.icon} class="w-5 h-5 flex-shrink-0" />
-            <span class="font-medium">{item.name}</span>
-          </button>
+            <item.icon class="w-5 h-5 flex-shrink-0" />
+            {#if !isCollapsed}
+              <span class="font-medium truncate">{item.name}</span>
+            {/if}
         </li>
       {/each}
     </ul>
 
     <!-- User profile section at bottom -->
     <div class="p-4 border-t border-base-300 bg-base-200 w-full">
-      <!-- Date/Time widget -->
-      <div class="mb-3 flex flex-col items-start text-xs text-base-content/70">
-        <span class="font-medium">{currentDate}</span>
-        <span class="font-mono">{formatTime(currentTime)} {getTimezoneAbbr()}</span>
-      </div>
+      {#if !isCollapsed}
 
-      <div class="flex items-center space-x-3 mb-3">
-        <!-- User Avatar with Easter Egg -->
-        <div class="avatar placeholder relative">
-          {#if $user?.profile_image}
-            <div class="bg-neutral text-neutral-content rounded-full w-10 h-10">
+
+        <!-- User section using DaisyUI card with image on side -->
+        <button
+          type="button"
+          class="card card-side bg-base-100 shadow-xl w-full mb-3 bg-transparent border-0 p-0"
+          onclick={openUserModal}
+          aria-label="Open profile"
+        >
+          <!-- User Avatar -->
+          <figure >
+            {#if $user?.profile_image}
               <img 
                 src={$user.profile_image} 
                 alt="Profile" 
-                class="rounded-full w-10 h-10 object-cover transition-all duration-200 {showEasterEgg ? 'scale-[2.5] translate-x-32 -translate-y-32 z-50' : 'scale-100 translate-x-0 translate-y-0'}" 
+                class="rounded-full w-20 h-20 object-cover"
+              />
+            {:else}
+              <div class="w-20 h-20 rounded-full overflow-hidden">
+                {@html getUserAvatar()}
+              </div>
+            {/if}
+          </figure>
+          
+          <!-- User Info -->
+          <div class="card-body">
+            {#if getFirstName() && getLastName()}
+              <h2 class="card-title text-sm font-medium">{getFirstName()} {getLastName()}</h2>
+            {:else if getFirstName()}
+              <h2 class="card-title text-sm font-medium">{getFirstName()}</h2>
+            {:else if getLastName()}
+              <h2 class="card-title text-sm font-medium">{getLastName()}</h2>
+            {:else}
+              <h2 class="card-title text-sm font-medium">User</h2>
+            {/if}
+            {#if getUsername()}
+              <p class="card-title  text-xs text-base-content/60">{getUsername()}</p>
+            {/if}
+          </div>
+        </button>
+        
+        <!-- Expanded: Horizontal layout -->
+        <!-- Removed duplicated theme logout buttons per UX request -->
+        <!-- User section -->
+
+        
+        <!-- Expanded: Horizontal layout -->
+        <!-- Removed duplicated theme logout buttons per UX request -->
+                 <!-- Date/Time widget - hidden when collapsed -->
+        <!-- <div class="mb-3 flex flex-col items-start text-xs text-base-content/70">
+          <span class="font-medium">{currentDate}</span>
+          <span class="font-mono">{formatTime(currentTime)} {getTimezoneAbbr()}</span>
+        </div> -->
+      {:else}
+        <!-- Collapsed: Compact vertical layout -->
+        <button
+          type="button"
+          class="flex flex-col items-center space-y-3 w-full bg-transparent border-0 p-0"
+          onclick={openUserModal}
+          aria-label="Open profile"
+        >
+          <!-- User Avatar with Easter Egg - Smaller when collapsed -->
+          <div class="avatar placeholder relative">
+            {#if $user?.profile_image}
+              <div class="bg-neutral text-neutral-content rounded-full w-5 h-5">
+                <img 
+                  src={$user.profile_image} 
+                  alt="Profile" 
+                  class="rounded-full object-cover transition-all duration-200 {showEasterEgg ? 'scale-[3] translate-x-16 -translate-y-16 z-50' : 'scale-100 translate-x-0 translate-y-0'} w-5 h-5" 
+                  onmouseenter={handleAvatarMouseEnter}
+                  onmouseleave={handleAvatarMouseLeave}
+                />
+              </div>
+            {:else}
+              <!-- Theme-aware Dicebear Avatar with Easter Egg -->
+              <div 
+                class="transition-all duration-200 {showEasterEgg ? 'scale-[3] translate-x-16 -translate-y-16 z-50' : 'scale-100 translate-x-0 translate-y-0'} w-5 h-5"
+                role="img"
+                aria-hidden="true"
                 onmouseenter={handleAvatarMouseEnter}
                 onmouseleave={handleAvatarMouseLeave}
-              />
-            </div>
-          {:else}
-            <!-- Theme-aware Dicebear Avatar with Easter Egg -->
-            <div 
-              class="w-10 h-10 transition-all duration-200 {showEasterEgg ? 'scale-[2.5] translate-x-32 -translate-y-32 z-50' : 'scale-100 translate-x-0 translate-y-0'}"
-              onmouseenter={handleAvatarMouseEnter}
-              onmouseleave={handleAvatarMouseLeave}
-            >
-              {@html getUserAvatar()}
-            </div>
-          {/if}
-        </div>
-        
-        <!-- User Info -->
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm truncate">{getUserDisplayName()}</div>
-          <div class="text-xs text-base-content/60 truncate">{getUsername()}</div>
-        </div>
-      </div>
-      
-      <!-- Theme toggle and Logout -->
-      <div class="flex space-x-2">
-        <button 
-          class="btn btn-square btn-ghost flex-1" 
-          onclick={toggleTheme}
-          aria-label="Toggle theme"
-          title="Toggle {get(theme) === 'dark' ? 'light' : 'dark'} mode"
-        >
-          {#if $theme === 'dark'}
-            <Sun class="w-5 h-5" />
-          {:else}
-            <Moon class="w-5 h-5" />
-          {/if}
+              >
+                {@html getUserAvatar()}
+              </div>
+            {/if}
+          </div>
+          <!-- Duplicated theme/logout buttons removed per UX request -->
         </button>
-
-        <!-- Logout Button -->
-        <button 
-          class="btn btn-ghost btn-sm flex-1 justify-start text-error hover:bg-error hover:text-error-content"
-          onclick={handleLogout}
-        >
-          <LogOut class="w-4 h-4 mr-2" />
-          Logout
-        </button>
-      </div>
+      {/if}
     </div>
   </div>
+  {#if showUserModal}
+    <UserInfoModal show={showUserModal} on:close={closeUserModal} />
+  {/if}
 </div>
 
 <style>
@@ -284,10 +399,55 @@
     z-index: 50;
   }
 
+  .scale-\[3\] {
+    transform: scale(3);
+    z-index: 50;
+  }
+
   /* Smooth transitions for easter egg including movement */
   .transition-all {
     transition-property: transform;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     transition-duration: 200ms;
+  }
+
+  /* Custom width transitions */
+  .transition-all.duration-300 {
+    transition-property: width, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 300ms;
+  }
+
+  /* Ensure smooth text transitions */
+  .transition-all {
+    transition-property: transform, width, opacity, margin, padding;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 200ms;
+  }
+
+  /* Fix navigation items alignment in collapsed state */
+  .menu li button {
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  /* Spacing/alignment handled by vendor utilities (Tailwind/daisyUI) */
+
+  /* Ensure avatars maintain proper aspect ratio */
+  .avatar > div {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Force perfectly square buttons in collapsed state */
+  /* `.btn-square` is no longer needed in this component - kept globally by daisyUI */
+
+  /* Ensure icons are perfectly centered */
+  .flex.items-center.justify-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 </style>

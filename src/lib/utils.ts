@@ -23,7 +23,7 @@ export function generateDicebearAvatar(username: string, theme: string = 'light'
     // Create avatar using Adventurer style with username as seed and theme-appropriate background
     const avatar = createAvatar(croodles, {
       seed: username || 'user',
-      size: 40, // Small size for sidebar usage
+      size: 80, // Small size for sidebar usage
       backgroundColor: backgroundColor,
     });
 
