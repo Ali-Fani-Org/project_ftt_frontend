@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "1.1.2"
+version = "1.1.4"
 description = "A modern, cross-platform desktop time tracking application built with Tauri, Svelte, and Rust."
 license = "MIT"
 edition = "2021"

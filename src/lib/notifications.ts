@@ -13,6 +13,13 @@ export interface NotificationData {
   delivered_at: string | null;
 }
 
+export interface LongPollResponse {
+  status: 'immediate' | 'new_notification' | 'timeout';
+  notifications: NotificationData[];
+  has_new_notifications: boolean;
+  message?: string;
+}
+
 export interface NotificationService {
   connect(): Promise<void>;
   disconnect(): void;
@@ -23,19 +30,21 @@ export interface NotificationService {
 
 /**
  * Notification service that works only in Tauri environment
- * Connects to SSE endpoint and shows native notifications
+ * Uses long polling to receive notifications via HTTP requests
  */
 class TauriNotificationService implements NotificationService {
-  private abortController: AbortController | null = null;
+  private pollController: AbortController | null = null;
   isConnecting = false;
   private connected = false;
   private serviceId = Math.random().toString(36).substr(2, 9);
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private connectionStartTime: number | null = null;
-  private connectionTimeout: number = 10000; // 10 second timeout for Cloudflare
+  private pollTimeout: number = 30; // 30 second timeout as recommended
+  private pollInterval: number = 1000; // 1 second delay between polls when no notifications
   private timeoutHandle: any = null;
   private lastError: string | null = null;
+  private isPolling = false;
 
   constructor() {
     // Only initialize in browser environment
@@ -59,13 +68,11 @@ class TauriNotificationService implements NotificationService {
     this.connectionStartTime = Date.now();
     this.lastError = null;
     
-    console.log(`[NotificationService ${this.serviceId}] Starting connection attempt at ${this.connectionStartTime}`);
-
-    let connectionError = false;
+    console.log(`[NotificationService ${this.serviceId}] Starting long polling connection at ${this.connectionStartTime}`);
 
     try {
       const token = get(authToken);
-      const base = get(baseUrl);
+      const base = get(baseUrl) as string;
 
       console.log(`[NotificationService ${this.serviceId}] Token available: ${!!token}, Base URL: ${base}`);
 
@@ -76,151 +83,117 @@ class TauriNotificationService implements NotificationService {
         return;
       }
 
-      // Create abort controller for this connection
-      this.abortController = new AbortController();
+      // Create abort controller for this polling session
+      this.pollController = new AbortController();
       
-      // Set up timeout to detect Cloudflare blocking
-      this.setupConnectionTimeout();
-      
-      // Create SSE connection with proper Authorization header using fetch
-      const url = `${base}/api/notifications/sse/`;
-      
-      console.log(`[NotificationService ${this.serviceId}] Connecting to SSE URL: ${url}`);
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Token ${token}`,
-          'Accept': 'text/event-stream'
-        },
-        signal: this.abortController.signal
-      });
-
-      // Clear timeout if we got a response
-      this.clearConnectionTimeout();
-
-      console.log(`[NotificationService ${this.serviceId}] Response status: ${response.status}, statusText: ${response.statusText}`);
-
-      // Handle Cloudflare-specific error codes
-      if (response.status === 408) {
-        throw new Error(`Cloudflare timeout - SSE connection timed out after ${this.connectionTimeout}ms`);
-      }
-      
-      if (response.status === 499) {
-        throw new Error(`Cloudflare proxy timeout - connection closed by proxy`);
-      }
-      
-      if (response.status === 502 || response.status === 503 || response.status === 504) {
-        throw new Error(`Cloudflare proxy error - ${response.status} ${response.statusText}`);
-      }
-
-      if (!response.ok) {
-        // Check if this is likely a Cloudflare block
-        if (response.status === 403 || response.status === 429) {
-          throw new Error(`Possible Cloudflare blocking - ${response.status} ${response.statusText}. Check Cloudflare Security settings.`);
-        }
-        throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
-      }
-
-      if (!response.body) {
-        throw new Error('SSE response has no body');
-      }
-
-      console.log(`[NotificationService ${this.serviceId}] ✅ SSE connection opened successfully`);
+      console.log(`[NotificationService ${this.serviceId}] ✅ Long polling connection established`);
       this.connected = true;
       this.isConnecting = false;
       this.reconnectAttempts = 0;
 
-      // Set up event handling for the readable stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) {
-            console.log(`[NotificationService ${this.serviceId}] SSE stream completed`);
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          
-          // Keep the last incomplete line in buffer
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              
-              if (data === '[DONE]') {
-                console.log(`[NotificationService ${this.serviceId}] SSE stream ended`);
-                return;
-              }
-              
-              if (data.trim()) {
-                console.log(`[NotificationService ${this.serviceId}] 📨 Received SSE message:`, data);
-                try {
-                  const notification: NotificationData = JSON.parse(data);
-                  console.log(`[NotificationService ${this.serviceId}] 🔔 Parsed notification:`, notification);
-                  
-                  // Show native notification via Tauri command
-                  await this.showNotification(notification);
-                  
-                  // Acknowledge the notification
-                  await this.acknowledgeNotification(notification.id);
-                  
-                } catch (error) {
-                  console.error(`[NotificationService ${this.serviceId}] ❌ Failed to parse notification data:`, error);
-                  console.error(`[NotificationService ${this.serviceId}] Raw event data:`, data);
-                }
-              }
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
+      // Start the polling loop
+      this.startPolling(token, base);
 
     } catch (error: any) {
-      connectionError = true;
       const elapsed = this.connectionStartTime ? Date.now() - this.connectionStartTime : 0;
       
       if (error.name === 'AbortError') {
-        console.log(`[NotificationService ${this.serviceId}] SSE connection aborted`);
-      } else if (error.message && error.message.includes('Cloudflare')) {
-        // Handle Cloudflare-specific errors
-        this.lastError = error.message;
-        console.error(`[NotificationService ${this.serviceId}] ❌ Cloudflare SSE error after ${elapsed}ms:`, error.message);
+        console.log(`[NotificationService ${this.serviceId}] Long polling connection aborted`);
       } else {
-        // Handle general connection errors
         this.lastError = error.message || 'Unknown connection error';
-        console.error(`[NotificationService ${this.serviceId}] ❌ Failed to connect to notification SSE after ${elapsed}ms:`, error);
+        console.error(`[NotificationService ${this.serviceId}] ❌ Failed to start long polling after ${elapsed}ms:`, error);
       }
       
+      this.connected = false;
+      this.isConnecting = false;
       this.handleReconnect();
     } finally {
-      this.isConnecting = false;
       this.connectionStartTime = null;
-      this.clearConnectionTimeout();
-      
-      // Only reset connection state if there was an actual error
-      // If the stream ended normally, keep the connection state
-      if (connectionError) {
-        this.connected = false;
-      }
     }
+  }
+
+  private async startPolling(token: string, base: string): Promise<void> {
+    if (this.isPolling) return;
+    this.isPolling = true;
+
+    const pollOnce = async (): Promise<void> => {
+      if (!this.connected || !this.pollController) return;
+
+      try {
+        console.log(`[NotificationService ${this.serviceId}] 🔄 Polling for notifications...`);
+        
+        const url = `${base}/api/notifications/long-poll/?timeout=${this.pollTimeout}`;
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Token ${token}`,
+            'Content-Type': 'application/json'
+          },
+          signal: this.pollController.signal
+        });
+
+        if (!response.ok) {
+          throw new Error(`Long polling failed: ${response.status} ${response.statusText}`);
+        }
+
+        const data: LongPollResponse = await response.json();
+        
+        console.log(`[NotificationService ${this.serviceId}] 📨 Received poll response:`, {
+          status: data.status,
+          has_new_notifications: data.has_new_notifications,
+          notification_count: data.notifications.length
+        });
+
+        // Handle different response types
+        if (data.has_new_notifications && data.notifications.length > 0) {
+          for (const notification of data.notifications) {
+            console.log(`[NotificationService ${this.serviceId}] 🔔 Processing notification:`, notification);
+            
+            // Show native notification via Tauri command
+            await this.showNotification(notification);
+            
+            // Acknowledge the notification
+            await this.acknowledgeNotification(notification.id);
+          }
+          
+          // Continue polling immediately for more notifications
+          setTimeout(pollOnce, 0);
+        } else {
+          // No new notifications, wait and poll again
+          setTimeout(pollOnce, this.pollInterval);
+        }
+
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          console.log(`[NotificationService ${this.serviceId}] Polling aborted`);
+          return;
+        }
+        
+        this.lastError = error.message || 'Polling error';
+        console.error(`[NotificationService ${this.serviceId}] ❌ Polling error:`, error);
+        
+        // Stop polling on error
+        this.isPolling = false;
+        this.connected = false;
+        
+        // Trigger reconnection
+        this.handleReconnect();
+      }
+    };
+
+    // Start the first poll
+    pollOnce();
   }
 
   disconnect(): void {
     console.log(`[NotificationService ${this.serviceId}] disconnect() called`);
-    this.clearConnectionTimeout();
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
-      console.log(`[NotificationService ${this.serviceId}] SSE connection aborted`);
+    this.isPolling = false;
+    
+    if (this.pollController) {
+      this.pollController.abort();
+      this.pollController = null;
+      console.log(`[NotificationService ${this.serviceId}] Long polling connection aborted`);
     }
     this.connected = false;
     this.isConnecting = false;
@@ -319,12 +292,13 @@ class TauriNotificationService implements NotificationService {
     console.log(`[NotificationService ${this.serviceId}] 🔄 handleReconnect() called, attempts: ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
     this.connected = false;
     this.isConnecting = false;
+    this.isPolling = false;
     
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       
-      // Cloudflare-specific delay - longer initial delays to avoid overwhelming proxy
-      const delay = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), 60000); // Max 60 seconds
+      // Exponential backoff for reconnection attempts
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000); // Max 30 seconds
       
       console.log(`[NotificationService ${this.serviceId}] ⏰ Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
       
@@ -334,31 +308,7 @@ class TauriNotificationService implements NotificationService {
       }, delay);
     } else {
       console.error(`[NotificationService ${this.serviceId}] 🚫 Max reconnection attempts reached. Giving up.`);
-    }
-  }
-
-  private setupConnectionTimeout(): void {
-    this.clearConnectionTimeout();
-    
-    this.timeoutHandle = setTimeout(() => {
-      const elapsed = Date.now() - (this.connectionStartTime || Date.now());
-      console.error(`[NotificationService ${this.serviceId}] ❌ Connection timeout after ${elapsed}ms (Cloudflare likely blocking SSE)`);
-      
-      this.lastError = `Connection timeout - Cloudflare may be blocking SSE connections. Check Cloudflare configuration.`;
-      this.abortController?.abort();
-      this.isConnecting = false;
-      this.connected = false;
-      this.connectionStartTime = null;
-      
-      // Trigger reconnection with error information
-      this.handleReconnect();
-    }, this.connectionTimeout) as any;
-  }
-
-  private clearConnectionTimeout(): void {
-    if (this.timeoutHandle) {
-      clearTimeout(this.timeoutHandle);
-      this.timeoutHandle = null;
+      this.lastError = 'Max reconnection attempts reached. Please check your network connection.';
     }
   }
 
