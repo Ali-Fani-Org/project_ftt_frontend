@@ -1,67 +1,11 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { user, logout, theme } from '$lib/stores';
   import { get } from 'svelte/store';
-  import { generateDicebearAvatar } from './utils';
-  import { onMount, onDestroy } from 'svelte';
-  import { auth } from './api';
-
-  const dispatch = createEventDispatcher();
-  let { show = $bindable(false) }: { show?: boolean } = $props();
-
-  function close() {
-    dispatch('close');
-  }
-
-  onMount(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  });
-
-  // Remove vailed settings button - user can edit in the modal
-
-  function doLogout() {
-    close();
-    logout();
-  }
-
-  function confirmLogout() {
-    showLogoutConfirm = true;
-  }
-
-  function cancelLogout() {
-    showLogoutConfirm = false;
-  }
-
-  // Get user display name for upper section (always first + last names)
-  function getUserDisplayName() {
-    const u = get(user);
-    if (!u) return 'User';
-    if (u.first_name && u.last_name) {
-      return `${u.first_name} ${u.last_name}`;
-    } else if (u.first_name) {
-      return u.first_name;
-    } else if (u.last_name) {
-      return u.last_name;
-    }
-    return u.username || 'User';
-  }
-
-  // Get username for bottom section (always show username)
-  function getUserUsername() {
-    const u = get(user);
-    return u?.username || '';
-  }
-
-  function getAvatarSvg() {
-    const u = get(user);
-    const currentTheme = get(theme);
-    if (u?.profile_image) return '';
-    return generateDicebearAvatar(u?.username || 'user', currentTheme);
-  }
+  import { generateDicebearAvatar } from '$lib/utils';
+  import { onMount } from 'svelte';
+  import { auth } from '$lib/api';
+  import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
 
   // Editable form state
   let firstName = $state('');
@@ -95,6 +39,33 @@
     }
   });
 
+  // Get user display name for upper section (always first + last names)
+  function getUserDisplayName() {
+    const u = get(user);
+    if (!u) return 'User';
+    if (u.first_name && u.last_name) {
+      return `${u.first_name} ${u.last_name}`;
+    } else if (u.first_name) {
+      return u.first_name;
+    } else if (u.last_name) {
+      return u.last_name;
+    }
+    return u.username || 'User';
+  }
+
+  // Get username for bottom section (always show username)
+  function getUserUsername() {
+    const u = get(user);
+    return u?.username || '';
+  }
+
+  function getAvatarSvg() {
+    const u = get(user);
+    const currentTheme = get(theme);
+    if (u?.profile_image) return '';
+    return generateDicebearAvatar(u?.username || 'user', currentTheme);
+  }
+
   async function save(event?: Event) {
     event?.preventDefault();
     error = '';
@@ -113,7 +84,7 @@
         form.append('profile_image', '');
       }
       const resp = await auth.updateUserForm(form);
-      // Update store and close modal
+      // Update store
       user.set(resp);
       // show success toast
       toastMessage = 'Profile updated';
@@ -133,8 +104,6 @@
       profileImageUrl = resp.profile_image || '';
       profileImagePreview = profileImageUrl || (profileImageFile ? profileImagePreview : '');
       profileImageFile = null;
-      // small delay to show success
-      // don't close the modal on update; keep it open and show success message
     } catch (err) {
       console.error(err);
       const msg = 'Failed to update profile';
@@ -164,59 +133,71 @@
       removeAvatar = false;
     }
   }
+
+  function doLogout() {
+    logout();
+    goto('/login');
+  }
+
+  function confirmLogout() {
+    showLogoutConfirm = true;
+  }
+
+  function cancelLogout() {
+    showLogoutConfirm = false;
+  }
 </script>
 
-{#if show}
-  <div class="modal modal-open" role="dialog" aria-modal="true">
-    <div class="modal-box max-w-xl">
-      <div class="flex items-start justify-between mb-6">
-        <div>
-          <h3 class="text-lg font-bold">Profile</h3>
-          <p class="text-sm text-base-content/60 mt-1">Account information</p>
-        </div>
-        <button class="btn btn-sm btn-circle btn-ghost" aria-label="Close profile" onclick={close}>✕</button>
-      </div>
+<div class="container mx-auto p-4 lg:p-8">
+  <!-- Page Header -->
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-primary">Profile</h1>
+    <p class="text-base-content/70">Manage your account information</p>
+  </div>
 
-      <div class="flex items-center gap-4">
+  <div class="card bg-base-100 shadow-xl max-w-4xl mx-auto">
+    <div class="card-body p-8">
+
+      <div class="flex items-center gap-6 mb-8">
         <div class="avatar">
           {#if !removeAvatar && (profileImagePreview || profileImageUrl || $user?.profile_image)}
-            <div class="w-16 h-16 rounded-full overflow-hidden bg-neutral">
+            <div class="w-24 h-24 rounded-full overflow-hidden bg-neutral">
               <img src={(profileImagePreview || profileImageUrl || $user?.profile_image)} alt="Profile" />
             </div>
           {:else}
-            <div class="w-16 h-16 rounded-full overflow-hidden">
+            <div class="w-24 h-24 rounded-full overflow-hidden">
               {@html getAvatarSvg()}
             </div>
           {/if}
         </div>
 
         <div class="flex-1">
-          <div class="font-semibold text-lg truncate">{getUserDisplayName()}</div>
-          <div class="text-sm text-base-content/60 truncate">{getUserUsername()}</div>
+          <div class="font-semibold text-2xl truncate">{getUserDisplayName()}</div>
+          <div class="text-base text-base-content/70 truncate mt-1">{getUserUsername()}</div>
         </div>
       </div>
 
-      <div class="divider my-4"></div>
+      <div class="divider"></div>
 
-      <form class="space-y-4" onsubmit={save}>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
+      <form class="space-y-8" onsubmit={save}>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
             <label class="label" for="firstName">
-              <span class="label-text">First name</span>
+              <span class="label-text font-medium text-base">First name</span>
             </label>
-            <input id="firstName" type="text" class="input input-bordered w-full" bind:value={firstName} />
+            <input id="firstName" type="text" class="input input-bordered" bind:value={firstName} />
           </div>
-          <div>
+          <div class="form-control">
             <label class="label" for="lastName">
-              <span class="label-text">Last name</span>
+              <span class="label-text font-medium text-base">Last name</span>
             </label>
-            <input id="lastName" type="text" class="input input-bordered w-full" bind:value={lastName} />
+            <input id="lastName" type="text" class="input input-bordered" bind:value={lastName} />
           </div>
         </div>
 
-        <div>
+        <div class="form-control">
           <label class="label" for="profileImageFile">
-            <span class="label-text">Profile image (file)</span>
+            <span class="label-text font-medium text-base">Profile image</span>
           </label>
           <input id="profileImageFile" type="file" accept="image/*" class="file-input file-input-bordered w-full" onchange={handleFileChange} />
           {#if profileImageFile}
@@ -238,36 +219,38 @@
             </div>
           {/if}
         </div>
-      </form>
 
-      
-      {#if showToast}
-        <div class="fixed right-4 top-4 z-50">
-          <div class="toast">
-            {#if toastType === 'success'}
-              <div class="alert alert-success">
-                <div>
-                  <span>{toastMessage}</span>
-                </div>
-              </div>
-            {:else}
-              <div class="alert alert-error">
-                <div>
-                  <span>{toastMessage}</span>
-                </div>
-              </div>
-            {/if}
+        {#if error}
+          <div class="alert alert-error">
+            <span>{error}</span>
           </div>
+        {/if}
+
+        <div class="flex flex-col sm:flex-row gap-4">
+          <button class="btn btn-primary" onclick={save} disabled={loading || (firstName === origFirstName && lastName === origLastName && !profileImageFile && !removeAvatar)} type="submit">
+            {loading ? 'Saving...' : 'Save Changes'}
+          </button>
+          <button class="btn btn-error" onclick={confirmLogout} type="button">
+            Logout
+          </button>
         </div>
-      {/if}
-      <div class="modal-action">
-        <button class="btn" onclick={close} type="button">Cancel</button>
-        <button class="btn btn-primary" onclick={save} disabled={loading || (firstName === origFirstName && lastName === origLastName && !profileImageFile && !removeAvatar)} type="button">{loading ? 'Saving...' : 'Save'}</button>
-        <button class="btn btn-error" onclick={confirmLogout} type="button">Logout</button>
-      </div>
+      </form>
     </div>
-    <!-- Backdrop click to close (optional) -->
-    <form method="dialog" class="modal-backdrop"><button onclick={close}>close</button></form>
+  </div>
+</div>
+
+<!-- Success/Error Toast -->
+{#if showToast}
+  <div class="toast toast-top toast-end z-50">
+    {#if toastType === 'success'}
+      <div class="alert alert-success">
+        <span>{toastMessage}</span>
+      </div>
+    {:else}
+      <div class="alert alert-error">
+        <span>{toastMessage}</span>
+      </div>
+    {/if}
   </div>
 {/if}
 

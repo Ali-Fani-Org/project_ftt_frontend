@@ -1,5 +1,7 @@
 mod commands;
 mod constants;
+mod sound_manager;
+mod notification_manager;
 use commands::*;
 use constants::*;
 
@@ -9,6 +11,7 @@ use tauri::Manager;
 use tauri::Emitter;
 use user_idle::UserIdle;
 use tokio::time::{interval, Duration};
+use notification_manager::NotificationManager;
 
 fn create_tray(app: &tauri::AppHandle) {
     // Create menu
@@ -61,6 +64,20 @@ impl IdleMonitorState {
         Self {
             last_idle_state: false,
             session_start: std::time::Instant::now(),
+        }
+    }
+}
+
+// Notification manager state
+#[derive(Clone)]
+struct NotificationManagerState {
+    manager: NotificationManager,
+}
+
+impl NotificationManagerState {
+    fn new() -> Self {
+        Self {
+            manager: NotificationManager::new(),
         }
     }
 }
@@ -152,6 +169,22 @@ pub fn run() {
              // Create tray
              create_tray(&app.handle());
              
+             // Initialize notification manager
+             let notification_manager_state = NotificationManagerState::new();
+             app.manage(notification_manager_state.clone());
+             
+             // Initialize notification channels
+             let app_handle = app.handle().clone();
+             let mut notification_manager = notification_manager_state.manager;
+             tauri::async_runtime::spawn(async move {
+                 println!("🚀 Starting notification channel initialization...");
+                 if let Err(e) = notification_manager.initialize_channels(&app_handle).await {
+                     println!("❌ Warning: Failed to initialize notification channels: {}", e);
+                 } else {
+                     println!("✅ Notification channel initialization completed");
+                 }
+             });
+             
              // Start background idle monitor
              let app_handle = app.handle().clone();
              tauri::async_runtime::spawn(async move {
@@ -160,7 +193,7 @@ pub fn run() {
 
              Ok(())
          })
-        .invoke_handler(tauri::generate_handler![greet, get_timer_state, stop_timer, get_processes, toggle_devtools, get_idle_status, get_idle_time, is_user_idle, create_activity_log, show_notification])
+        .invoke_handler(tauri::generate_handler![greet, get_timer_state, stop_timer, get_processes, toggle_devtools, get_idle_status, get_idle_time, is_user_idle, create_activity_log, show_notification, show_notification_with_channel, test_notification_sound, debug_sound_system, debug_notification_system])
         .on_window_event(|_window, _event| {
             // Close is handled in frontend
         })

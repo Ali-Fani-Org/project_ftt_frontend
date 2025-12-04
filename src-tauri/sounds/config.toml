@@ -1,0 +1,30 @@
+# Notification Sound Configuration
+# This file defines the mapping between notification types and sound files
+
+[settings]
+# Enable or disable notification sounds globally
+enabled = true
+
+# Default volume (0.0 to 1.0)
+default_volume = 1
+
+# Sound file paths relative to this directory
+[sounds]
+# Map notification types to sound files
+INFO = "default/info.wav"
+WARNING = "default/warning.wav"
+ERROR = "default/error.wav"
+SUCCESS = "default/success.wav"
+CRITICAL = "default/critical.wav"
+OTHER = "default/info.wav"  # Fallback for unknown types
+
+[fallbacks]
+# Fallback behavior when sound files are missing
+# If set to "generated", a beep sound will be generated programmatically
+# If set to a file path, that file will be used as fallback
+default = "generated"
+
+[experimental]
+# Future configuration options
+# custom_sounds_enabled = false
+# user_sounds_directory = "custom/"

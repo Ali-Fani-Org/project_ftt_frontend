@@ -30,6 +30,8 @@ sysinfo = "0.30"
 user-idle = "0.6.0"
 tokio = { version = "1.0", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
+rodio = "0.17"  # Cross-platform audio playback
+toml = "0.8"    # TOML configuration parsing
 
 
 # No crate-level `devtools` feature is used; devtools are controlled at runtime

@@ -150,7 +150,7 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 export const authToken = createPersistentStore<string | null>('authToken', null);
 export const user = createPersistentStore<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null } | null>('user', null);
 
-export const baseUrl = createPersistentStore<string>('baseUrl', 'http://localhost:8000');
+export const baseUrl = createPersistentStore<string>('baseUrl', 'https://tracker.afni.qzz.io');
 export const theme = createPersistentStore<string>('theme', 'light');
 export const customThemes = createPersistentStore<Record<string, Record<string, string>>>('customThemes', {});
 export const minimizeToTray = createPersistentStore<boolean>('minimizeToTray', true);

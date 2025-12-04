@@ -5,6 +5,8 @@
   import { user, timeEntriesDisplayMode, featureFlagsStore } from '$lib/stores';
   import { projects, timeEntries, type Project, type TimeEntry } from '$lib/api';
   import TasksModal from '$lib/TasksModal.svelte';
+  import Last7DaysChart from '$lib/Last7DaysChart.svelte';
+  import CalendarHeatmap from '$lib/CalendarHeatmap.svelte';
 
   let projectsList = $state<Project[]>([]);
   let recentEntries = $state<TimeEntry[]>([]);
@@ -188,8 +190,76 @@
   </div>
 
   {#if loading}
-    <div class="flex justify-center items-center min-h-[50vh]">
-      <span class="loading loading-spinner loading-lg"></span>
+    <!-- Skeleton Loading State -->
+    <div class="space-y-8">
+      <!-- Quick Stats Skeletons -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {#each Array(3) as _}
+          <div class="card bg-base-100 shadow-lg">
+            <div class="card-body">
+              <div class="flex items-center justify-between">
+                <div class="flex-1">
+                  <div class="skeleton h-4 w-24 mb-2"></div>
+                  <div class="skeleton h-8 w-16"></div>
+                </div>
+                <div class="skeleton h-12 w-12 rounded-full"></div>
+              </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      <!-- Charts Skeletons -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card shadow-lg">
+          <div class="card-body">
+            <div class="skeleton h-6 w-32 mb-4"></div>
+            <div class="skeleton h-48 w-full"></div>
+          </div>
+        </div>
+        <div class="card shadow-lg">
+          <div class="card-body">
+            <div class="skeleton h-6 w-32 mb-4"></div>
+            <div class="skeleton h-48 w-full"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity & Quick Actions Skeletons -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Recent Entries Skeleton -->
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body">
+            <div class="skeleton h-6 w-32 mb-4"></div>
+            <div class="space-y-3">
+              {#each Array(5) as _}
+                <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
+                  <div class="flex-1">
+                    <div class="skeleton h-4 w-32 mb-1"></div>
+                    <div class="skeleton h-3 w-24"></div>
+                  </div>
+                  <div class="skeleton h-6 w-12 rounded"></div>
+                </div>
+              {/each}
+            </div>
+            <div class="card-actions mt-4">
+              <div class="skeleton h-8 w-32"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions Skeleton -->
+        <div class="card bg-base-100 shadow-lg">
+          <div class="card-body">
+            <div class="skeleton h-6 w-32 mb-4"></div>
+            <div class="space-y-3">
+              {#each Array(4) as _}
+                <div class="skeleton h-12 w-full"></div>
+              {/each}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   {:else if error}
     <div class="alert alert-error">
@@ -244,6 +314,19 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <!-- Last 7 Days Chart -->
+      <div class="card shadow-lg">
+        <div class="card-body"><Last7DaysChart /></div>
+      </div>
+      
+      <!-- Calendar Heatmap -->
+      <div class="card shadow-lg">
+        <div class="card-body"><CalendarHeatmap /></div>
       </div>
     </div>
 

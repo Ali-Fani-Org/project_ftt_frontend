@@ -172,6 +172,30 @@ export const timeEntries = {
     const url = `api/time_entries/?${params.toString()}`;
     return await api.get(url).json<PaginatedTimeEntries>();
   },
+  listWithFilters: async (filters?: {
+    start_date_after?: string;
+    start_date_before?: string;
+    end_date_after?: string;
+    end_date_before?: string;
+    duration_min?: string;
+    duration_max?: string;
+    project?: number;
+    cursor?: string;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters?.start_date_after) params.append('start_date_after', filters.start_date_after);
+    if (filters?.start_date_before) params.append('start_date_before', filters.start_date_before);
+    if (filters?.end_date_after) params.append('end_date_after', filters.end_date_after);
+    if (filters?.end_date_before) params.append('end_date_before', filters.end_date_before);
+    if (filters?.duration_min) params.append('duration_min', filters.duration_min);
+    if (filters?.duration_max) params.append('duration_max', filters.duration_max);
+    if (filters?.project) params.append('project', filters.project.toString());
+    if (filters?.cursor) params.append('cursor', filters.cursor);
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    const url = `api/time_entries/?${params.toString()}`;
+    return await api.get(url).json<PaginatedTimeEntries>();
+  },
   start: async (data: { title: string; description?: string; project: number; tags?: number[] }) => {
     return await api.post('api/time_entries/', { json: data }).json<TimeEntry>();
   },

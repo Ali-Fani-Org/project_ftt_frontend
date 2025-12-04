@@ -1,0 +1,10 @@
+# Custom notification sounds directory (Future Feature)
+# This directory is reserved for user-provided custom notification sounds
+# 
+# Note: This is a placeholder for future functionality.
+# Currently, only default sounds in the 'default/' directory are supported.
+#
+# When custom sounds are implemented, users will be able to:
+# - Upload their own sound files
+# - Map custom sounds to notification types
+# - Override default sounds on a per-type basis

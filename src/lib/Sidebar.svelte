@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Clock, BarChart3, FileText, Settings, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Menu } from '@lucide/svelte';
   import { user, logout, theme, sidebarCollapsed } from '$lib/stores';
-  import UserInfoModal from './UserInfoModal.svelte';
   import { getAuthContext } from './auth-context';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -216,15 +215,8 @@
     return currentUser?.username || '';
   }
 
-  // Modal state for user info
-  let showUserModal = $state(false);
-
-  function openUserModal() {
-    showUserModal = true;
-  }
-
-  function closeUserModal() {
-    showUserModal = false;
+  function navigateToProfile() {
+    goto('/profile');
   }
 </script>
 
@@ -291,7 +283,7 @@
         <button
           type="button"
           class="card card-side bg-base-100 shadow-xl w-full mb-3 bg-transparent border-0 p-0"
-          onclick={openUserModal}
+          onclick={navigateToProfile}
           aria-label="Open profile"
         >
           <!-- User Avatar -->
@@ -327,12 +319,12 @@
         </button>
         
         <!-- Expanded: Horizontal layout -->
-        <!-- Removed duplicated theme logout buttons per UX request -->
+        <!-- Removed duplicated theme/logout buttons per UX request -->
         <!-- User section -->
 
         
         <!-- Expanded: Horizontal layout -->
-        <!-- Removed duplicated theme logout buttons per UX request -->
+        <!-- Removed duplicated theme/logout buttons per UX request -->
                  <!-- Date/Time widget - hidden when collapsed -->
         <!-- <div class="mb-3 flex flex-col items-start text-xs text-base-content/70">
           <span class="font-medium">{currentDate}</span>
@@ -343,7 +335,7 @@
         <button
           type="button"
           class="flex flex-col items-center space-y-3 w-full bg-transparent border-0 p-0"
-          onclick={openUserModal}
+          onclick={navigateToProfile}
           aria-label="Open profile"
         >
           <!-- User Avatar with Easter Egg - Smaller when collapsed -->
@@ -376,9 +368,6 @@
       {/if}
     </div>
   </div>
-  {#if showUserModal}
-    <UserInfoModal show={showUserModal} on:close={closeUserModal} />
-  {/if}
 </div>
 
 <style>

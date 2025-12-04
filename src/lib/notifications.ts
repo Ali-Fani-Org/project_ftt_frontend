@@ -72,14 +72,27 @@ class TauriNotificationService implements NotificationService {
 
     try {
       const token = get(authToken);
-      const base = get(baseUrl) as string;
+      const base = get(baseUrl);
 
       console.log(`[NotificationService ${this.serviceId}] Token available: ${!!token}, Base URL: ${base}`);
 
+      // Critical security check: Only proceed if auth token is available
       if (!token) {
-        console.warn(`[NotificationService ${this.serviceId}] No auth token available for notification connection`);
+        console.warn(`[NotificationService ${this.serviceId}] 🚫 BLOCKED: No auth token available - refusing to connect to prevent server spam`);
         this.isConnecting = false;
+        this.connected = false;
         this.connectionStartTime = null;
+        this.lastError = 'Authentication required - please log in first';
+        return;
+      }
+
+      // Additional validation
+      if (!base) {
+        console.warn(`[NotificationService ${this.serviceId}] 🚫 BLOCKED: No base URL available`);
+        this.isConnecting = false;
+        this.connected = false;
+        this.connectionStartTime = null;
+        this.lastError = 'Base URL not configured';
         return;
       }
 
@@ -134,6 +147,25 @@ class TauriNotificationService implements NotificationService {
         });
 
         if (!response.ok) {
+          // Handle authentication failures
+          if (response.status === 401) {
+            console.error(`[NotificationService ${this.serviceId}] 🚫 401 Unauthorized - clearing invalid auth token`);
+            
+            // Clear the invalid auth token to force re-authentication
+            try {
+              authToken.set(null);
+              console.log(`[NotificationService ${this.serviceId}] 🗑️ Invalid auth token cleared - user must re-authenticate`);
+            } catch (error) {
+              console.error(`[NotificationService ${this.serviceId}] ❌ Failed to clear auth token:`, error);
+            }
+            
+            // Stop polling and disconnect
+            this.connected = false;
+            this.isPolling = false;
+            this.lastError = 'Authentication expired - please log in again';
+            return;
+          }
+          
           throw new Error(`Long polling failed: ${response.status} ${response.statusText}`);
         }
 
@@ -228,14 +260,14 @@ class TauriNotificationService implements NotificationService {
         notificationType: notification.type
       });
       
-      // Show native notification - Note: The Tauri command now accepts app handle internally
+      // Show native notification using the new channel-based system
       await invoke('show_notification', {
         title: fullTitle,
         body: notification.message,
         notificationType: notification.type
       });
       
-      console.log(`[NotificationService ${this.serviceId}] ✅ Native notification shown: ${fullTitle} - ${notification.message}`);
+      console.log(`[NotificationService ${this.serviceId}] ✅ Native notification requested: ${fullTitle} - ${notification.message}`);
       
     } catch (error) {
       console.error(`[NotificationService ${this.serviceId}] ❌ Failed to show native notification:`, error);
@@ -264,6 +296,22 @@ class TauriNotificationService implements NotificationService {
       if (response.ok) {
         console.log(`[NotificationService ${this.serviceId}] ✅ Notification ${notificationId} acknowledged`);
       } else {
+        // Handle authentication failures for acknowledgment
+        if (response.status === 401) {
+          console.error(`[NotificationService ${this.serviceId}] 🚫 401 Unauthorized during acknowledgment - clearing invalid auth token`);
+          
+          // Clear the invalid auth token to force re-authentication
+          try {
+            authToken.set(null);
+            console.log(`[NotificationService ${this.serviceId}] 🗑️ Invalid auth token cleared during acknowledgment`);
+          } catch (error) {
+            console.error(`[NotificationService ${this.serviceId}] ❌ Failed to clear auth token:`, error);
+          }
+          
+          this.lastError = 'Authentication expired - please log in again';
+          return;
+        }
+        
         console.warn(`[NotificationService ${this.serviceId}] ⚠️ Failed to acknowledge notification ${notificationId}:`, response.status);
       }
       
@@ -293,6 +341,14 @@ class TauriNotificationService implements NotificationService {
     this.connected = false;
     this.isConnecting = false;
     this.isPolling = false;
+    
+    // Check if we still have authentication before attempting reconnection
+    const token = get(authToken);
+    if (!token) {
+      console.log(`[NotificationService ${this.serviceId}] 🛑 Reconnection blocked - no auth token available`);
+      this.lastError = 'Authentication required - please log in first';
+      return;
+    }
     
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
@@ -354,28 +410,21 @@ export function getNotificationService(): NotificationService {
 console.log('🚀 Notification module loaded');
 getNotificationService(); // Initialize the service
 
-// Auto-connect when auth token changes
+// Auto-connect when auth token changes - only connect with valid authentication
 authToken.subscribe((token: string | null) => {
   console.log(`🔑 Auth token changed: ${token ? 'TOKEN_AVAILABLE' : 'NO_TOKEN'}`);
   console.log(`🔍 Global service available: ${!!globalNotificationService}`);
   
   if (token && globalNotificationService) {
-    console.log('🔗 Auth token available, connecting to notifications...');
+    console.log('🔗 Auth token available, securely connecting to notifications...');
     globalNotificationService.connect().catch(console.error);
   } else if (!token && globalNotificationService) {
-    console.log('🔌 No auth token, disconnecting from notifications...');
+    console.log('🔌 No auth token, disconnecting from notifications for security...');
     globalNotificationService.disconnect();
   } else {
     console.log('⚠️ Cannot connect: token=' + !!token + ', service=' + !!globalNotificationService);
   }
 });
 
-// Also try to connect immediately if token is already available when module loads
-setTimeout(() => {
-  const currentToken = get(authToken);
-  console.log('🚀 Delayed connection check - token available:', !!currentToken);
-  if (currentToken && globalNotificationService) {
-    console.log('🚀 Attempting immediate connection...');
-    globalNotificationService.connect().catch(console.error);
-  }
-}, 1000);
+// Note: Connection will be handled by the auth token subscription
+// No immediate connection attempt to prevent server spam before authentication

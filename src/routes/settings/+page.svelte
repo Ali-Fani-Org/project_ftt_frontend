@@ -93,28 +93,30 @@
   }
 </script>
 
-<div class="min-h-screen bg-base-200 p-4">
-  <div class="max-w-4xl mx-auto space-y-6">
-    <!-- Header -->
-    <div class="text-center">
-      <h1 class="text-3xl font-bold mb-2">Settings</h1>
-      <p class="text-base-content/70">Version {appVersion}</p>
-    </div>
+<div class="container mx-auto p-4 lg:p-8">
+  <!-- Page Header -->
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-primary">Settings</h1>
+    <p class="text-base-content/70">Version {appVersion}</p>
+  </div>
+
+  <div class="max-w-4xl mx-auto space-y-8">
 
     <!-- API Configuration -->
-    <div class="card bg-base-100 shadow-lg">
-      <div class="card-body">
-        <h2 class="card-title mb-4">API Configuration</h2>
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body p-6">
+        <h2 class="card-title text-xl mb-6">API Configuration</h2>
         <div class="form-control">
-          <label class="label">
-            <span class="label-text">Base URL</span>
+          <label class="label" for="baseUrl">
+            <span class="label-text font-medium text-base">Base URL</span>
           </label>
           <div class="join">
             <input
+              id="baseUrl"
               type="url"
               bind:value={localBaseUrl}
               placeholder="Enter API base URL"
-              class="input input-bordered join-item"
+              class="input input-bordered join-item flex-1"
             />
             <button class="btn btn-primary join-item" onclick={saveBaseUrl}>
               Save
@@ -125,15 +127,16 @@
     </div>
 
     <!-- Appearance -->
-    <div class="card bg-base-100 shadow-lg">
-      <div class="card-body">
-        <h2 class="card-title mb-4">Appearance</h2>
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body p-6">
+        <h2 class="card-title text-xl mb-6">Appearance</h2>
         
-        <div class="form-control mb-4">
-          <label class="label">
-            <span class="label-text">Theme</span>
+        <div class="form-control mb-6">
+          <label class="label" for="theme">
+            <span class="label-text font-medium text-base">Theme</span>
           </label>
           <select
+            id="theme"
             bind:value={localTheme}
             onchange={saveTheme}
             class="select select-bordered"
@@ -144,18 +147,19 @@
           </select>
         </div>
 
-        <div class="divider">Custom Themes</div>
+        <div class="divider my-6">Custom Themes</div>
         
         <div class="form-control">
-          <label class="label">
-            <span class="label-text">Add Custom Theme</span>
+          <label class="label" for="customTheme">
+            <span class="label-text font-medium text-base">Add Custom Theme</span>
           </label>
           <div class="join">
             <input
+              id="customTheme"
               type="text"
               bind:value={customTheme}
               placeholder="Enter theme name"
-              class="input input-bordered join-item"
+              class="input input-bordered join-item flex-1"
             />
             <button class="btn btn-primary join-item" onclick={addCustomTheme}>
               Add
@@ -164,8 +168,8 @@
         </div>
 
         {#if Object.keys($customThemes).length > 0}
-          <div class="mt-4">
-            <h3 class="font-semibold mb-2">Saved Custom Themes</h3>
+          <div class="mt-6">
+            <h3 class="font-semibold text-lg mb-4">Saved Custom Themes</h3>
             <div class="flex flex-wrap gap-2">
               {#each Object.keys($customThemes) as customThemeName}
                 <div class="badge badge-outline gap-1">
@@ -185,44 +189,46 @@
     </div>
 
     <!-- Window Behavior -->
-    <div class="card bg-base-100 shadow-lg">
-      <div class="card-body">
-        <h2 class="card-title mb-4">Window Behavior</h2>
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body p-6">
+        <h2 class="card-title text-xl mb-6">Window Behavior</h2>
         
-        <div class="form-control">
-          <label class="cursor-pointer label">
-            <span class="label-text">Minimize to tray</span>
-            <input
-              type="checkbox"
-              bind:checked={localMinimizeToTray}
-              onchange={saveTraySettings}
-              class="checkbox checkbox-primary"
-            />
-          </label>
-        </div>
+        <div class="space-y-4">
+          <div class="form-control">
+            <label class="cursor-pointer label">
+              <span class="label-text font-medium text-base">Minimize to tray</span>
+              <input
+                type="checkbox"
+                bind:checked={localMinimizeToTray}
+                onchange={saveTraySettings}
+                class="checkbox checkbox-primary"
+              />
+            </label>
+          </div>
 
-        <div class="form-control">
-          <label class="cursor-pointer label">
-            <span class="label-text">Close to tray</span>
-            <input
-              type="checkbox"
-              bind:checked={localCloseToTray}
-              onchange={saveTraySettings}
-              class="checkbox checkbox-primary"
-            />
-          </label>
+          <div class="form-control">
+            <label class="cursor-pointer label">
+              <span class="label-text font-medium text-base">Close to tray</span>
+              <input
+                type="checkbox"
+                bind:checked={localCloseToTray}
+                onchange={saveTraySettings}
+                class="checkbox checkbox-primary"
+              />
+            </label>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- System -->
-    <div class="card bg-base-100 shadow-lg">
-      <div class="card-body">
-        <h2 class="card-title mb-4">System</h2>
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body p-6">
+        <h2 class="card-title text-xl mb-6">System</h2>
         
         <div class="form-control">
           <label class="cursor-pointer label">
-            <span class="label-text">Start with system</span>
+            <span class="label-text font-medium text-base">Start with system</span>
             <input
               type="checkbox"
               bind:checked={localAutostart}
@@ -236,13 +242,17 @@
 
     <!-- User Idle Monitoring Debug Section -->
     {#if showIdleDebug}
-      <IdleMonitorDebug />
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body p-6">
+          <IdleMonitorDebug />
+        </div>
+      </div>
     {/if}
 
     <!-- Logout Section -->
-    <div class="card bg-base-100 shadow-lg">
-      <div class="card-body">
-        <h2 class="card-title mb-4">Account</h2>
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body p-6">
+        <h2 class="card-title text-xl mb-6">Account</h2>
         
         <button class="btn btn-error" onclick={confirmLogout}>
           Logout

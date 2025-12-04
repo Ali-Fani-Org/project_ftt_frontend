@@ -95,9 +95,35 @@
 	  console.log('Setting always on top to:', isAlwaysOnTop);
 	  await appWindow?.setAlwaysOnTop(isAlwaysOnTop);
 	}
+	async function handleTitleBarMouseDown(event: MouseEvent) {
+		// Only handle left mouse button (primary button)
+		if (event.button !== 0) return;
+
+		// Don't start dragging if clicking on buttons or controls
+		const target = event.target as HTMLElement;
+		if (target.closest('.controls') || target.tagName === 'BUTTON') return;
+
+		try {
+			await appWindow?.startDragging();
+		} catch (error) {
+			console.error('Failed to start dragging:', error);
+		}
+	}
+
+	async function handleTitleBarDoubleClick(event: MouseEvent) {
+		// Don't maximize if clicking on buttons or controls
+		const target = event.target as HTMLElement;
+		if (target.closest('.controls') || target.tagName === 'BUTTON') return;
+
+		try {
+			await toggleMaximize();
+		} catch (error) {
+			console.error('Failed to toggle maximize:', error);
+		}
+	}
 </script>
 
-<div class="titlebar" data-tauri-drag-region>
+<div class="titlebar" data-tauri-drag-region onmousedown={handleTitleBarMouseDown} ondblclick={handleTitleBarDoubleClick}>
   <div class="title-container">
     <span class="title-text">{title}</span>
   </div>
@@ -196,6 +222,7 @@
 	/* Close button uses default hover effect */
 
 	.pin-button {
+	/* Enable touch/pen drag on Windows - removed app-region: drag as it's Windows-specific */
 		transition: all 0.2s ease;
 	}
 
