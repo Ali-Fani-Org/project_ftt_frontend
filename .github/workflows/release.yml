@@ -53,7 +53,8 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             libxss-dev \
-            patchelf
+            patchelf \
+            libasound2-dev
 
       - name: Build Tauri
         uses: tauri-apps/tauri-action@v0

@@ -19,11 +19,11 @@
 	let isMaximized = $state(false);
 	let unlistenResize: (() => void) | null = $state(null);
 
-	const unsubscribeMin = minimizeToTray.subscribe(value => {
+	const unsubscribeMin = minimizeToTray.subscribe((value: boolean) => {
 		minimizeToTrayValue = value;
 	});
 
-	const unsubscribeClose = closeToTray.subscribe(value => {
+	const unsubscribeClose = closeToTray.subscribe((value: boolean) => {
 		closeToTrayValue = value;
 	});
 
