@@ -18,7 +18,7 @@
 
   // Toggle this to true to preview the component with static sample data instead of
   // hitting the API. Useful while designing styles.
-  const USE_SAMPLE_DATA = true;
+  const USE_SAMPLE_DATA = false;
 
   onMount(async () => {
     if (USE_SAMPLE_DATA) {
