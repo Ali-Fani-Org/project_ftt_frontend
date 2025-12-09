@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { timeEntries, type TimeEntry } from '$lib/api';
+	import { timeEntries, type TimeEntry, type PaginatedTimeEntries } from '$lib/api';
+	import ky from 'ky';
+	import { authToken, baseUrl } from '$lib/stores';
+	import { get } from 'svelte/store';
 	import confetti from 'canvas-confetti';
     var scalar = 2;
 
@@ -52,11 +55,36 @@
 			const startDate = formatLocalDate(firstDayOfMonth);
 			const endDate = formatLocalDate(lastDayOfMonth);
 
-			const response = await timeEntries.listWithFilters({
-				start_date_after: startDate,
-				start_date_before: endDate,
-				limit: 200
-			});
+			// Collect all entries across all pages using direct API calls
+			let allEntries: TimeEntry[] = [];
+			let currentPageUrl: string | null = `api/time_entries/?start_date_after_tz=${startDate}&start_date_before_tz=${endDate}&limit=200`;
+			let hasMorePages = true;
+
+			// Fetch all pages using pagination
+			while (hasMorePages && currentPageUrl) {
+				// Create the API request with proper authentication
+				const token = get(authToken);
+				const baseUrlValue = get(baseUrl);
+				// Construct full URL - if currentPageUrl is a relative path, add baseUrl with trailing slash
+				let fullUrl;
+				if (currentPageUrl.startsWith('http')) {
+					// If currentPageUrl is already a full URL (from next/previous), use as-is
+					fullUrl = currentPageUrl;
+				} else {
+					// If currentPageUrl is a relative path, prepend the base URL with trailing slash
+					fullUrl = `${baseUrlValue}${baseUrlValue.endsWith('/') ? '' : '/'}${currentPageUrl}`;
+				}
+
+				const response = await ky.get(fullUrl, {
+					headers: {
+						'Authorization': token ? `Token ${token}` : '',
+					}
+				}).json<PaginatedTimeEntries>();
+
+				allEntries = allEntries.concat(response.results);
+				currentPageUrl = response.next; // This will be null when no more pages are available
+				hasMorePages = !!currentPageUrl; // Continue if there's a next page
+			}
 
 			const dayMap = new Map<string, HeatmapData>();
 			const daysInMonth = lastDayOfMonth.getDate();
@@ -67,7 +95,7 @@
 				dayMap.set(ds, { date: ds, value: 0, entries: [] });
 			}
 
-			for (const entry of response.results) {
+			for (const entry of allEntries) {
 				const entryDate = formatLocalDate(new Date(entry.start_time));
 				const dayData = dayMap.get(entryDate);
 				if (!dayData) continue;
@@ -111,7 +139,7 @@
 			debugInfo = {
 				start: startDate,
 				end: endDate,
-				total: response.results.length,
+				total: allEntries.length,
 				inMonth: inMonthEntries
 			};
 

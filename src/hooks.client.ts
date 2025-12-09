@@ -28,5 +28,14 @@ export const ssr = false;
 export const csr = true;
 export const prerender = false;
 
+// Handle errors that occur during client-side navigation
+export const handleError = ({ error, event }) => {
+  console.error('Client-side error:', error, 'at', event.url);
+  return {
+    message: 'An error occurred during navigation',
+    error
+  };
+};
+
 // Export the preload function for use in other modules if needed
 export { preload } from '$lib/preload';

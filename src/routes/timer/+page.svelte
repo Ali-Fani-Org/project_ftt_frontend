@@ -18,6 +18,8 @@
   let loadingProjects = $state(data.projects?.length === 0); // Only false if we already have projects
   let loadingActiveEntry = $state(false);
   let loadingFeatureFlags = $state(true); // Start as true since we'll load features client-side
+  let todaySessions = $state<TimeEntry[]>([]);
+  let loadingTodaySessions = $state(false);
 
   // Form data
   let title = $state('');
@@ -94,12 +96,16 @@
       } finally {
         loadingFeatureFlags = false;
       }
+
+      // Load today's sessions
+      await loadTodaySessions();
     } catch (err) {
       console.error('Error loading data at', new Date().toISOString(), err);
       error = 'Failed to load data';
       loadingProjects = false;
       loadingActiveEntry = false;
       loadingFeatureFlags = false;
+      loadingTodaySessions = false;
     }
 
     // Listen for events from Tauri
@@ -171,6 +177,41 @@
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  async function loadTodaySessions() {
+    loadingTodaySessions = true;
+    try {
+      // Get today's date in Asia/Tehran timezone as YYYY-MM-DD format
+      const now = new Date();
+      // Format the date in Asia/Tehran timezone
+      const year = now.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
+      const month = now.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
+      const day = now.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
+      const dateStr = `${year}-${month}-${day}`;
+
+      console.log('Loading today\'s sessions for date (Asia/Tehran):', dateStr);
+
+      // Load time entries for today that are not active (finished sessions)
+      // Using the listWithFilters function with timezone-aware parameters
+      const response = await timeEntries.listWithFilters({
+        start_date_after_tz: dateStr,
+        start_date_before_tz: dateStr,
+        ordering: '-start_time' // Most recent first
+      });
+
+      // Filter to only include completed sessions (not active) and limit to 5
+      const completedSessions = response.results
+        .filter(entry => !entry.is_active)
+        .slice(0, 5);
+
+      todaySessions = completedSessions;
+    } catch (err) {
+      console.error('Error loading today\'s sessions:', err);
+      error = 'Failed to load today\'s sessions';
+    } finally {
+      loadingTodaySessions = false;
+    }
   }
 
   const onStartTimer = preventDefault(async () => {
@@ -451,10 +492,39 @@
            <div class="card bg-base-100 shadow-xl">
              <div class="card-body">
                <h3 class="text-lg font-medium text-base-content mb-4">Today's Sessions</h3>
-               <div class="text-center py-12">
-                 <p class="text-base-content/70">Today's timer sessions will appear here</p>
-                 <p class="text-sm text-base-content/50 mt-2">This section will show your completed and active timer sessions for today</p>
-               </div>
+               {#if loadingTodaySessions}
+                 <div class="flex justify-center py-8">
+                   <span class="loading loading-spinner loading-lg"></span>
+                 </div>
+               {:else if todaySessions.length > 0}
+                 <div class="space-y-4">
+                   {#each todaySessions as session (session.id)}
+                     <div class="border border-base-300 rounded-lg p-4 hover:bg-base-200 transition-colors">
+                       <div class="flex justify-between items-start">
+                         <div class="flex-1 min-w-0">
+                           <h4 class="font-medium text-base-content truncate">{session.title}</h4>
+                           <p class="text-sm text-base-content/70 truncate">{session.project}</p>
+                           {#if session.description}
+                             <p class="text-sm text-base-content/60 mt-1 truncate">{session.description}</p>
+                           {/if}
+                         </div>
+                         <div class="text-right ml-4">
+                           <div class="text-sm text-base-content/90 font-mono">{session.duration || '00:00:00'}</div>
+                           <div class="text-xs text-base-content/60 mt-1">
+                             {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -
+                             {session.end_time ? new Date(session.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Active'}
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   {/each}
+                 </div>
+               {:else}
+                 <div class="text-center py-8">
+                   <p class="text-base-content/70">No completed sessions today</p>
+                   <p class="text-sm text-base-content/50 mt-2">Your completed timer sessions will appear here</p>
+                 </div>
+               {/if}
              </div>
            </div>
          </div>

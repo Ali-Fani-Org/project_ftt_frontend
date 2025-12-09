@@ -227,6 +227,10 @@ export const timeEntries = {
     start_date_before?: string;
     end_date_after?: string;
     end_date_before?: string;
+    start_date_after_tz?: string;
+    start_date_before_tz?: string;
+    end_date_after_tz?: string;
+    end_date_before_tz?: string;
     duration_min?: string;
     duration_max?: string;
     project?: number;
@@ -238,6 +242,10 @@ export const timeEntries = {
     if (filters?.start_date_before) params.append('start_date_before', filters.start_date_before);
     if (filters?.end_date_after) params.append('end_date_after', filters.end_date_after);
     if (filters?.end_date_before) params.append('end_date_before', filters.end_date_before);
+    if (filters?.start_date_after_tz) params.append('start_date_after_tz', filters.start_date_after_tz);
+    if (filters?.start_date_before_tz) params.append('start_date_before_tz', filters.start_date_before_tz);
+    if (filters?.end_date_after_tz) params.append('end_date_after_tz', filters.end_date_after_tz);
+    if (filters?.end_date_before_tz) params.append('end_date_before_tz', filters.end_date_before_tz);
     if (filters?.duration_min) params.append('duration_min', filters.duration_min);
     if (filters?.duration_max) params.append('duration_max', filters.duration_max);
     if (filters?.project) params.append('project', filters.project.toString());

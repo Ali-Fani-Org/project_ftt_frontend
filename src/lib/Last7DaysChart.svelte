@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { timeEntries, type TimeEntry } from '$lib/api';
+  import { timeEntries, type TimeEntry, type PaginatedTimeEntries } from '$lib/api';
+  import ky from 'ky';
+  import { authToken, baseUrl } from '$lib/stores';
+  import { get } from 'svelte/store';
 
   // Chart data structure
   interface DayData {
@@ -8,13 +11,26 @@
     label: string;
     totalSeconds: number;
     formattedDuration: string;
-    segments: number[]; // 8 segments for different times of day
+    segments: number[]; // 8 segments for different times of day (3-hour intervals)
     maxSegmentSeconds: number; // max seconds in any segment for this day
+  }
+
+  interface TimeSegment {
+    start: number; // start hour (0-23)
+    end: number;   // end hour (0-23)
+    seconds: number;
   }
 
   let chartData = $state<DayData[]>([]);
   let loading = $state(true);
   let error = $state('');
+  let dateTooltip = $state<{ show: boolean; date: string; x: number; y: number }>({
+    show: false,
+    date: '',
+    x: 0,
+    y: 0
+  });
+  let tooltipTimeout: number | null = null;
 
   // Toggle this to true to preview the component with static sample data instead of
   // hitting the API. Useful while designing styles.
@@ -28,80 +44,77 @@
     }
   });
 
+  function showDateTooltip(date: string, event: MouseEvent) {
+    if (tooltipTimeout) {
+      clearTimeout(tooltipTimeout);
+    }
+
+    // Set a timeout to show the tooltip after 3 seconds
+    tooltipTimeout = setTimeout(() => {
+      dateTooltip = {
+        show: true,
+        date,
+        x: event.clientX,
+        y: event.clientY - 30 // Position above the cursor
+      };
+    }, 2000) as unknown as number;
+  }
+
+  function hideDateTooltip() {
+    if (tooltipTimeout) {
+      clearTimeout(tooltipTimeout);
+      tooltipTimeout = null;
+    }
+
+    dateTooltip.show = false;
+  }
+
   function loadSampleData() {
-    // Expanded sample data with varied activity across all 7 days
+    // Sample data showing how tasks should be distributed across time segments
     const today: DayData = {
-      date: '2025-12-04',
+      date: '2025-12-09',
       label: 'Today',
-      totalSeconds: 0,
-      formattedDuration: '0m',
-      segments: [0, 0, 0, 0, 0, 0, 0, 120 * 60],
-      maxSegmentSeconds: 120 * 60,
+      totalSeconds: 2 * 3600 + 30 * 60, // 2.5 hours
+      formattedDuration: '2h 30m',
+      segments: [0, 0, 30*60, 60*60, 0, 0, 0, 0], // Tasks from 06:00-09:00
+      maxSegmentSeconds: 60 * 60,
     };
 
     const yesterday: DayData = {
-      date: '2025-12-03',
+      date: '2025-12-08',
       label: 'Yesterday',
-      totalSeconds: 4 * 3600 + 19 * 60,
-      formattedDuration: '4h 19m',
-      segments: [0, 30 * 60, 40 * 60, 80 * 60, 55 * 60, 0, 0, 0],
-      maxSegmentSeconds: 80 * 60,
+      totalSeconds: 4 * 3600 + 15 * 60, // 4.25 hours
+      formattedDuration: '4h 15m',
+      segments: [0, 0, 0, 90*60, 120*60, 0, 0, 0], // Tasks from 09:00-15:00
+      maxSegmentSeconds: 120 * 60,
     };
 
     const twoDaysAgo: DayData = {
-      date: '2025-12-02',
+      date: '2025-12-07',
       label: '2 days ago',
-      totalSeconds: 6 * 3600 + 12 * 60,
-      formattedDuration: '6h 12m',
-      segments: [20 * 60, 90 * 60, 60 * 60, 120 * 60, 45 * 60, 30 * 60, 0, 0],
+      totalSeconds: 8 * 3600, // 8 hours
+      formattedDuration: '8h 0m',
+      segments: [0, 0, 60*60, 120*60, 120*60, 120*60, 60*60, 0], // Tasks spread throughout day
       maxSegmentSeconds: 120 * 60,
     };
 
     const threeDaysAgo: DayData = {
-      date: '2025-12-01',
+      date: '2025-12-06',
       label: '3 days ago',
-      totalSeconds: 2 * 3600 + 45 * 60,
-      formattedDuration: '2h 45m',
-      segments: [0, 0, 50 * 60, 30 * 60, 15 * 60, 0, 0, 0],
-      maxSegmentSeconds: 50 * 60,
+      totalSeconds: 1 * 3600 + 45 * 60, // 1.75 hours
+      formattedDuration: '1h 45m',
+      segments: [0, 0, 0, 0, 45*60, 60*60, 60*60, 0], // Tasks from 12:00-21:00
+      maxSegmentSeconds: 60 * 60,
     };
 
-    const fourDaysAgo: DayData = {
-      date: '2025-11-30',
-      label: '4 days ago',
-      totalSeconds: 5 * 3600 + 30 * 60,
-      formattedDuration: '5h 30m',
-      segments: [0, 60 * 60, 80 * 60, 70 * 60, 90 * 60, 40 * 60, 0, 0],
-      maxSegmentSeconds: 90 * 60,
-    };
-
-    const fiveDaysAgo: DayData = {
-      date: '2025-11-29',
-      label: '5 days ago',
-      totalSeconds: 3 * 3600 + 5 * 60,
-      formattedDuration: '3h 5m',
-      segments: [10 * 60, 0, 55 * 60, 45 * 60, 20 * 60, 0, 0, 0],
-      maxSegmentSeconds: 55 * 60,
-    };
-
-    const sixDaysAgo: DayData = {
-      date: '2025-11-28',
-      label: '6 days ago',
-      totalSeconds: 1 * 3600 + 20 * 60,
-      formattedDuration: '1h 20m',
-      segments: [0, 0, 0, 20 * 60, 15 * 60, 0, 0, 0],
-      maxSegmentSeconds: 20 * 60,
-    };
-
-    chartData = [
-      today,
-      yesterday,
-      twoDaysAgo,
-      threeDaysAgo,
-      fourDaysAgo,
-      fiveDaysAgo,
-      sixDaysAgo,
-    ];
+    chartData = [today, yesterday, twoDaysAgo, threeDaysAgo, ...Array(3).fill(null).map((_, i) => ({
+      date: new Date(new Date().setDate(new Date().getDate() - 3 - i)).toISOString().split('T')[0],
+      label: `${3 + i + 1} days ago`,
+      totalSeconds: 0,
+      formattedDuration: '0m',
+      segments: [0, 0, 0, 0, 0, 0, 0, 0],
+      maxSegmentSeconds: 0
+    }))];
 
     loading = false;
     error = '';
@@ -111,140 +124,133 @@
     try {
       loading = true;
       error = '';
-      
-      // Define offset for Asia/Tehran (UTC+3:30)
-      const USER_TZ_OFFSET_MS = 3.5 * 60 * 60 * 1000; // 12,600,000 ms
-      const nowUtc = new Date();
-      
-      // Calculate today's date string based on local time boundary
-      const todayLocalStr = new Date(nowUtc.getTime() + USER_TZ_OFFSET_MS).toISOString().split('T')[0];
-      const todayDate = new Date(todayLocalStr);
-      
-      // Get date range for last 7 days (based on local date)
-      const sevenDaysAgo = new Date(todayDate);
-      sevenDaysAgo.setDate(todayDate.getDate() - 7);
-      sevenDaysAgo.setHours(0, 0, 0, 0);
-      
-      // Format dates for API (YYYY-MM-DD)
-      const startDate = sevenDaysAgo.toISOString().split('T')[0];
-      const endDate = todayLocalStr; // Use local date string for end date boundary
-      
-      // Use the advanced filtering API
-      const response = await timeEntries.listWithFilters({
-        start_date_after: startDate,
-        start_date_before: endDate,
-        limit: 100 // Get enough entries for the week
-      });
-      
-      // Process data for each day
+
+      // Calculate today's date string in Asia/Tehran timezone
+      const now = new Date();
+      // Format the date in Asia/Tehran timezone
+      const year = now.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
+      const month = now.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
+      const day = now.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
+      const todayStr = `${year}-${month}-${day}`;
+
+      // Get date range for the last 7 days
+      // We need to calculate the date 7 days ago in Tehran timezone as well
+      const sevenDaysAgo = new Date(now);
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      // Format this date in Tehran timezone too
+      const year7 = sevenDaysAgo.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
+      const month7 = sevenDaysAgo.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
+      const day7 = sevenDaysAgo.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
+      const sevenDaysAgoStr = `${year7}-${month7}-${day7}`;
+
+      // Collect all entries across all pages using direct API calls
+      let allEntries: TimeEntry[] = [];
+      let currentPageUrl: string | null = `api/time_entries/?start_date_after_tz=${sevenDaysAgoStr}&start_date_before_tz=${todayStr}&limit=200`;
+      let hasMorePages = true;
+
+      // Fetch all pages using pagination
+      while (hasMorePages && currentPageUrl) {
+        // Create the API request with proper authentication
+        const token = get(authToken);
+        const baseUrlValue = get(baseUrl);
+        // Construct full URL - if currentPageUrl is a relative path, add baseUrl with trailing slash
+        let fullUrl;
+        if (currentPageUrl.startsWith('http')) {
+          // If currentPageUrl is already a full URL (from next/previous), use as-is
+          fullUrl = currentPageUrl;
+        } else {
+          // If currentPageUrl is a relative path, prepend the base URL with trailing slash
+          fullUrl = `${baseUrlValue}${baseUrlValue.endsWith('/') ? '' : '/'}${currentPageUrl}`;
+        }
+
+        const response = await ky.get(fullUrl, {
+          headers: {
+            'Authorization': token ? `Token ${token}` : '',
+          }
+        }).json<PaginatedTimeEntries>();
+
+        allEntries = allEntries.concat(response.results);
+        currentPageUrl = response.next; // This will be null when no more pages are available
+        hasMorePages = !!currentPageUrl; // Continue if there's a next page
+      }
+
+      // Initialize all 7 days (today first), but only dates within the actual data range
       const dayMap = new Map<string, DayData>();
-      
-      // Initialize all 7 days (today first) based on local date boundaries
+
+      // First, create entries for the last 7 days using Tehran timezone
       for (let i = 0; i <= 6; i++) {
-        const date = new Date(todayDate);
-        date.setDate(todayDate.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
+        const date = new Date(now);
+        date.setDate(now.getDate() - i);
+        // Format in Tehran timezone to ensure consistency
+        const year = date.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
+        const month = date.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
+        const dayVal = date.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
+        const dateStr = `${year}-${month}-${dayVal}`;
         const label = i === 0 ? 'Today' : i === 1 ? 'Yesterday' : `${i} days ago`;
-        
+
         dayMap.set(dateStr, {
           date: dateStr,
           label,
           totalSeconds: 0,
           formattedDuration: '0h 0m',
-          segments: [0, 0, 0, 0, 0, 0, 0, 0], // 8 time segments
+          segments: [0, 0, 0, 0, 0, 0, 0, 0], // 8 time segments (3-hour intervals)
           maxSegmentSeconds: 0
         });
       }
-      
-      // Calculate local midnight for the start of Today (for splitting entries)
-      const localMidnightToday = new Date(todayDate);
-      localMidnightToday.setUTCHours(0, 0, 0, 0);
-      localMidnightToday.setTime(localMidnightToday.getTime() + USER_TZ_OFFSET_MS);
-      
-      // Calculate total time for each day and distribute across segments
-      for (const entry of response.results) {
-        const entryDateObj = new Date(entry.start_time);
-        const entryDateStr = new Date(entryDateObj.getTime() + USER_TZ_OFFSET_MS).toISOString().split('T')[0];
-        const dayDataStart = dayMap.get(entryDateStr);
-        
-        if (!dayDataStart) continue;
 
-        let seconds = 0;
+      // Calculate total time for each day and distribute across segments based on actual time ranges
+      for (const entry of allEntries) {
+        // The start_time from API is now in the correct timezone, so we extract the date part
+        const entryDateStr = entry.start_time.split('T')[0];
+        const dayData = dayMap.get(entryDateStr);
+
+        if (!dayData) continue;
+
+        // Calculate duration based on start/end times
+        let durationSeconds = 0;
         if (entry.duration) {
           // Parse duration like "02:30:45" (HH:MM:SS)
           const parts = entry.duration.split(':').map(Number);
-          seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+          durationSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
         } else if (entry.end_time) {
           // If we have an explicit end_time but no duration, derive it
           const startTime = new Date(entry.start_time).getTime();
           const endTime = new Date(entry.end_time).getTime();
-          seconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
+          durationSeconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
         } else if (entry.is_active) {
           // For active entries, calculate from start time to now
           const startTime = new Date(entry.start_time).getTime();
-          seconds = Math.floor((Date.now() - startTime) / 1000);
+          durationSeconds = Math.floor((Date.now() - startTime) / 1000);
         } else {
           // Fallback: entries with no duration/end_time and not active.
-          // Give them a small nominal value so they are visible in the chart.
-          seconds = 5 * 60; // 5 minutes
+          durationSeconds = 5 * 60; // 5 minutes
         }
-        
-        const actualEndTimeStr = entry.end_time || new Date().toISOString();
-        const entryEndLocal = new Date(entry.end_time || Date.now());
-        
-        // Calculate local midnight for the day *after* the entry started on
-        const localMidnightNextDay = new Date(localMidnightToday);
-        if (entryDateStr !== todayLocalStr) {
-            // If entry is not today, calculate next day boundary relative to entry start day
-            const entryStartDate = new Date(entryDateStr);
-            localMidnightNextDay.setTime(entryStartDate.getTime() + USER_TZ_OFFSET_MS + (24 * 60 * 60 * 1000));
-        }
-        
-        // Check if the entry ends on the next local day
-        const spansLocalMidnight = entryEndLocal.getTime() > localMidnightNextDay.getTime();
 
-        if (spansLocalMidnight) {
-            // Split time across two days: Yesterday (dayDataStart) and Today (dayDataEnd)
-            
-            // Time spent on dayDataStart (Yesterday): from entry start until local midnight next day
-            const secondsYesterday = Math.max(0, Math.floor((localMidnightNextDay.getTime() - entryDateObj.getTime()) / 1000));
-            const secondsToday = seconds - secondsYesterday;
-            
-            const dayDataEnd = dayMap.get(todayLocalStr); // Should be 'Today's data structure
+        if (durationSeconds <= 0) continue;
 
-            if (dayDataEnd) {
-                dayDataStart.totalSeconds += secondsYesterday;
-                dayDataEnd.totalSeconds += secondsToday;
-                
-                // Distribute yesterday's time (from start time until local midnight next day)
-                distributeTimeForSingleDay(dayDataStart, entry.start_time, localMidnightNextDay.toISOString(), secondsYesterday);
-                
-                // Distribute today's time (from local midnight next day until entry end time)
-                distributeTimeForSingleDay(dayDataEnd, localMidnightNextDay.toISOString(), actualEndTimeStr, secondsToday);
-            } else {
-                // Fallback: If the next day is outside the 7-day window, add all time to start day
-                dayDataStart.totalSeconds += seconds;
-                distributeTimeForSingleDay(dayDataStart, entry.start_time, actualEndTimeStr, seconds);
-            }
-        } else {
-            // No local midnight crossing, proceed as before
-            dayDataStart.totalSeconds += seconds;
-            distributeTimeForSingleDay(dayDataStart, entry.start_time, actualEndTimeStr, seconds);
-        }
+        // Calculate time segments based on the actual start and end times
+        const startTime = new Date(entry.start_time);
+        const endTime = entry.end_time ? new Date(entry.end_time) : new Date();
+
+        // Add the time to the appropriate segments based on actual time range
+        distributeTimeByHourRange(dayData, startTime, endTime, durationSeconds);
+
+        // Add to total for the day
+        dayData.totalSeconds += durationSeconds;
       }
-      
-      // Format durations and distribute time across segments
+
+      // Format durations and compute segment max for each day
       for (const dayData of dayMap.values()) {
         dayData.formattedDuration = formatDuration(dayData.totalSeconds);
         // Compute per-day max segment value for relative bar heights
         dayData.maxSegmentSeconds = Math.max(0, ...dayData.segments);
       }
-      
+
       // Convert to array and sort by date (today first)
-      chartData = Array.from(dayMap.values()).sort((a, b) => 
+      chartData = Array.from(dayMap.values()).sort((a, b) =>
         new Date(b.date).getTime() - new Date(a.date).getTime()
       );
-      
+
       loading = false;
     } catch (err) {
       console.error('Failed to load last 7 days data:', err);
@@ -253,10 +259,63 @@
     }
   }
 
+  // Distribute time based on the actual hour range of the task
+  function distributeTimeByHourRange(dayData: DayData, start: Date, end: Date, totalSeconds: number) {
+    // Calculate start and end minutes from the beginning of the day
+    const startMinutesFromDayStart = start.getHours() * 60 + start.getMinutes() + (start.getSeconds() / 60);
+    let endMinutesFromDayStart = end.getHours() * 60 + end.getMinutes() + (end.getSeconds() / 60);
+
+    // If the entry goes beyond the current day (end time has different date), cap at end of day
+    if (start.getDate() !== end.getDate() || end.getDate() !== start.getDate()) {
+      // For entries that span to the next day, only calculate for the current day
+      endMinutesFromDayStart = 24 * 60; // End of the day (24:00)
+    }
+
+    // Handle impossible case where duration is negative
+    if (endMinutesFromDayStart < startMinutesFromDayStart) {
+      return; // Skip this entry
+    }
+
+    // Determine which 3-hour segments this time range covers
+    const segmentStartHours = [0, 3, 6, 9, 12, 15, 18, 21]; // Start hours of each 3-hour segment
+
+    // Calculate how many total minutes this entry spans
+    let durationMinutes = endMinutesFromDayStart - startMinutesFromDayStart;
+
+    // If the duration is 0 or negative, no need to continue
+    if (durationMinutes <= 0) return;
+
+    // Cap duration at 24 hours (1440 minutes) to avoid impossible calculations
+    durationMinutes = Math.min(durationMinutes, 24 * 60);
+
+    // Distribute the time based on which segments it overlaps
+    for (let i = 0; i < segmentStartHours.length; i++) {
+      const segmentStartMinutes = segmentStartHours[i] * 60;
+      const segmentEndMinutes = Math.min(segmentStartMinutes + 3 * 60, 24 * 60); // 3 hours or until end of day
+
+      // Calculate overlap between task time and segment time
+      const overlapStart = Math.max(startMinutesFromDayStart, segmentStartMinutes);
+      const overlapEnd = Math.min(endMinutesFromDayStart, segmentEndMinutes);
+
+      if (overlapEnd > overlapStart && durationMinutes > 0) {
+        const overlapMinutes = overlapEnd - overlapStart;
+        const segmentRatio = overlapMinutes / durationMinutes;
+        const segmentSeconds = Math.floor(totalSeconds * segmentRatio);
+
+        dayData.segments[i] += segmentSeconds;
+      }
+    }
+  }
+
   function formatDuration(seconds: number): string {
+    // Handle NaN or invalid values
+    if (isNaN(seconds) || seconds < 0) {
+      return '0m';
+    }
+
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    
+
     if (hours === 0) {
       return `${minutes}m`;
     } else if (minutes === 0) {
@@ -266,87 +325,33 @@
     }
   }
 
-  function distributeTimeForSingleDay(dayData: DayData, startTime: string, endTime: string, totalSeconds: number) {
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    
-    // Get hour of day (0-23)
-    const startHour = start.getHours();
-    const endHour = end.getHours();
-    
-    // Map hours to 8 practical time segments (every 3 hours)
-    // Segment 0: 0-3, Segment 1: 3-6, Segment 2: 6-9, Segment 3: 9-12
-    // Segment 4: 12-15, Segment 5: 15-18, Segment 6: 18-21, Segment 7: 21-24
-    const hourToSegment = (hour: number) => {
-      if (hour >= 0 && hour < 3) return 0;   // 0-3
-      if (hour >= 3 && hour < 6) return 1;   // 3-6
-      if (hour >= 6 && hour < 9) return 2;   // 6-9
-      if (hour >= 9 && hour < 12) return 3;  // 9-12
-      if (hour >= 12 && hour < 15) return 4; // 12-15
-      if (hour >= 15 && hour < 18) return 5; // 15-18
-      if (hour >= 18 && hour < 21) return 6; // 18-21
-      return 7; // 21-24
-    };
-    
-    const startSegment = hourToSegment(startHour);
-    const endSegment = hourToSegment(endHour);
-    
-    // If same segment, add all time to that segment
-    if (startSegment === endSegment) {
-      dayData.segments[startSegment] += totalSeconds;
-    } else {
-      // Normal distribution (endSegment > startSegment) - This assumes start/end are on the same local day
-      const segmentCount = endSegment - startSegment + 1;
-      const secondsPerSegment = totalSeconds / segmentCount;
-
-      for (let i = startSegment; i <= endSegment; i++) {
-        dayData.segments[i] += secondsPerSegment;
-      }
-    }
-  }
-
-  function distributeTimeAcrossSegments(dayData: DayData) {
-    // This function is now handled by distributeTimeForSingleDay
-    // Kept for backwards compatibility (no-op)
-  }
-
   function getSegmentFillHeight(day: DayData, segmentSeconds: number): number {
-    if (!day.maxSegmentSeconds || segmentSeconds <= 0) {
+    if (segmentSeconds <= 0) {
       return 0;
     }
 
-    // Ratio of this segment vs the busiest segment for that day
-    const ratio = segmentSeconds / day.maxSegmentSeconds; // 0..1
+    // Use a fixed scaling approach to make bars more visible
+    // Consider that a full day of work might be around 8-12 hours (28800-43200 seconds)
+    // So we'll scale based on a reasonable maximum for a 3-hour segment
+    const maxPossibleForSegment = 3 * 3600; // 3 hours max for a segment
+    const ratio = segmentSeconds / maxPossibleForSegment;
 
-    // Use a square-root easing so smaller values are still visible
-    const eased = Math.sqrt(ratio);
+    // Scale to 0-100% but apply a curve to make smaller values more visible
+    const scaledRatio = Math.pow(Math.min(1, ratio), 0.6);
+    const percent = scaledRatio * 100;
 
-    // Map to 0-100%, but keep a small minimum so non-zero work is visible
-    const percent = eased * 100;
-    return Math.min(100, Math.max(8, percent));
+    return Math.min(100, Math.max(10, percent)); // Minimum 10% to ensure visibility
   }
 
   function getSegmentTimeRangeLabel(index: number): string {
-    // Keep this in sync with hourToSegment in distributeTimeForSingleDay
-    switch (index) {
-      case 0:
-        return '00:00\u201302:59';
-      case 1:
-        return '03:00\u201305:59';
-      case 2:
-        return '06:00\u201308:59';
-      case 3:
-        return '09:00\u201311:59';
-      case 4:
-        return '12:00\u201314:59';
-      case 5:
-        return '15:00\u201317:59';
-      case 6:
-        return '18:00\u201320:59';
-      case 7:
-      default:
-        return '21:00\u201323:59';
-    }
+    // Each segment represents 3 hours
+    const startHour = index * 3;
+    const endHour = Math.min((index + 1) * 3, 24);
+
+    const startStr = startHour.toString().padStart(2, '0');
+    const endStr = endHour.toString().padStart(2, '0');
+
+    return `${startStr}:00\u2013${endStr === '24' ? '23:59' : `${endStr}:59`}`;
   }
 
   function getSegmentTooltip(day: DayData, index: number): string {
@@ -371,12 +376,12 @@
       </svg>
       Last 7 Days
     </h2>
-    
+
     {#if loading}
-      <div class="flex justify-center items-center h-12">
-        <div class="flex space-x-0.5">
+      <div class="flex justify-center items-center h-16">
+        <div class="flex space-x-1">
           {#each Array(7) as _}
-            <div class="w-3 h-7 bg-base-300 rounded-sm animate-pulse"></div>
+            <div class="w-4 h-10 bg-base-300 rounded-sm animate-pulse"></div>
           {/each}
         </div>
       </div>
@@ -387,32 +392,44 @@
     {:else}
       <div class="space-y-1">
         {#each chartData as day}
-          <div class="flex items-center space-x-1">
-            <!-- Day label -->
-            <div class="w-16 text-xs font-medium text-base-content/70 text-right">
-              {day.label}
+          <div class="flex items-center">
+            <!-- Day label with date tooltip -->
+            <div
+              class="w-14 text-[0.7rem] font-medium text-base-content/90 mr-1.5 flex-shrink-0 relative"
+              on:mouseenter={() => showDateTooltip(day.date, event)}
+              on:mouseleave={() => hideDateTooltip()}
+            >
+              <div>{day.label}</div>
             </div>
-            
+
             <!-- Activity segments container: bar chart -->
-            <div class="flex-1 flex items-center h-10">
-              <div class="flex items-end justify-center w-full space-x-2 h-full">
+            <div class="flex-1 flex flex-col items-center">
+              <div class="flex items-end justify-center w-full space-x-1 mb-1">
                 {#each day.segments as segment, index}
                   <div class="tooltip tooltip-top" data-tip={getSegmentTooltip(day, index)}>
                     <div
-                      class="w-[18px] md:w-[20px] h-8 rounded-md bg-base-200/30 relative overflow-hidden"
+                      class="w-3 rounded-sm bg-base-200/50 relative overflow-hidden"
+                      style="min-height: 0.25rem; width: 1rem; height: 1.75rem;"
                     >
                       <div
-                        class="absolute inset-x-0 bottom-0 rounded-md bg-primary animate-slide-in"
-                        style="height: {getSegmentFillHeight(day, segment)}%; animation-delay: {index * 50}ms"
+                        class="absolute inset-x-0 bottom-0 rounded-sm bg-primary transition-all duration-300 ease-out"
+                        style="height: {getSegmentFillHeight(day, segment)}%;"
                       ></div>
                     </div>
                   </div>
                 {/each}
               </div>
+              <div class="flex justify-center w-full space-x-1">
+                {#each day.segments as segment, index}
+                  <div class="text-[0.6rem] text-base-content/60 w-3" style="width: 1rem;">
+                    {getSegmentTimeRangeLabel(index).substring(0, 2)}
+                  </div>
+                {/each}
+              </div>
             </div>
-            
-            <!-- Duration label -->
-            <div class="w-10 text-xs text-right text-base-content/60">
+
+            <!-- Duration -->
+            <div class="w-10 text-[0.7rem] text-base-content/60 ml-1.5 text-right flex-shrink-0">
               {day.formattedDuration}
             </div>
           </div>
@@ -421,6 +438,15 @@
     {/if}
   </div>
 </div>
+
+{#if dateTooltip.show}
+  <div
+    class="fixed z-50 bg-base-300 text-base-content text-xs px-2 py-1 rounded shadow-lg pointer-events-none"
+    style="left: {dateTooltip.x}px; top: {dateTooltip.y}px;"
+  >
+    {dateTooltip.date}
+  </div>
+{/if}
 
 <style>
   /* Custom animations for bars */
@@ -434,7 +460,7 @@
       opacity: 1;
     }
   }
-  
+
   .animate-slide-in {
     animation: slideInFromBottom 0.5s ease-out forwards;
     transform-origin: bottom;

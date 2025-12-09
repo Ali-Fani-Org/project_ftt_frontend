@@ -36,10 +36,16 @@
       showProcessMonitorButton = await featureFlagsStore.isFeatureEnabled('process-monitor-ui');
       loadingFeatureFlags = false;
 
-      // Load projects and entries in parallel
-      const [projectsResult, entriesResult, activeResult] = await Promise.allSettled([
+      // Load projects, today's entries, and active entry in parallel
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const [projectsResult, todayEntriesResult, recentEntriesResult, activeResult] = await Promise.allSettled([
         projects.list(),
-        timeEntries.list(),
+        timeEntries.listWithFilters({
+          start_date_after_tz: today,
+          start_date_before_tz: today,
+          limit: 50 // Reasonable limit for today's entries
+        }),
+        timeEntries.list(), // For recent entries
         (async () => {
           try {
             return await timeEntries.getCurrentActive();
@@ -53,11 +59,15 @@
         projectsList = projectsResult.value;
       }
 
-      if (entriesResult.status === 'fulfilled') {
-        const data = entriesResult.value;
-        recentEntries = data.results.slice(0, 5); // Get last 5 entries
-        todayEntries = filterTodayEntries(data.results);
+      if (todayEntriesResult.status === 'fulfilled') {
+        const data = todayEntriesResult.value;
+        todayEntries = data.results; // These are already filtered by the API to be today's entries
         calculateStats(todayEntries, activeResult.status === 'fulfilled' ? activeResult.value : null);
+      }
+
+      if (recentEntriesResult.status === 'fulfilled') {
+        const data = recentEntriesResult.value;
+        recentEntries = data.results.slice(0, 5); // Get last 5 entries
       }
 
       if (activeResult.status === 'fulfilled') {
@@ -73,6 +83,8 @@
   });
 
   function filterTodayEntries(entries: TimeEntry[]): TimeEntry[] {
+    // With the API now returning timezone-aware datetimes, we can still do client-side filtering
+    // but now it will be based on the correctly converted datetimes from the API
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -318,7 +330,7 @@
     </div>
 
     <!-- Charts Section -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
       <!-- Last 7 Days Chart -->
       <div class="card shadow-lg">
         <div class="card-body"><Last7DaysChart /></div>
