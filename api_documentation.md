@@ -603,7 +603,7 @@ The Time Entries API provides comprehensive time tracking functionality with adv
 
 ### List User's Time Entries
 **Endpoint:** `GET /api/time_entries/`
-**Purpose:** Retrieve paginated list of user's time entries with advanced filtering options, sorted by start time (newest first)
+**Purpose:** Retrieve paginated list of user's time entries with advanced filtering and ordering options
 
 **Query Parameters:**
 - `start_date_after` (optional): Filter entries started after this date (YYYY-MM-DD)
@@ -613,6 +613,7 @@ The Time Entries API provides comprehensive time tracking functionality with adv
 - `duration_min` (optional): Minimum duration (format: HH:MM:SS or seconds)
 - `duration_max` (optional): Maximum duration (format: HH:MM:SS or seconds)
 - `project` (optional): Filter by project ID
+- `ordering` (optional): Order results by field. Options: `start_time`, `-start_time`, `end_time`, `-end_time`, `duration`, `-duration`, `title`, `-title`, `project_name`, `-project_name`, `is_active`, `-is_active` (default: `-start_time`)
 - `cursor` (optional): Cursor for pagination
 - `limit` (optional): Number of results per page (max 100, default 20)
 
@@ -758,6 +759,77 @@ The Time Entries API provides comprehensive time tracking functionality with adv
 }
 ```
 
+### Add Idle Session
+**Endpoint:** `POST /api/time_entries/{id}/add-idle/`  
+**Purpose:** Record an idle session for a specific time entry
+
+**Path Parameters:**
+- `id` (integer): The ID of the time entry to add the idle session to
+
+**Request Body:**
+```json
+{
+    "start_time": "2025-11-29T14:30:00.000Z",
+    "end_time": "2025-11-29T15:00:00.000Z"
+}
+```
+
+**Field Descriptions:**
+- `start_time` (required): Start time of the idle period (ISO 8601 datetime format)
+- `end_time` (required): End time of the idle period (ISO 8601 datetime format)
+
+**Validation Rules:**
+- End time must be after start time
+- Idle session must be linked to a time entry that belongs to the authenticated user
+- Times are normalized to second precision (microseconds are removed)
+
+**Response (201 Created):**
+```json
+{
+    "status": "idle_recorded",
+    "total_idle_duration": "00:30:00",
+    "actual_duration": "02:15:00"
+}
+```
+
+**Response Fields:**
+- `status` (string): Confirmation status ("idle_recorded")
+- `total_idle_duration` (string): Cumulative idle time for this time entry (HH:MM:SS format)
+- `actual_duration` (string): Total active time duration for this time entry (HH:MM:SS format)
+
+**Response (400 Bad Request):**
+```json
+{
+    "end_time": ["End time must be after start time"]
+}
+```
+
+**Use Cases:**
+- Track breaks during work sessions
+- Monitor idle time within specific time entries
+- Calculate actual productive time vs. total logged time
+- Generate detailed time tracking reports with idle analysis
+
+**Example Use:**
+```javascript
+async function addIdleSession(timeEntryId, idleStart, idleEnd) {
+    const response = await fetch(`/api/time_entries/${timeEntryId}/add-idle/`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            start_time: idleStart,
+            end_time: idleEnd
+        })
+    });
+    
+    const data = await response.json();
+    console.log('Idle session recorded:', data);
+    console.log(`Total idle time for this entry: ${data.total_idle_duration}`);
+}
+```
 
 ### Security Considerations
 - **User Isolation**: Users can only access their own time entries

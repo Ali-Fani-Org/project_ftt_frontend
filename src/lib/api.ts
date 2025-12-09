@@ -133,6 +133,29 @@ export interface Notification {
   delivered_at: string | null;
 }
 
+// Cache for API responses to improve performance
+const apiCache = new Map<string, { data: any; timestamp: number; ttl: number }>();
+
+// Cache TTL in milliseconds (5 minutes for most data)
+const CACHE_TTL = 5 * 60 * 1000;
+
+function getCached(key: string) {
+  const cached = apiCache.get(key);
+  if (cached && Date.now() - cached.timestamp < cached.ttl) {
+    console.log(`Cache hit for: ${key}`);
+    return cached.data;
+  }
+  // Remove expired cache entry
+  if (cached) {
+    apiCache.delete(key);
+  }
+  return null;
+}
+
+function setCached(key: string, data: any, ttl: number = CACHE_TTL) {
+  apiCache.set(key, { data, timestamp: Date.now(), ttl });
+}
+
 export const auth = {
   login: async (username: string, password: string) => {
     const response = await ky.post(`${get(baseUrl)}/auth/token/login/`, {
@@ -146,21 +169,41 @@ export const auth = {
     });
   },
   getUser: async () => {
-    return await api.get('auth/users/me/').json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
+    const cacheKey = 'user:me';
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+
+    const result = await api.get('auth/users/me/').json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
+    setCached(cacheKey, result, CACHE_TTL);
+    return result;
   },
   updateUser: async (data: { username?: string; first_name?: string; last_name?: string; profile_image?: string | null }) => {
+    // Clear cache when updating
+    apiCache.delete('user:me');
     // Use PUT to replace or update the resource; many DRF endpoints also accept PATCH
-    return await api.put('auth/users/me/', { json: data }).json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
+    const result = await api.put('auth/users/me/', { json: data }).json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
+    setCached('user:me', result, CACHE_TTL);
+    return result;
   },
   updateUserForm: async (form: FormData) => {
+    // Clear cache when updating
+    apiCache.delete('user:me');
     // Use PATCH with form data to support partial updates and file upload.
-    return await api.patch('auth/users/me/', { body: form }).json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
+    const result = await api.patch('auth/users/me/', { body: form }).json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
+    setCached('user:me', result, CACHE_TTL);
+    return result;
   },
 };
 
 export const projects = {
   list: async () => {
-    return await api.get('api/projects/').json<Project[]>();
+    const cacheKey = 'projects:all';
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+
+    const result = await api.get('api/projects/').json<Project[]>();
+    setCached(cacheKey, result, CACHE_TTL);
+    return result;
   },
 };
 
@@ -170,7 +213,14 @@ export const timeEntries = {
     if (cursor) params.append('cursor', cursor);
     if (limit) params.append('limit', limit.toString());
     const url = `api/time_entries/?${params.toString()}`;
-    return await api.get(url).json<PaginatedTimeEntries>();
+    const cacheKey = `time_entries:list:${url}`;
+
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+
+    const result = await api.get(url).json<PaginatedTimeEntries>();
+    setCached(cacheKey, result, CACHE_TTL);
+    return result;
   },
   listWithFilters: async (filters?: {
     start_date_after?: string;
@@ -194,29 +244,69 @@ export const timeEntries = {
     if (filters?.cursor) params.append('cursor', filters.cursor);
     if (filters?.limit) params.append('limit', filters.limit.toString());
     const url = `api/time_entries/?${params.toString()}`;
-    return await api.get(url).json<PaginatedTimeEntries>();
+    const cacheKey = `time_entries:filtered:${url}`;
+
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+
+    const result = await api.get(url).json<PaginatedTimeEntries>();
+    setCached(cacheKey, result, CACHE_TTL);
+    return result;
   },
   start: async (data: { title: string; description?: string; project: number; tags?: number[] }) => {
-    return await api.post('api/time_entries/', { json: data }).json<TimeEntry>();
+    // Clear related caches when starting a new timer
+    apiCache.delete('time_entries:all');
+    apiCache.delete('time_entries:current_active');
+    const result = await api.post('api/time_entries/', { json: data }).json<TimeEntry>();
+    return result;
   },
   stop: async (id: number) => {
-    return await api.post(`api/time_entries/${id}/stop/`).json<TimeEntry>();
+    // Clear related caches when stopping a timer
+    apiCache.delete('time_entries:all');
+    apiCache.delete('time_entries:current_active');
+    const result = await api.post(`api/time_entries/${id}/stop/`).json<TimeEntry>();
+    return result;
   },
   getCurrentActive: async () => {
-    return await api.get('api/time_entries/current_active/').json<TimeEntry>();
+    const cacheKey = 'time_entries:current_active';
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const result = await api.get('api/time_entries/current_active/').json<TimeEntry>();
+      setCached(cacheKey, result, CACHE_TTL);
+      return result;
+    } catch (error) {
+      // For current active, we cache null results briefly to avoid repeated API calls
+      setCached(cacheKey, null, 30000); // 30 seconds for null results
+      return null;
+    }
   },
 };
 
 export const featureFlags = {
   getMyFeatures: async (): Promise<FeatureFlagsResponse> => {
-    return await api.get('api/feature-flags/user-features/my_features/').json<FeatureFlagsResponse>();
+    const cacheKey = 'feature-flags:my-features';
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+
+    const result = await api.get('api/feature-flags/user-features/my_features/').json<FeatureFlagsResponse>();
+    setCached(cacheKey, result, CACHE_TTL); // Cache for 5 minutes
+    return result;
   },
-  
+
   checkFeature: async (featureKey: string): Promise<FeatureFlagCheck> => {
-    return await api.get(`api/feature-flags/user-features/${featureKey}/check/`).json<FeatureFlagCheck>();
+    const cacheKey = `feature-flags:check:${featureKey}`;
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+
+    const result = await api.get(`api/feature-flags/user-features/${featureKey}/check/`).json<FeatureFlagCheck>();
+    setCached(cacheKey, result, CACHE_TTL);
+    return result;
   },
-  
+
   logAccess: async (featureKey: string): Promise<{ message: string; feature_key: string; feature_name: string }> => {
+    // Don't cache log access calls as they should always hit the server
     return await api.post(`api/feature-flags/user-features/${featureKey}/log-access/`).json<{ message: string; feature_key: string; feature_name: string }>();
   }
 };

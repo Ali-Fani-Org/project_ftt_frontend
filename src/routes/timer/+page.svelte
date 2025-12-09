@@ -1,17 +1,23 @@
 <script lang="ts">
-   import { onMount } from 'svelte';
-   import { get } from 'svelte/store';
-   import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { goto } from '$app/navigation';
   import { authToken, user, timeEntriesDisplayMode, featureFlagsStore } from '$lib/stores';
   import { projects, timeEntries, type Project, type TimeEntry } from '$lib/api';
   import { preventDefault } from '$lib/commands.svelte';
   import TasksModal from '$lib/TasksModal.svelte';
+  import type { PageData } from './$types';
 
-  let activeEntry = $state<TimeEntry | null>(null);
-  let projectsList = $state<Project[]>([]);
-  let loadingProjects = $state(true);
+  // Get any data loaded on server (may be empty)
+  const { data } = $props<{ data: PageData }>();
+
+  // Initialize state - we'll load data client-side if not pre-loaded
+  let activeEntry = $state<TimeEntry | null>(data.activeEntry || null);
+  let projectsList = $state<Project[]>(data.projects || []);
+  let error = $state(data.error || '');
+  let loadingProjects = $state(data.projects?.length === 0); // Only false if we already have projects
   let loadingActiveEntry = $state(false);
-  let error = $state('');
+  let loadingFeatureFlags = $state(true); // Start as true since we'll load features client-side
 
   // Form data
   let title = $state('');
@@ -29,120 +35,126 @@
 
   // Feature flags state
   let showProcessMonitorButton = $state(false);
-  let loadingFeatureFlags = $state(true);
-
 
   onMount(async () => {
-      console.log('Timer onMount started at', new Date().toISOString());
-      const token = get(authToken);
-      if (!token) {
-        goto('/');
-        return;
+    console.log('Timer onMount started at', new Date().toISOString());
+    const token = get(authToken);
+    if (!token) {
+      goto('/');
+      return;
+    }
+
+    try {
+      // Load data based on whether we already have it from server
+      if (projectsList.length === 0) {
+        // We need to load projects
+        loadingProjects = true;
+        try {
+          projectsList = await projects.list();
+          console.log('Projects loaded at', new Date().toISOString());
+        } catch (err) {
+          console.error('Error loading projects:', err);
+          error = 'Failed to load projects';
+        } finally {
+          loadingProjects = false;
+        }
       }
 
-      try {
-        loadingProjects = true;
+      // Load active entry if not already loaded
+      if (activeEntry === null) {
         loadingActiveEntry = true;
-        loadingFeatureFlags = true;
+        try {
+          activeEntry = await timeEntries.getCurrentActive();
+          if (activeEntry) startTimer();
+          console.log('Active entry loaded at', new Date().toISOString(), activeEntry ? 'with active entry' : 'no active entry');
+        } catch (err) {
+          // 404 is expected when no active timer, so we don't treat it as an error
+          if (err?.response?.status !== 404) {
+            console.error('Error loading active entry:', err);
+            error = 'Failed to load active timer';
+          }
+          activeEntry = null;
+        } finally {
+          loadingActiveEntry = false;
+        }
+      } else if (activeEntry) {
+        // If we already have an active entry from server, start the timer
+        startTimer();
+      }
 
-        // Load feature flags first
+      // Load feature flags
+      loadingFeatureFlags = true;
+      try {
         await featureFlagsStore.loadFeatures();
         showProcessMonitorButton = await featureFlagsStore.isFeatureEnabled('process-monitor-ui');
         console.log('Feature flags loaded:', { processMonitorUI: showProcessMonitorButton });
-        loadingFeatureFlags = false;
-
-        // Load both projects and active entry in parallel
-        const [projectsResult, activeResult] = await Promise.allSettled([
-          projects.list(),
-          (async () => {
-            try {
-              return await timeEntries.getCurrentActive();
-            } catch {
-              return null;
-            }
-          })()
-        ]);
-
-        if (projectsResult.status === 'fulfilled') {
-          projectsList = projectsResult.value;
-          console.log('Projects loaded at', new Date().toISOString());
-        } else {
-          throw projectsResult.reason;
-        }
-
-        loadingProjects = false;
-
-        if (activeResult.status === 'fulfilled') {
-          activeEntry = activeResult.value;
-          if (activeEntry) startTimer();
-          console.log('Active entry loaded at', new Date().toISOString(), activeEntry ? 'with active entry' : 'no active entry');
-        } else {
-          activeEntry = null;
-          console.log('Active entry failed at', new Date().toISOString());
-        }
-
-        loadingActiveEntry = false;
       } catch (err) {
-        console.log('Error loading data at', new Date().toISOString(), err);
-        error = 'Failed to load data';
-        loadingProjects = false;
-        loadingActiveEntry = false;
+        console.error('Error loading feature flags:', err);
+        error = 'Failed to load feature flags';
+      } finally {
         loadingFeatureFlags = false;
       }
+    } catch (err) {
+      console.error('Error loading data at', new Date().toISOString(), err);
+      error = 'Failed to load data';
+      loadingProjects = false;
+      loadingActiveEntry = false;
+      loadingFeatureFlags = false;
+    }
 
-     // Listen for events from Tauri
-     if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-       const { listen, emit } = await import('@tauri-apps/api/event');
-       listen('stop-timer', (event) => {
-         console.log('Received stop-timer event from tray:', event);
-         onStopTimer();
-       });
+    // Listen for events from Tauri
+    if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+      const { listen, emit } = await import('@tauri-apps/api/event');
+      listen('stop-timer', (event) => {
+        console.log('Received stop-timer event from tray:', event);
+        onStopTimer();
+      });
 
-       listen('request-timer-state', (event) => {
-         console.log('Received request-timer-state event from tray:', event);
-         // Respond with current timer state
-         const timerState = activeEntry ? {
-           active: true,
-           title: activeEntry.title,
-           start_time: activeEntry.start_time
-         } : {
-           active: false,
-           title: null
-         };
-         console.log('Sending timer state response:', timerState);
-         emit('timer-state-response', timerState);
-       });
+      listen('request-timer-state', (event) => {
+        console.log('Received request-timer-state event from tray:', event);
+        // Respond with current timer state
+        const timerState = activeEntry ? {
+          active: true,
+          title: activeEntry.title,
+          start_time: activeEntry.start_time
+        } : {
+          active: false,
+          title: null
+        };
+        console.log('Sending timer state response:', timerState);
+        emit('timer-state-response', timerState);
+      });
 
       // Listen for backend-triggered devtools opening.
-       listen('open-devtools', () => {
-         try {
-           // Try to use Tauri-side devtools API if exposed
-           // otherwise fall back to dispatching an F12 key event.
-           const ev = new KeyboardEvent('keydown', {
-             key: 'F12',
-             code: 'F12',
-             keyCode: 123,
-             which: 123,
-             bubbles: true,
-             cancelable: true
-           });
-           window.dispatchEvent(ev);
-         } catch (err) {
-           console.error('Failed to open devtools from event:', err);
-         }
-       });
+      listen('open-devtools', () => {
+        try {
+          // Try to use Tauri-side devtools API if exposed
+          // otherwise fall back to dispatching an F12 key event.
+          const ev = new KeyboardEvent('keydown', {
+            key: 'F12',
+            code: 'F12',
+            keyCode: 123,
+            which: 123,
+            bubbles: true,
+            cancelable: true
+          });
+          window.dispatchEvent(ev);
+        } catch (err) {
+          console.error('Failed to open devtools from event:', err);
+        }
+      });
 
-       // Test event emission
-       console.log('Testing event emission...');
-       setTimeout(() => {
-         emit('test-event', 'hello from frontend').then(() => {
-           console.log('Test event emitted successfully');
-         }).catch(err => {
-           console.error('Failed to emit test event:', err);
-         });
-       }, 1000);
-     }
-    });
+      // Test event emission
+      console.log('Testing event emission...');
+      setTimeout(() => {
+        emit('test-event', 'hello from frontend').then(() => {
+          console.log('Test event emitted successfully');
+        }).catch(err => {
+          console.error('Failed to emit test event:', err);
+        });
+      }, 1000);
+    }
+  });
 
   function startTimer() {
     if (activeEntry) {

@@ -10,6 +10,7 @@
 	import Sidebar from '$lib/Sidebar.svelte';
 	import Navbar from '$lib/Navbar.svelte';
 	import '$lib/notifications'; // Initialize notification service
+	import { preload } from '$lib/preload';
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -72,6 +73,31 @@
 		// Initialize authentication state
 		authStore.initialize();
 		authInitialized = true;
+
+		// Preload commonly accessed data after initial authentication is set up
+		if ($authToken) {
+			// Preload timer page resources after a short delay to avoid blocking initial render
+			setTimeout(() => {
+				// Use SvelteKit's preload feature for faster subsequent navigation
+				import('$app/navigation').then(({ preloadData }) => {
+					// Preload the /timer route if available
+					const timerLink = document.createElement('a');
+					timerLink.href = '/timer';
+					if (preloadData && typeof preloadData === 'function') {
+						preloadData(timerLink).catch(() => {
+							// Ignore errors during preloading
+						});
+					} else {
+						// Fallback: pre-cache the API calls that will be made
+						import('$lib/api').then(({ projects, timeEntries }) => {
+							// Preload data that's typically needed
+							projects.list().catch(err => console.warn('Failed to preload projects in layout:', err));
+							timeEntries.getCurrentActive().catch(err => console.warn('Failed to preload active timer in layout:', err));
+						});
+					}
+				});
+			}, 1000); // 1 second delay to allow initial load to complete
+		}
 	});
 
 	// Apply theme to document

@@ -278,16 +278,24 @@ function createFeatureFlagsStore() {
     subscribe,
     
     // Load all features for the current user
-    loadFeatures: async () => {
+    loadFeatures: async (preloadedData?: any) => {
       update(state => ({ ...state, loading: true, error: null }));
-      
+
       try {
-        const { featureFlags } = await import('./api');
-        const response = await featureFlags.getMyFeatures();
-        
+        let response;
+
+        if (preloadedData) {
+          // Use preloaded data if provided
+          response = preloadedData;
+        } else {
+          // Fetch from API if no preloaded data
+          const { featureFlags } = await import('./api');
+          response = await featureFlags.getMyFeatures();
+        }
+
         const enabledKeys = new Set(response.enabled_features.map(f => f.key));
         const disabledKeys = new Set(response.disabled_features.map(f => f.key));
-        
+
         update(state => ({
           ...state,
           enabledFeatures: enabledKeys,
@@ -676,6 +684,32 @@ function createIdleMonitorStore() {
       }
     }
   };
+}
+
+// Cache management functions
+export function invalidateCache(pattern?: string) {
+  if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+    // In Tauri environment, we can use Tauri's cache management
+    // For now, we'll just log the invalidation
+    console.log('Cache invalidation requested:', pattern || 'all');
+  }
+
+  // Import the api module to clear its cache
+  import('./api').then(({ apiCache }) => {
+    if (pattern) {
+      // Clear specific cache entries matching the pattern
+      for (const key of apiCache.keys()) {
+        if (key.includes(pattern)) {
+          apiCache.delete(key);
+        }
+      }
+    } else {
+      // Clear all cache
+      apiCache.clear();
+    }
+  }).catch(err => {
+    console.error('Failed to clear cache:', err);
+  });
 }
 
 export const idleMonitorStore = createIdleMonitorStore();
