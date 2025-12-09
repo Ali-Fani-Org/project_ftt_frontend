@@ -112,15 +112,22 @@
       loading = true;
       error = '';
       
-      // Get date range for last 7 days
-      const today = new Date();
-      const sevenDaysAgo = new Date(today);
-      sevenDaysAgo.setDate(today.getDate() - 7);
+      // Define offset for Asia/Tehran (UTC+3:30)
+      const USER_TZ_OFFSET_MS = 3.5 * 60 * 60 * 1000; // 12,600,000 ms
+      const nowUtc = new Date();
+      
+      // Calculate today's date string based on local time boundary
+      const todayLocalStr = new Date(nowUtc.getTime() + USER_TZ_OFFSET_MS).toISOString().split('T')[0];
+      const todayDate = new Date(todayLocalStr);
+      
+      // Get date range for last 7 days (based on local date)
+      const sevenDaysAgo = new Date(todayDate);
+      sevenDaysAgo.setDate(todayDate.getDate() - 7);
       sevenDaysAgo.setHours(0, 0, 0, 0);
       
       // Format dates for API (YYYY-MM-DD)
       const startDate = sevenDaysAgo.toISOString().split('T')[0];
-      const endDate = today.toISOString().split('T')[0];
+      const endDate = todayLocalStr; // Use local date string for end date boundary
       
       // Use the advanced filtering API
       const response = await timeEntries.listWithFilters({
@@ -132,10 +139,10 @@
       // Process data for each day
       const dayMap = new Map<string, DayData>();
       
-      // Initialize all 7 days (today first)
+      // Initialize all 7 days (today first) based on local date boundaries
       for (let i = 0; i <= 6; i++) {
-        const date = new Date(today);
-        date.setDate(today.getDate() - i);
+        const date = new Date(todayDate);
+        date.setDate(todayDate.getDate() - i);
         const dateStr = date.toISOString().split('T')[0];
         const label = i === 0 ? 'Today' : i === 1 ? 'Yesterday' : `${i} days ago`;
         
@@ -149,36 +156,80 @@
         });
       }
       
+      // Calculate local midnight for the start of Today (for splitting entries)
+      const localMidnightToday = new Date(todayDate);
+      localMidnightToday.setUTCHours(0, 0, 0, 0);
+      localMidnightToday.setTime(localMidnightToday.getTime() + USER_TZ_OFFSET_MS);
+      
       // Calculate total time for each day and distribute across segments
       for (const entry of response.results) {
-        const entryDate = new Date(entry.start_time).toISOString().split('T')[0];
-        const dayData = dayMap.get(entryDate);
+        const entryDateObj = new Date(entry.start_time);
+        const entryDateStr = new Date(entryDateObj.getTime() + USER_TZ_OFFSET_MS).toISOString().split('T')[0];
+        const dayDataStart = dayMap.get(entryDateStr);
         
-        if (dayData) {
-          let seconds = 0;
-          if (entry.duration) {
-            // Parse duration like "02:30:45" (HH:MM:SS)
-            const parts = entry.duration.split(':').map(Number);
-            seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-          } else if (entry.end_time) {
-            // If we have an explicit end_time but no duration, derive it
-            const startTime = new Date(entry.start_time).getTime();
-            const endTime = new Date(entry.end_time).getTime();
-            seconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
-          } else if (entry.is_active) {
-            // For active entries, calculate from start time to now
-            const startTime = new Date(entry.start_time).getTime();
-            seconds = Math.floor((Date.now() - startTime) / 1000);
-          } else {
-            // Fallback: entries with no duration/end_time and not active.
-            // Give them a small nominal value so they are visible in the chart.
-            seconds = 5 * 60; // 5 minutes
-          }
-          
-          dayData.totalSeconds += seconds;
-          
-          // Distribute this entry's time across appropriate segments based on start time
-          distributeEntryTimeAcrossSegments(dayData, entry.start_time, entry.end_time || new Date().toISOString(), seconds);
+        if (!dayDataStart) continue;
+
+        let seconds = 0;
+        if (entry.duration) {
+          // Parse duration like "02:30:45" (HH:MM:SS)
+          const parts = entry.duration.split(':').map(Number);
+          seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        } else if (entry.end_time) {
+          // If we have an explicit end_time but no duration, derive it
+          const startTime = new Date(entry.start_time).getTime();
+          const endTime = new Date(entry.end_time).getTime();
+          seconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
+        } else if (entry.is_active) {
+          // For active entries, calculate from start time to now
+          const startTime = new Date(entry.start_time).getTime();
+          seconds = Math.floor((Date.now() - startTime) / 1000);
+        } else {
+          // Fallback: entries with no duration/end_time and not active.
+          // Give them a small nominal value so they are visible in the chart.
+          seconds = 5 * 60; // 5 minutes
+        }
+        
+        const actualEndTimeStr = entry.end_time || new Date().toISOString();
+        const entryEndLocal = new Date(entry.end_time || Date.now());
+        
+        // Calculate local midnight for the day *after* the entry started on
+        const localMidnightNextDay = new Date(localMidnightToday);
+        if (entryDateStr !== todayLocalStr) {
+            // If entry is not today, calculate next day boundary relative to entry start day
+            const entryStartDate = new Date(entryDateStr);
+            localMidnightNextDay.setTime(entryStartDate.getTime() + USER_TZ_OFFSET_MS + (24 * 60 * 60 * 1000));
+        }
+        
+        // Check if the entry ends on the next local day
+        const spansLocalMidnight = entryEndLocal.getTime() > localMidnightNextDay.getTime();
+
+        if (spansLocalMidnight) {
+            // Split time across two days: Yesterday (dayDataStart) and Today (dayDataEnd)
+            
+            // Time spent on dayDataStart (Yesterday): from entry start until local midnight next day
+            const secondsYesterday = Math.max(0, Math.floor((localMidnightNextDay.getTime() - entryDateObj.getTime()) / 1000));
+            const secondsToday = seconds - secondsYesterday;
+            
+            const dayDataEnd = dayMap.get(todayLocalStr); // Should be 'Today's data structure
+
+            if (dayDataEnd) {
+                dayDataStart.totalSeconds += secondsYesterday;
+                dayDataEnd.totalSeconds += secondsToday;
+                
+                // Distribute yesterday's time (from start time until local midnight next day)
+                distributeTimeForSingleDay(dayDataStart, entry.start_time, localMidnightNextDay.toISOString(), secondsYesterday);
+                
+                // Distribute today's time (from local midnight next day until entry end time)
+                distributeTimeForSingleDay(dayDataEnd, localMidnightNextDay.toISOString(), actualEndTimeStr, secondsToday);
+            } else {
+                // Fallback: If the next day is outside the 7-day window, add all time to start day
+                dayDataStart.totalSeconds += seconds;
+                distributeTimeForSingleDay(dayDataStart, entry.start_time, actualEndTimeStr, seconds);
+            }
+        } else {
+            // No local midnight crossing, proceed as before
+            dayDataStart.totalSeconds += seconds;
+            distributeTimeForSingleDay(dayDataStart, entry.start_time, actualEndTimeStr, seconds);
         }
       }
       
@@ -215,7 +266,7 @@
     }
   }
 
-  function distributeEntryTimeAcrossSegments(dayData: DayData, startTime: string, endTime: string, totalSeconds: number) {
+  function distributeTimeForSingleDay(dayData: DayData, startTime: string, endTime: string, totalSeconds: number) {
     const start = new Date(startTime);
     const end = new Date(endTime);
     
@@ -244,18 +295,18 @@
     if (startSegment === endSegment) {
       dayData.segments[startSegment] += totalSeconds;
     } else {
-      // Distribute across multiple segments
+      // Normal distribution (endSegment > startSegment) - This assumes start/end are on the same local day
       const segmentCount = endSegment - startSegment + 1;
       const secondsPerSegment = totalSeconds / segmentCount;
-      
-      for (let i = startSegment; i <= endSegment && i < 8; i++) {
+
+      for (let i = startSegment; i <= endSegment; i++) {
         dayData.segments[i] += secondsPerSegment;
       }
     }
   }
 
   function distributeTimeAcrossSegments(dayData: DayData) {
-    // This function is now handled by distributeEntryTimeAcrossSegments
+    // This function is now handled by distributeTimeForSingleDay
     // Kept for backwards compatibility (no-op)
   }
 
@@ -276,25 +327,25 @@
   }
 
   function getSegmentTimeRangeLabel(index: number): string {
-    // Keep this in sync with hourToSegment in distributeEntryTimeAcrossSegments
+    // Keep this in sync with hourToSegment in distributeTimeForSingleDay
     switch (index) {
       case 0:
-        return '00:00–02:59';
+        return '00:00\u201302:59';
       case 1:
-        return '03:00–05:59';
+        return '03:00\u201305:59';
       case 2:
-        return '06:00–08:59';
+        return '06:00\u201308:59';
       case 3:
-        return '09:00–11:59';
+        return '09:00\u201311:59';
       case 4:
-        return '12:00–14:59';
+        return '12:00\u201314:59';
       case 5:
-        return '15:00–17:59';
+        return '15:00\u201317:59';
       case 6:
-        return '18:00–20:59';
+        return '18:00\u201320:59';
       case 7:
       default:
-        return '21:00–23:59';
+        return '21:00\u201323:59';
     }
   }
 

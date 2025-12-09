@@ -177,18 +177,25 @@
 		return Math.round((seconds / 3600) * 10) / 10;
 	}
 
-	// 10-step brightness gradient anchored on the theme primary color
+	function secondsToHHMMSS(seconds: number): string {
+		const hours = Math.floor(seconds / 3600);
+		const minutes = Math.floor((seconds % 3600) / 60);
+		const secs = seconds % 60;
+		return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+	}
+
+	// 10-step brightness gradient anchored on the theme primary color - REVERSED for correct intensity mapping
 	const activityPalette = [
 		'bg-base-300/40', // no activity
-		'bg-primary/95',
-		'bg-primary/90',
-		'bg-primary/85',
-		'bg-primary/80',
-		'bg-primary/75',
-		'bg-primary/70',
-		'bg-primary/65',
+		'bg-primary/55',  // lowest activity
 		'bg-primary/60',
-		'bg-primary/55'  // highest activity
+		'bg-primary/65',
+		'bg-primary/70',
+		'bg-primary/75',
+		'bg-primary/80',
+		'bg-primary/85',
+		'bg-primary/90',
+		'bg-primary/95',  // highest activity
 	];
 
 	const maxDaySeconds = $derived(
@@ -312,7 +319,7 @@
 								<div
 									class="tooltip tooltip-top"
 									data-tip={day
-										? `${day.date} • ${secondsToHours(day.value)}h • ${day.entries.length} entries`
+										? `${day.date} • ${secondsToHHMMSS(day.value)} • ${day.entries.length} entries`
 										: ''}
 								>
 									<div

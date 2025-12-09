@@ -85,7 +85,7 @@ export interface TimeEntry {
   description: string;
   start_time: string;
   end_time: string | null;
-  duration: string | null;
+  duration: string | null; // Duration in seconds as string (e.g., "8526")
   is_active: boolean;
   user: string;
   project: string;
