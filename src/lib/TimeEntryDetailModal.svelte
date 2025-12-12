@@ -25,10 +25,10 @@
 
   function formatTime(dateStr: string): string {
     const date = new Date(dateStr);
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
       minute: '2-digit',
-      hour12: true 
+      hour12: true
     });
   }
 
@@ -44,11 +44,11 @@
 
   function formatDuration(duration: string | null): string {
     if (!duration) return 'Active';
-    // Parse duration like "02:30:45" (HH:MM:SS)
-    const parts = duration.split(':').map(Number);
-    const hours = parts[0];
-    const minutes = parts[1];
-    const seconds = parts[2];
+    // Duration is now in seconds as string (e.g., "8.0", "127172.0")
+    const totalSeconds = parseInt(duration, 10) || 0;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
     if (hours > 0) {
       return `${hours}h ${minutes}m ${seconds}s`;
     }
@@ -169,7 +169,7 @@
                     {formatTime(entry.start_time)}
                   </div>
                 </div>
-                
+
                 {#if entry.end_time}
                   <div>
                     <span class="text-sm text-base-content/60">End Time</span>
@@ -181,7 +181,7 @@
                     </div>
                   </div>
                 {/if}
-                
+
                 <div class="border-t border-base-300 pt-3">
                   <span class="text-sm text-base-content/60">Duration</span>
                   <div class="font-mono text-xl font-semibold text-primary mt-1">
@@ -206,12 +206,12 @@
                   <span class="text-sm text-base-content/60">Entry ID</span>
                   <div class="font-mono text-sm">{entry.id}</div>
                 </div>
-                
+
                 <div>
                   <span class="text-sm text-base-content/60">User</span>
                   <div class="font-medium">{entry.user}</div>
                 </div>
-                
+
                 <div>
                   <span class="text-sm text-base-content/60">Status</span>
                   <div class="flex items-center gap-2 mt-1">

@@ -68,7 +68,15 @@
   }
 
   function formatDuration(duration: string | null): string {
-    return duration || 'Active';
+    if (!duration) return 'Active';
+    // Duration is now in seconds as string (e.g., "8.0", "127172.0")
+    const totalSeconds = parseInt(duration, 10) || 0;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
   }
 
   function close() {

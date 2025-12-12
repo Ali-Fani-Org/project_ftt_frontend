@@ -15,12 +15,12 @@
   let loading = $state(true);
   let error = $state('');
   let showTasksModal = $state(false);
-  
+
   // Stats
   let totalHoursToday = $state(0);
   let completedTasksToday = $state(0);
   let activeProject = $state<string>('None');
-  
+
   // Feature flags
   let showProcessMonitorButton = $state(false);
   let loadingFeatureFlags = $state(true);
@@ -104,7 +104,7 @@
     let totalSeconds = 0;
     for (const entry of entries) {
       if (entry.duration) {
-        const duration = parseDuration(entry.duration);
+        const duration = parseInt(entry.duration, 10) || 0; // Duration is now in seconds as string
         totalSeconds += duration;
       } else if (entry.is_active && active?.id === entry.id) {
         // For active entry, calculate from start time to now
@@ -119,12 +119,6 @@
       const project = projectsList.find(p => p.title === active.project);
       activeProject = project?.title || active.project || 'Unknown';
     }
-  }
-
-  function parseDuration(duration: string): number {
-    // Parse duration like "02:30:45" (HH:MM:SS)
-    const parts = duration.split(':').map(Number);
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
   }
 
   function formatDuration(seconds: number): string {
@@ -166,7 +160,7 @@
     } catch (error) {
       console.error('Failed to log process monitor access:', error);
     }
-    
+
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       getCurrentWindow();
@@ -335,7 +329,7 @@
       <div class="card shadow-lg">
         <div class="card-body"><Last7DaysChart /></div>
       </div>
-      
+
       <!-- Calendar Heatmap -->
       <div class="card shadow-lg">
         <div class="card-body"><CalendarHeatmap /></div>

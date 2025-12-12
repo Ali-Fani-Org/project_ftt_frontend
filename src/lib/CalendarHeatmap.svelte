@@ -95,40 +95,92 @@
 				dayMap.set(ds, { date: ds, value: 0, entries: [] });
 			}
 
+			// Helper function to get start of day in Tehran timezone
+			function getStartOfDay(dateStr: string): Date {
+				const isoString = `${dateStr}T00:00:00+03:30`;
+				return new Date(isoString);
+			}
+
+			// Helper function to get end of day in Tehran timezone
+			function getEndOfDay(dateStr: string): Date {
+				const isoString = `${dateStr}T23:59:59.999+03:30`;
+				return new Date(isoString);
+			}
+
 			for (const entry of allEntries) {
-				const entryDate = formatLocalDate(new Date(entry.start_time));
-				const dayData = dayMap.get(entryDate);
-				if (!dayData) continue;
-
-				let seconds = 0;
+				// Calculate total duration
+				let totalSeconds = 0;
 				if (entry.duration) {
-					// Handle both "H:MM:SS" and "X days, H:MM:SS" formats
-					// Examples:
-					//   "4:00:00"
-					//   "2 days, 20:16:04"
-					const durationStr = entry.duration.trim();
-					let dayCount = 0;
-					let timePart = durationStr;
-
-					const dayMatch = durationStr.match(/^(\d+)\s+day[s]?,\s*(.+)$/);
-					if (dayMatch) {
-						dayCount = Number(dayMatch[1]) || 0;
-						timePart = dayMatch[2];
-					}
-
-					const t = timePart.split(':').map((v) => Number(v.trim()));
-					if (t.length === 3 && t.every((v) => Number.isFinite(v))) {
-						seconds = dayCount * 24 * 3600 + t[0] * 3600 + t[1] * 60 + t[2];
-					} else {
-						seconds = 0;
-					}
+					totalSeconds = parseInt(entry.duration, 10) || 0;
 				} else if (entry.is_active) {
 					const startTime = new Date(entry.start_time).getTime();
-					seconds = Math.floor((Date.now() - startTime) / 1000);
+					totalSeconds = Math.floor((Date.now() - startTime) / 1000);
 				}
 
-				dayData.entries.push(entry);
-				dayData.value += seconds;
+				if (totalSeconds <= 0) continue;
+
+				// Extract date strings from API timestamps (already in Tehran timezone)
+				const startDateStr = entry.start_time.split('T')[0];
+				const endDateStr = entry.end_time ? entry.end_time.split('T')[0] : startDateStr;
+
+				// Parse full datetime objects
+				const startTime = new Date(entry.start_time);
+				const endTime = entry.end_time ? new Date(entry.end_time) : new Date();
+
+				// Create a set of all days this entry spans
+				const daysSet = new Set<string>();
+				let currentDay = new Date(startDateStr);
+				const endDayObj = new Date(endDateStr);
+
+				while (currentDay <= endDayObj) {
+					const dayStr = currentDay.toISOString().split('T')[0];
+					daysSet.add(dayStr);
+					currentDay.setDate(currentDay.getDate() + 1);
+				}
+
+				if (daysSet.size === 0) {
+					daysSet.add(startDateStr);
+				}
+
+				// Distribute time across all days the entry spans
+				for (const dayStr of daysSet) {
+					const dayData = dayMap.get(dayStr);
+					if (!dayData) continue;
+
+					// Determine time boundaries for this specific day
+					let dayStartTime: Date;
+					let dayEndTime: Date;
+
+					if (dayStr === startDateStr && dayStr === endDateStr) {
+						// Single day entry
+						dayStartTime = startTime;
+						dayEndTime = endTime;
+					} else if (dayStr === startDateStr) {
+						// First day of multi-day entry
+						dayStartTime = startTime;
+						dayEndTime = getEndOfDay(dayStr);
+					} else if (dayStr === endDateStr) {
+						// Last day of multi-day entry
+						dayStartTime = getStartOfDay(dayStr);
+						dayEndTime = endTime;
+					} else {
+						// Middle day - full 24 hours
+						dayStartTime = getStartOfDay(dayStr);
+						dayEndTime = getEndOfDay(dayStr);
+					}
+
+					// Calculate duration for this specific day
+					const dayDurationMs = dayEndTime.getTime() - dayStartTime.getTime();
+					const dayDurationSeconds = Math.floor(dayDurationMs / 1000);
+
+					// Add entry to this day (only once, on the start day)
+					if (dayStr === startDateStr) {
+						dayData.entries.push(entry);
+					}
+
+					// Add the day's portion of time
+					dayData.value += dayDurationSeconds;
+				}
 			}
 
 			days = Array.from(dayMap.values()).sort(
@@ -202,10 +254,14 @@
 	}
 
 	function secondsToHours(seconds: number): number {
+		if (!seconds || isNaN(seconds)) return 0;
 		return Math.round((seconds / 3600) * 10) / 10;
 	}
 
 	function secondsToHHMMSS(seconds: number): string {
+		if (!seconds || isNaN(seconds)) {
+			return '00:00:00';
+		}
 		const hours = Math.floor(seconds / 3600);
 		const minutes = Math.floor((seconds % 3600) / 60);
 		const secs = seconds % 60;
@@ -227,11 +283,11 @@
 	];
 
 	const maxDaySeconds = $derived(
-		Math.max(0, ...days.map((d) => d.value))
+		Math.max(0, ...days.map((d) => d.value).filter(v => !isNaN(v) && v !== null))
 	);
 
 	function activityClass(seconds: number): string {
-		if (seconds === 0 || maxDaySeconds === 0) return activityPalette[0];
+		if (seconds === 0 || maxDaySeconds === 0 || isNaN(maxDaySeconds)) return activityPalette[0];
 		const level = seconds / maxDaySeconds; // 0..1
 		const idx = Math.min(
 			activityPalette.length - 1,
@@ -249,14 +305,14 @@
 	}
 
 	const totalHours = $derived(
-		Math.round((days.reduce((sum, d) => sum + d.value, 0) / 3600) * 10) / 10
+		Math.round((days.reduce((sum, d) => (d.value || 0) + sum, 0) / 3600) * 10) / 10
 	);
 
 	// Easter egg: confetti for days with ≥8 hours
 	let confettiFiredFor = $state<Set<string>>(new Set());
 
 	async function handleDayHover(event: MouseEvent, day: HeatmapData | null) {
-		if (!day || confettiFiredFor.has(day.date)) return;
+		if (!day || confettiFiredFor.has(day.date) || isNaN(day.value)) return;
 		const seconds = day.value;
 		if (seconds >= 8 * 3600) {
 			const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();

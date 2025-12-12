@@ -20,10 +20,10 @@ const createApiClient = () => {
           // Check if response is 401 Unauthorized
           if (response.status === 401) {
             console.warn('Received 401 Unauthorized, logging out user');
-            
+
             // Perform logout using global function with autoLogout flag
             globalLogout(true);
-            
+
             // Throw an error to prevent further processing
             throw new Error('Authentication failed');
           }
@@ -52,10 +52,10 @@ baseUrl.subscribe((url: string) => {
           // Check if response is 401 Unauthorized
           if (response.status === 401) {
             console.warn('Received 401 Unauthorized, logging out user');
-            
+
             // Perform logout using global function with autoLogout flag
             globalLogout(true);
-            
+
             // Throw an error to prevent further processing
             throw new Error('Authentication failed');
           }
@@ -85,7 +85,7 @@ export interface TimeEntry {
   description: string;
   start_time: string;
   end_time: string | null;
-  duration: string | null; // Duration in seconds as string (e.g., "8526")
+  duration: string | null; // Duration in seconds as string (e.g., "8526.0")
   is_active: boolean;
   user: string;
   project: string;

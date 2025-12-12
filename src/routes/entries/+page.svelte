@@ -68,10 +68,10 @@
 
   function formatDuration(duration: string | null): string {
     if (!duration) return 'Active';
-    // Parse duration like "02:30:45" (HH:MM:SS)
-    const parts = duration.split(':').map(Number);
-    const hours = parts[0];
-    const minutes = parts[1];
+    // Duration is now in seconds as string (e.g., "8.0", "127172.0")
+    const totalSeconds = parseInt(duration, 10) || 0;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     if (hours > 0) {
       return `${hours}h ${minutes}m`;
     }
@@ -132,7 +132,7 @@
               <tbody>
                 {#each data.results as entry (entry.id)}
                   {@const status = getStatusBadge(entry)}
-                  <tr 
+                  <tr
                     class="hover:bg-base-200/50 cursor-pointer transition-colors duration-200"
                     onclick={() => openEntryModal(entry)}
                   >
@@ -167,7 +167,7 @@
     <div class="lg:hidden space-y-4">
       {#each data.results as entry (entry.id)}
         {@const status = getStatusBadge(entry)}
-        <div 
+        <div
           class="card bg-base-100 shadow-lg cursor-pointer transition-all duration-200 hover:shadow-xl"
           onclick={() => openEntryModal(entry)}
         >
@@ -178,7 +178,7 @@
                 {status.text}
               </span>
             </div>
-            
+
             <div class="space-y-2 text-sm">
               <div class="flex items-center justify-between">
                 <span class="text-base-content/60">Project:</span>
@@ -218,7 +218,7 @@
           No entries found
         {/if}
       </div>
-      
+
       <div class="flex space-x-2">
         <button
           class="btn btn-outline btn-sm"
