@@ -40,12 +40,10 @@
   });
 
   function handleOutsideClick(event) {
-    console.log('handleOutsideClick called');
     // Check if the click is inside a dropdown
     const isInsideDropdown = event.target.closest('.dropdown');
     
     if (!isInsideDropdown) {
-      console.log('Click outside dropdown, closing all');
       // Close all dropdowns by removing focus from dropdown buttons
       const dropdownButtons = document.querySelectorAll('.dropdown [tabindex="0"]');
       dropdownButtons.forEach(button => {
@@ -53,8 +51,6 @@
           button.blur();
         }
       });
-    } else {
-      console.log('Click inside dropdown, keeping open');
     }
   }
 
@@ -193,7 +189,6 @@
   }
 
   function handleFilterChange() {
-    console.log('handleFilterChange called with:', selectedTimeRange, selectedSort);
     // Reset to first page when filters change
     loadData();
   }
@@ -245,15 +240,15 @@
         <span class="label-text">Time Range</span>
       </label>
       <div class="dropdown">
-        <div tabindex="0" role="button" class="btn btn-outline w-full max-w-xs" onclick={() => console.log('Time range button clicked')}>
+        <div tabindex="0" role="button" class="btn btn-outline w-full max-w-xs">
           {getTimeRangeDisplay(selectedTimeRange)}
           <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
           </svg>
         </div>
         <ul tabindex="-1" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
-          <li><a class="dropdown-close" onclick={() => { console.log('All Time clicked'); selectedTimeRange = 'all'; handleFilterChange(); }}>All Time</a></li>
-          <li><a class="dropdown-close" onclick={() => { console.log('Last 7 Days clicked'); selectedTimeRange = 'last7days'; handleFilterChange(); }}>Last 7 Days</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'all'; handleFilterChange(); }}>All Time</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'last7days'; handleFilterChange(); }}>Last 7 Days</a></li>
           <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'lastweek'; handleFilterChange(); }}>Last Week</a></li>
           <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'thisweek'; handleFilterChange(); }}>This Week</a></li>
           <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'lastmonth'; handleFilterChange(); }}>Last Month</a></li>
@@ -270,7 +265,7 @@
         <span class="label-text">Sort By</span>
       </label>
       <div class="dropdown">
-        <div tabindex="0" role="button" class="btn btn-outline w-full max-w-xs" onclick={() => console.log('Sort button clicked')}>
+        <div tabindex="0" role="button" class="btn btn-outline w-full max-w-xs">
           {getSortDisplay(selectedSort)}
           <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>

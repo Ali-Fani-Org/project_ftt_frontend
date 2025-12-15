@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import { page } from '$app/stores';
 import { get } from 'svelte/store';
 import { preloadData } from '$app/navigation';
+import logger from '$lib/logger';
 
 // Cache for preloaded data
 const preloadedDataCache = new Map();
@@ -20,6 +21,15 @@ if (browser) {
   });
 }
 
+let apiModule: Promise<typeof import('./api')> | null = null;
+
+const getApiModule = () => {
+  if (!apiModule) {
+    apiModule = import('./api');
+  }
+  return apiModule;
+};
+
 async function preloadRoute(path: string) {
   if (!browser) return;
 
@@ -30,13 +40,9 @@ async function preloadRoute(path: string) {
     }
 
     // Use SvelteKit's built-in preloadData function
-    const link = document.createElement('a');
-    link.href = path;
-
-    // Make sure preloadData exists in the current SvelteKit version
     if (typeof preloadData === 'function') {
-      const result = await preloadData(link).catch(err => {
-        console.warn(`Failed to preload data for ${path}:`, err);
+      const result = await preloadData(path).catch(err => {
+        logger.warn(`Failed to preload data for ${path}:`, err);
         return null;
       });
 
@@ -44,19 +50,18 @@ async function preloadRoute(path: string) {
         preloadedDataCache.set(path, result);
       }
 
-      console.log(`Preloaded route: ${path}`, result ? 'success' : 'failed');
+      logger.debug(`Preloaded route: ${path}`, result ? 'success' : 'failed');
     } else {
-      console.warn('preloadData function not available in this SvelteKit version');
-      // Fallback: just make the API calls that would typically be made on the timer page
-      // This is just a basic fallback since true preloading isn't available
-      import('./api').then(({ projects, timeEntries }) => {
+      logger.warn('preloadData function not available in this SvelteKit version');
+      // Fallback: make API calls with cached module import
+      getApiModule().then(({ projects, timeEntries }) => {
         // Preload what would typically be loaded on the timer page
-        projects.list().catch(err => console.warn('Failed to preload projects:', err));
-        timeEntries.getCurrentActive().catch(err => console.warn('Failed to preload active timer:', err));
+        projects.list().catch(err => logger.warn('Failed to preload projects:', err));
+        timeEntries.getCurrentActive().catch(err => logger.warn('Failed to preload active timer:', err));
       });
     }
   } catch (error) {
-    console.warn(`Failed to preload route ${path}:`, error);
+    logger.warn(`Failed to preload route ${path}:`, error);
   }
 }
 
@@ -64,6 +69,8 @@ async function preloadRoute(path: string) {
 export function preload(path: string) {
   return preloadRoute(path);
 }
+
+export { preloadRoute };
 
 // Additional optimization: Keep frequently used components in memory
 // This prevents the need to re-instantiate them each time

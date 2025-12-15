@@ -7,6 +7,9 @@
   import TasksModal from '$lib/TasksModal.svelte';
   import Last7DaysChart from '$lib/Last7DaysChart.svelte';
   import CalendarHeatmap from '$lib/CalendarHeatmap.svelte';
+  import { preloadOnHover } from '$lib/preloadOnHover';
+  import DebugPreloadIcon from '$lib/DebugPreloadIcon.svelte';
+  import { debugPreloadActive } from '$lib/preloadOnHover';
 
   let projectsList = $state<Project[]>([]);
   let recentEntries = $state<TimeEntry[]>([]);
@@ -24,6 +27,19 @@
   // Feature flags
   let showProcessMonitorButton = $state(false);
   let loadingFeatureFlags = $state(true);
+
+  // Track preloading state
+  const preloadingStates = {
+    '/timer': false,
+    '/entries': false,
+    '/settings': false,
+    '/processes': false
+  };
+
+  // Handler to update preloading state
+  function setPreloading(path, state) {
+    preloadingStates[path] = state;
+  }
 
   // Note: Authentication is now handled globally in the layout
   onMount(async () => {
@@ -186,6 +202,9 @@
     if (hour < 17) return 'Good afternoon';
     return 'Good evening';
   }
+
+  // Enable debug mode in development
+  const debugMode = import.meta.env.DEV;
 </script>
 
 <div class="container mx-auto p-4 lg:p-8">
@@ -315,7 +334,7 @@
             </div>
             <div class="avatar placeholder bg-accent/10 rounded-full p-4">
               <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
               </svg>
             </div>
           </div>
@@ -355,7 +374,16 @@
               {/each}
             </div>
             <div class="card-actions mt-4">
-              <button class="btn btn-outline btn-sm" onclick={openTimeEntries}>
+              <button class="btn btn-outline btn-sm" 
+                      use:preloadOnHover={'/entries'} 
+                      on:preloadstart={() => setPreloading('/entries', true)}
+                      on:preloadend={() => setPreloading('/entries', false)}
+                      on:preloadcancel={() => setPreloading('/entries', false)}
+                      on:click={openTimeEntries}>
+                {#if preloadingStates['/entries']}
+                  <span class="loading loading-spinner loading-xs mr-2"></span>
+                {/if}
+                <DebugPreloadIcon active={debugMode && preloadingStates['/entries']} />
                 View All Entries
               </button>
             </div>
@@ -375,21 +403,48 @@
         <div class="card-body">
           <h2 class="card-title mb-4">Quick Actions</h2>
           <div class="space-y-3">
-            <button class="btn btn-primary btn-block justify-start" onclick={() => goto('/timer')}>
+            <button class="btn btn-primary btn-block justify-start" 
+                    use:preloadOnHover={'/timer'} 
+                    on:preloadstart={() => setPreloading('/timer', true)}
+                    on:preloadend={() => setPreloading('/timer', false)}
+                    on:preloadcancel={() => setPreloading('/timer', false)}
+                    on:click={() => goto('/timer')}>
+              {#if preloadingStates['/timer']}
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+              {/if}
+              <DebugPreloadIcon active={debugMode && preloadingStates['/timer']} />
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293H15M9 10V9a2 2 0 012-2h2a2 2 0 012 2v1"></path>
               </svg>
               Start New Timer
             </button>
 
-            <button class="btn btn-outline btn-block justify-start" onclick={openTimeEntries}>
+            <button class="btn btn-outline btn-block justify-start" 
+                    use:preloadOnHover={'/entries'} 
+                    on:preloadstart={() => setPreloading('/entries', true)}
+                    on:preloadend={() => setPreloading('/entries', false)}
+                    on:preloadcancel={() => setPreloading('/entries', false)}
+                    on:click={openTimeEntries}>
+              {#if preloadingStates['/entries']}
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+              {/if}
+              <DebugPreloadIcon active={debugMode && preloadingStates['/entries']} />
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
               </svg>
               View All Entries
             </button>
 
-            <button class="btn btn-outline btn-block justify-start" onclick={() => goto('/settings')}>
+            <button class="btn btn-outline btn-block justify-start" 
+                    use:preloadOnHover={'/settings'} 
+                    on:preloadstart={() => setPreloading('/settings', true)}
+                    on:preloadend={() => setPreloading('/settings', false)}
+                    on:preloadcancel={() => setPreloading('/settings', false)}
+                    on:click={() => goto('/settings')}>
+              {#if preloadingStates['/settings']}
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+              {/if}
+              <DebugPreloadIcon active={debugMode && preloadingStates['/settings']} />
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
@@ -398,7 +453,16 @@
             </button>
 
             {#if !loadingFeatureFlags && showProcessMonitorButton}
-              <button class="btn btn-outline btn-block justify-start" onclick={openProcessMonitor}>
+              <button class="btn btn-outline btn-block justify-start" 
+                      use:preloadOnHover={'/processes'} 
+                      on:preloadstart={() => setPreloading('/processes', true)}
+                      on:preloadend={() => setPreloading('/processes', false)}
+                      on:preloadcancel={() => setPreloading('/processes', false)}
+                      on:click={openProcessMonitor}>
+                {#if preloadingStates['/processes']}
+                  <span class="loading loading-spinner loading-xs mr-2"></span>
+                {/if}
+                <DebugPreloadIcon active={debugMode && preloadingStates['/processes']} />
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
                 </svg>
@@ -418,7 +482,8 @@
           <p class="text-lg">{activeEntry.title}</p>
           <p class="text-sm opacity-70">{activeEntry.project}</p>
           <div class="card-actions justify-end">
-            <button class="btn btn-secondary" onclick={() => goto('/timer')}>
+            <button class="btn btn-secondary" use:preloadOnHover={'/timer'} on:click={() => goto('/timer')}>
+              <DebugPreloadIcon active={debugMode && preloadingStates['/timer']} />
               View in Timer
             </button>
           </div>
@@ -431,3 +496,15 @@
     <TasksModal on:close={() => showTasksModal = false} />
   {/if}
 </div>
+
+<style>
+  .dashboard-button {
+    position: relative;
+    /* ... existing styles ... */
+  }
+  .loading-indicator {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+  }
+</style>

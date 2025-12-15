@@ -127,35 +127,30 @@
 
       // Calculate today's date string in Asia/Tehran timezone
       const now = new Date();
-      console.log('DEBUG: Current Date (local)', now.toISOString());
-      console.log('DEBUG: Current Date (Tehran)', now.toLocaleString('en', { timeZone: 'Asia/Tehran' }));
 
       // Format the date in Asia/Tehran timezone
       const year = now.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
       const month = now.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
       const day = now.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
       const todayStr = `${year}-${month}-${day}`;
-      console.log('DEBUG: Today string (Tehran timezone)', todayStr);
 
       // Get date range for the last 7 days
       // We need to calculate the date 6 days ago (not 7) to get 7 full days including today
       // This accounts for the exclusive boundaries in the API (start_date_after_tz, start_date_before_tz)
       const sixDaysAgo = new Date(now);
       sixDaysAgo.setDate(now.getDate() - 6);
-      console.log('DEBUG: 6 days ago (local)', sixDaysAgo.toISOString());
 
       // Format this date in Tehran timezone too
       const year6 = sixDaysAgo.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
       const month6 = sixDaysAgo.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
       const day6 = sixDaysAgo.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
       const sixDaysAgoStr = `${year6}-${month6}-${day6}`;
-      console.log('DEBUG: 6 days ago string (Tehran timezone)', sixDaysAgoStr);
 
       // API date range for debugging
-      console.log('DEBUG: API date range parameters:', {
-        start_date_after_tz: sixDaysAgoStr,
-        start_date_before_tz: todayStr
-      });
+      // console.log('API date range parameters:', {
+      //   start_date_after_tz: sixDaysAgoStr,
+      //   start_date_before_tz: todayStr
+      // });
 
       // Collect all entries across all pages using direct API calls
       let allEntries: TimeEntry[] = [];
@@ -189,23 +184,23 @@
       }
 
       // Debug: Log all API entries received
-      console.log('DEBUG: Total entries received from API:', allEntries.length);
-      allEntries.forEach((entry, index) => {
-        console.log(`DEBUG: Entry ${index + 1}:`, {
-          id: entry.id,
-          title: entry.title,
-          start_time: entry.start_time,
-          end_time: entry.end_time,
-          duration: entry.duration,
-          start_date_only: entry.start_time?.split('T')[0]
-        });
-      });
+      // console.log('Total entries received from API:', allEntries.length);
+      // allEntries.forEach((entry, index) => {
+      //   console.log(`Entry ${index + 1}:`, {
+      //     id: entry.id,
+      //     title: entry.title,
+      //     start_time: entry.start_time,
+      //     end_time: entry.end_time,
+      //     duration: entry.duration,
+      //     start_date_only: entry.start_time?.split('T')[0]
+      //   });
+      // });
 
       // Initialize all 7 days (today first), but only dates within the actual data range
       const dayMap = new Map<string, DayData>();
 
       // First, create entries for the last 7 days using Tehran timezone
-      console.log('DEBUG: Creating day map for last 7 days:');
+      // console.log('Creating day map for last 7 days:');
       for (let i = 0; i <= 6; i++) {
         const date = new Date(now);
         date.setDate(now.getDate() - i);
@@ -216,7 +211,7 @@
         const dateStr = `${year}-${month}-${dayVal}`;
         const label = i === 0 ? 'Today' : i === 1 ? 'Yesterday' : `${i} days ago`;
 
-        console.log(`DEBUG: Day ${i}: ${dateStr} (${label})`);
+        // console.log(`Day ${i}: ${dateStr} (${label})`);
 
         dayMap.set(dateStr, {
           date: dateStr,
@@ -229,9 +224,9 @@
       }
 
       // Calculate total time for each day and distribute across segments based on actual time ranges
-      console.log('DEBUG: Processing entries to assign to days...');
+      // console.log('Processing entries to assign to days...');
       for (const entry of allEntries) {
-        console.log(`DEBUG: Processing entry ${entry.id}: ${entry.title} (${entry.start_time})`);
+        // console.log(`Processing entry ${entry.id}: ${entry.title} (${entry.start_time})`);
 
         // Calculate duration based on start/end times
         let durationSeconds = 0;
@@ -263,27 +258,27 @@
         const startTime = new Date(entry.start_time);
         const endTime = entry.end_time ? new Date(entry.end_time) : new Date();
 
-        console.log(`DEBUG: Entry ${entry.id} - Direct date extraction:`, {
-          start_iso: entry.start_time,
-          end_iso: entry.end_time,
-          start_date_only: startDateStr,
-          end_date_only: endDateStr,
-          start_time_obj: startTime.toISOString(),
-          end_time_obj: endTime.toISOString()
-        });
+        // console.log(`Entry ${entry.id} - Direct date extraction:`, {
+        //   start_iso: entry.start_time,
+        //   end_iso: entry.end_time,
+        //   start_date_only: startDateStr,
+        //   end_date_only: endDateStr,
+        //   start_time_obj: startTime.toISOString(),
+        //   end_time_obj: endTime.toISOString()
+        // });
 
         // Extract the date from the start_time for initial day lookup
         const entryStartDateStr = entry.start_time.split('T')[0]; // YYYY-MM-DD
-        console.log(`DEBUG: Entry ${entry.id} start date: ${entryStartDateStr}`);
+        // console.log(`Entry ${entry.id} start date: ${entryStartDateStr}`);
         const dayData = dayMap.get(entryStartDateStr);
 
         if (!dayData) {
-          console.log(`DEBUG: WARNING: No day data found for entry ${entry.id} with date ${entryStartDateStr}`);
-          console.log('DEBUG: Available day dates:', Array.from(dayMap.keys()));
+          // console.log(`WARNING: No day data found for entry ${entry.id} with date ${entryStartDateStr}`);
+          // console.log('Available day dates:', Array.from(dayMap.keys()));
         }
 
         // NEW SIMPLE APPROACH: Process each day based on date strings directly
-        console.log(`DEBUG: Entry ${entry.id} - Processing days from ${startDateStr} to ${endDateStr}`);
+        // console.log(`Entry ${entry.id} - Processing days from ${startDateStr} to ${endDateStr}`);
 
         // Create a set of all days this entry spans
         const daysSet = new Set<string>();
@@ -293,7 +288,7 @@
         while (currentDay <= endDayObj) {
           const dayStr = currentDay.toISOString().split('T')[0];
           daysSet.add(dayStr);
-          console.log(`DEBUG: Entry ${entry.id} - Adding day: ${dayStr}`);
+          // console.log(`Entry ${entry.id} - Adding day: ${dayStr}`);
 
           // Move to next day
           currentDay.setDate(currentDay.getDate() + 1);
@@ -308,11 +303,11 @@
         for (const dayStr of daysSet) {
           const dayData = dayMap.get(dayStr);
           if (!dayData) {
-            console.log(`DEBUG: Entry ${entry.id} - No day data found for ${dayStr}`);
+            // console.log(`Entry ${entry.id} - No day data found for ${dayStr}`);
             continue;
           }
 
-          console.log(`DEBUG: Entry ${entry.id} - Processing day ${dayStr}`);
+          // console.log(`Entry ${entry.id} - Processing day ${dayStr}`);
 
           // Determine the actual time boundaries for THIS specific day
           let dayStartTime: Date;
@@ -322,29 +317,29 @@
             // Single day entry - use actual start and end times
             dayStartTime = startTime;
             dayEndTime = endTime;
-            console.log(`DEBUG: Entry ${entry.id} - Single day entry on ${dayStr}`);
+            // console.log(`Entry ${entry.id} - Single day entry on ${dayStr}`);
           } else if (dayStr === startDateStr) {
             // First day of multi-day entry - from start time to end of day
             dayStartTime = startTime;
             dayEndTime = getEndOfDay(dayStr);
-            console.log(`DEBUG: Entry ${entry.id} - First day: ${dayStr} from ${dayStartTime.toISOString()} to ${dayEndTime.toISOString()}`);
+            // console.log(`Entry ${entry.id} - First day: ${dayStr} from ${dayStartTime.toISOString()} to ${dayEndTime.toISOString()}`);
           } else if (dayStr === endDateStr) {
             // Last day of multi-day entry - from start of day to end time
             dayStartTime = getStartOfDay(dayStr);
             dayEndTime = endTime;
-            console.log(`DEBUG: Entry ${entry.id} - Last day: ${dayStr} from ${dayStartTime.toISOString()} to ${dayEndTime.toISOString()}`);
+            // console.log(`Entry ${entry.id} - Last day: ${dayStr} from ${dayStartTime.toISOString()} to ${dayEndTime.toISOString()}`);
           } else {
             // Middle day - full 24 hours
             dayStartTime = getStartOfDay(dayStr);
             dayEndTime = getEndOfDay(dayStr);
-            console.log(`DEBUG: Entry ${entry.id} - Middle day: ${dayStr} (full 24 hours)`);
+            // console.log(`Entry ${entry.id} - Middle day: ${dayStr} (full 24 hours)`);
           }
 
           // Calculate duration for this specific day in seconds
           const dayDurationMs = dayEndTime.getTime() - dayStartTime.getTime();
           const dayDurationSeconds = Math.floor(dayDurationMs / 1000);
 
-          console.log(`DEBUG: Entry ${entry.id} - Day ${dayStr} duration: ${dayDurationSeconds}s (${(dayDurationSeconds / 3600).toFixed(2)}h)`);
+          // console.log(`Entry ${entry.id} - Day ${dayStr} duration: ${dayDurationSeconds}s (${(dayDurationSeconds / 3600).toFixed(2)}h)`);
 
           // Add to day's total
           dayData.totalSeconds += dayDurationSeconds;
@@ -355,9 +350,9 @@
       }
 
       // Format durations and compute segment max for each day
-      console.log('DEBUG: Final day data before formatting:');
+      // console.log('Final day data before formatting:');
       for (const [dateStr, dayData] of dayMap.entries()) {
-        console.log(`DEBUG: ${dateStr}: ${dayData.totalSeconds} seconds, label: ${dayData.label}`);
+        // console.log(`${dateStr}: ${dayData.totalSeconds} seconds, label: ${dayData.label}`);
       }
 
       for (const dayData of dayMap.values()) {
@@ -371,14 +366,13 @@
         new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
-      console.log('DEBUG: Final chart data (sorted):');
+      // console.log('Final chart data (sorted):');
       chartData.forEach((day, index) => {
-        console.log(`DEBUG: Chart day ${index}: ${day.date} (${day.label}) - ${day.formattedDuration}`);
+        // console.log(`Chart day ${index}: ${day.date} (${day.label}) - ${day.formattedDuration}`);
       });
 
       loading = false;
     } catch (err) {
-      console.error('Failed to load last 7 days data:', err);
       error = 'Failed to load activity data';
       loading = false;
     }
@@ -402,16 +396,16 @@
 
   // Distribute time based on the actual hour range of the task
   function distributeTimeByHourRange(dayData: DayData, start: Date, end: Date, totalSeconds: number) {
-    console.log(`DEBUG: distributeTimeByHourRange for ${dayData.date}: start=${start.toISOString()}, end=${end.toISOString()}, totalSeconds=${totalSeconds}`);
+    // console.log(`distributeTimeByHourRange for ${dayData.date}: start=${start.toISOString()}, end=${end.toISOString()}, totalSeconds=${totalSeconds}`);
 
     // Calculate start and end minutes from the beginning of the day
     const startMinutesFromDayStart = start.getHours() * 60 + start.getMinutes() + (start.getSeconds() / 60);
     const endMinutesFromDayStart = end.getHours() * 60 + end.getMinutes() + (end.getSeconds() / 60);
-    console.log(`DEBUG: Time range: startMinutes=${startMinutesFromDayStart}, endMinutes=${endMinutesFromDayStart}`);
+    // console.log(`Time range: startMinutes=${startMinutesFromDayStart}, endMinutes=${endMinutesFromDayStart}`);
 
     // Handle impossible case where duration is negative
     if (endMinutesFromDayStart < startMinutesFromDayStart) {
-      console.log(`DEBUG: WARNING: Negative duration detected, skipping`);
+      // console.log('WARNING: Negative duration detected, skipping');
       return; // Skip this entry
     }
 

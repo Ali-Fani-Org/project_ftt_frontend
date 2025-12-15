@@ -1,8 +1,7 @@
-console.log('🔧 Notification module being imported...');
-
 import { browser } from '$app/environment';
 import { authToken, baseUrl } from './stores';
 import { get } from 'svelte/store';
+import logger from '$lib/logger';
 
 export interface NotificationData {
   id: string;
@@ -49,36 +48,26 @@ class TauriNotificationService implements NotificationService {
   constructor() {
     // Only initialize in browser environment
     if (!browser) {
-      console.warn(`[NotificationService ${this.serviceId}] Can only be used in browser environment`);
+      logger.warn(`[NotificationService ${this.serviceId}] Can only be used in browser environment`);
       throw new Error('NotificationService can only be used in browser environment');
     }
-    
-    console.log(`[NotificationService ${this.serviceId}] TauriNotificationService constructor called`);
   }
 
   async connect(): Promise<void> {
-    console.log(`[NotificationService ${this.serviceId}] connect() called, isConnecting: ${this.isConnecting}, isConnected: ${this.connected}`);
-    
     if (this.isConnecting || this.connected) {
-      console.log(`[NotificationService ${this.serviceId}] Already connected or connecting, skipping`);
       return;
     }
 
     this.isConnecting = true;
     this.connectionStartTime = Date.now();
     this.lastError = null;
-    
-    console.log(`[NotificationService ${this.serviceId}] Starting long polling connection at ${this.connectionStartTime}`);
 
     try {
       const token = get(authToken);
       const base = get(baseUrl);
 
-      console.log(`[NotificationService ${this.serviceId}] Token available: ${!!token}, Base URL: ${base}`);
-
-      // Critical security check: Only proceed if auth token is available
       if (!token) {
-        console.warn(`[NotificationService ${this.serviceId}] 🚫 BLOCKED: No auth token available - refusing to connect to prevent server spam`);
+        logger.warn(`[NotificationService ${this.serviceId}] 🚫 BLOCKED: No auth token available`);
         this.isConnecting = false;
         this.connected = false;
         this.connectionStartTime = null;
@@ -86,9 +75,8 @@ class TauriNotificationService implements NotificationService {
         return;
       }
 
-      // Additional validation
       if (!base) {
-        console.warn(`[NotificationService ${this.serviceId}] 🚫 BLOCKED: No base URL available`);
+        logger.warn(`[NotificationService ${this.serviceId}] 🚫 BLOCKED: No base URL available`);
         this.isConnecting = false;
         this.connected = false;
         this.connectionStartTime = null;
@@ -96,25 +84,17 @@ class TauriNotificationService implements NotificationService {
         return;
       }
 
-      // Create abort controller for this polling session
       this.pollController = new AbortController();
-      
-      console.log(`[NotificationService ${this.serviceId}] ✅ Long polling connection established`);
       this.connected = true;
       this.isConnecting = false;
       this.reconnectAttempts = 0;
 
-      // Start the polling loop
       this.startPolling(token, base);
 
     } catch (error: any) {
-      const elapsed = this.connectionStartTime ? Date.now() - this.connectionStartTime : 0;
-      
-      if (error.name === 'AbortError') {
-        console.log(`[NotificationService ${this.serviceId}] Long polling connection aborted`);
-      } else {
+      if (error.name !== 'AbortError') {
         this.lastError = error.message || 'Unknown connection error';
-        console.error(`[NotificationService ${this.serviceId}] ❌ Failed to start long polling after ${elapsed}ms:`, error);
+        logger.error(`[NotificationService ${this.serviceId}] ❌ Failed to start long polling:`, error);
       }
       
       this.connected = false;
@@ -133,8 +113,6 @@ class TauriNotificationService implements NotificationService {
       if (!this.connected || !this.pollController) return;
 
       try {
-        console.log(`[NotificationService ${this.serviceId}] 🔄 Polling for notifications...`);
-        
         const url = `${base}/api/notifications/long-poll/?timeout=${this.pollTimeout}`;
         
         const response = await fetch(url, {
@@ -147,19 +125,15 @@ class TauriNotificationService implements NotificationService {
         });
 
         if (!response.ok) {
-          // Handle authentication failures
           if (response.status === 401) {
-            console.error(`[NotificationService ${this.serviceId}] 🚫 401 Unauthorized - clearing invalid auth token`);
+            logger.error(`[NotificationService ${this.serviceId}] 🚫 401 Unauthorized - clearing invalid auth token`);
             
-            // Clear the invalid auth token to force re-authentication
             try {
               authToken.set(null);
-              console.log(`[NotificationService ${this.serviceId}] 🗑️ Invalid auth token cleared - user must re-authenticate`);
             } catch (error) {
-              console.error(`[NotificationService ${this.serviceId}] ❌ Failed to clear auth token:`, error);
+              logger.error(`[NotificationService ${this.serviceId}] ❌ Failed to clear auth token:`, error);
             }
             
-            // Stop polling and disconnect
             this.connected = false;
             this.isPolling = false;
             this.lastError = 'Authentication expired - please log in again';
@@ -171,61 +145,42 @@ class TauriNotificationService implements NotificationService {
 
         const data: LongPollResponse = await response.json();
         
-        console.log(`[NotificationService ${this.serviceId}] 📨 Received poll response:`, {
-          status: data.status,
-          has_new_notifications: data.has_new_notifications,
-          notification_count: data.notifications.length
-        });
-
-        // Handle different response types
         if (data.has_new_notifications && data.notifications.length > 0) {
           for (const notification of data.notifications) {
-            console.log(`[NotificationService ${this.serviceId}] 🔔 Processing notification:`, notification);
+            logger.debug(`[NotificationService ${this.serviceId}] 🔔 New notification:`, notification);
             
-            // Show native notification via Tauri command
             await this.showNotification(notification);
-            
-            // Acknowledge the notification
             await this.acknowledgeNotification(notification.id);
           }
           
-          // Continue polling immediately for more notifications
           setTimeout(pollOnce, 0);
         } else {
-          // No new notifications, wait and poll again
           setTimeout(pollOnce, this.pollInterval);
         }
 
       } catch (error: any) {
-        if (error.name === 'AbortError') {
-          console.log(`[NotificationService ${this.serviceId}] Polling aborted`);
-          return;
+        if (error.name !== 'AbortError') {
+          this.lastError = error.message || 'Polling error';
+          logger.error(`[NotificationService ${this.serviceId}] ❌ Polling error:`, error);
         }
         
-        this.lastError = error.message || 'Polling error';
-        console.error(`[NotificationService ${this.serviceId}] ❌ Polling error:`, error);
-        
-        // Stop polling on error
         this.isPolling = false;
         this.connected = false;
-        
-        // Trigger reconnection
         this.handleReconnect();
       }
     };
 
-    // Start the first poll
     pollOnce();
   }
 
   disconnect(): void {
-    console.log(`[NotificationService ${this.serviceId}] disconnect() called`);
+    logger.debug(`[NotificationService ${this.serviceId}] disconnect() called`);
     this.isPolling = false;
     
     if (this.pollController) {
       this.pollController.abort();
       this.pollController = null;
-      console.log(`[NotificationService ${this.serviceId}] Long polling connection aborted`);
+      logger.debug(`[NotificationService ${this.serviceId}] Long polling connection aborted`);
     }
     this.connected = false;
     this.isConnecting = false;
@@ -233,28 +188,28 @@ class TauriNotificationService implements NotificationService {
   }
 
   isConnected(): boolean {
-    console.log(`[NotificationService ${this.serviceId}] isConnected() -> ${this.connected}`);
+    logger.debug(`[NotificationService ${this.serviceId}] isConnected() -> ${this.connected}`);
     return this.connected;
   }
 
   private async showNotification(notification: NotificationData): Promise<void> {
-    console.log(`[NotificationService ${this.serviceId}] 🎯 showNotification() called for:`, notification);
+    logger.debug(`[NotificationService ${this.serviceId}] 🎯 showNotification() called for:`, notification);
     try {
       // Check if we're in Tauri environment
       const { invoke } = await import('@tauri-apps/api/core');
       
       if (!invoke) {
-        console.warn(`[NotificationService ${this.serviceId}] ⚠️ Tauri API not available for notifications`);
+        logger.warn(`[NotificationService ${this.serviceId}] ⚠️ Tauri API not available for notifications`);
         return;
       }
 
-      console.log(`[NotificationService ${this.serviceId}] ✅ Tauri API available, preparing notification`);
+      logger.debug(`[NotificationService ${this.serviceId}] ✅ Tauri API available, preparing notification`);
 
       // Map notification types to appropriate titles
       const typeTitle = this.getNotificationTitle(notification.type);
       const fullTitle = `Time Tracker - ${typeTitle}`;
       
-      console.log(`[NotificationService ${this.serviceId}] 📱 Calling show_notification with:`, {
+      logger.debug(`[NotificationService ${this.serviceId}] 📱 Calling show_notification with:`, {
         title: fullTitle,
         body: notification.message,
         notificationType: notification.type
@@ -267,21 +222,21 @@ class TauriNotificationService implements NotificationService {
         notificationType: notification.type
       });
       
-      console.log(`[NotificationService ${this.serviceId}] ✅ Native notification requested: ${fullTitle} - ${notification.message}`);
+      logger.debug(`[NotificationService ${this.serviceId}] ✅ Native notification requested: ${fullTitle} - ${notification.message}`);
       
     } catch (error) {
-      console.error(`[NotificationService ${this.serviceId}] ❌ Failed to show native notification:`, error);
+      logger.error(`[NotificationService ${this.serviceId}] ❌ Failed to show native notification:`, error);
     }
   }
 
   private async acknowledgeNotification(notificationId: string): Promise<void> {
-    console.log(`[NotificationService ${this.serviceId}] 📤 acknowledgeNotification() called for ID:`, notificationId);
+    logger.debug(`[NotificationService ${this.serviceId}] 📤 acknowledgeNotification() called for ID:`, notificationId);
     try {
       const token = get(authToken);
       const base = get(baseUrl);
       
       if (!token) {
-        console.warn(`[NotificationService ${this.serviceId}] ⚠️ No auth token available for notification acknowledgment`);
+        logger.warn(`[NotificationService ${this.serviceId}] ⚠️ No auth token available for notification acknowledgment`);
         return;
       }
 
@@ -294,29 +249,29 @@ class TauriNotificationService implements NotificationService {
       });
 
       if (response.ok) {
-        console.log(`[NotificationService ${this.serviceId}] ✅ Notification ${notificationId} acknowledged`);
+        logger.debug(`[NotificationService ${this.serviceId}] ✅ Notification ${notificationId} acknowledged`);
       } else {
         // Handle authentication failures for acknowledgment
         if (response.status === 401) {
-          console.error(`[NotificationService ${this.serviceId}] 🚫 401 Unauthorized during acknowledgment - clearing invalid auth token`);
+          logger.error(`[NotificationService ${this.serviceId}] 🚫 401 Unauthorized during acknowledgment - clearing invalid auth token`);
           
           // Clear the invalid auth token to force re-authentication
           try {
             authToken.set(null);
-            console.log(`[NotificationService ${this.serviceId}] 🗑️ Invalid auth token cleared during acknowledgment`);
+            logger.debug(`[NotificationService ${this.serviceId}] 🗑️ Invalid auth token cleared during acknowledgment`);
           } catch (error) {
-            console.error(`[NotificationService ${this.serviceId}] ❌ Failed to clear auth token:`, error);
+            logger.error(`[NotificationService ${this.serviceId}] ❌ Failed to clear auth token:`, error);
           }
           
           this.lastError = 'Authentication expired - please log in again';
           return;
         }
         
-        console.warn(`[NotificationService ${this.serviceId}] ⚠️ Failed to acknowledge notification ${notificationId}:`, response.status);
+        logger.warn(`[NotificationService ${this.serviceId}] ⚠️ Failed to acknowledge notification ${notificationId}:`, response.status);
       }
       
     } catch (error) {
-      console.error(`[NotificationService ${this.serviceId}] ❌ Failed to acknowledge notification:`, error);
+      logger.error(`[NotificationService ${this.serviceId}] ❌ Failed to acknowledge notification:`, error);
     }
   }
 
@@ -332,12 +287,12 @@ class TauriNotificationService implements NotificationService {
       }
     })();
     
-    console.log(`[NotificationService ${this.serviceId}] 📝 Mapped type "${type}" to title "${title}"`);
+    logger.debug(`[NotificationService ${this.serviceId}] 📝 Mapped type "${type}" to title "${title}"`);
     return title;
   }
 
   private handleReconnect(): void {
-    console.log(`[NotificationService ${this.serviceId}] 🔄 handleReconnect() called, attempts: ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+    logger.debug(`[NotificationService ${this.serviceId}] 🔄 handleReconnect() called, attempts: ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
     this.connected = false;
     this.isConnecting = false;
     this.isPolling = false;
@@ -345,7 +300,7 @@ class TauriNotificationService implements NotificationService {
     // Check if we still have authentication before attempting reconnection
     const token = get(authToken);
     if (!token) {
-      console.log(`[NotificationService ${this.serviceId}] 🛑 Reconnection blocked - no auth token available`);
+      logger.debug(`[NotificationService ${this.serviceId}] 🛑 Reconnection blocked - no auth token available`);
       this.lastError = 'Authentication required - please log in first';
       return;
     }
@@ -356,14 +311,14 @@ class TauriNotificationService implements NotificationService {
       // Exponential backoff for reconnection attempts
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000); // Max 30 seconds
       
-      console.log(`[NotificationService ${this.serviceId}] ⏰ Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+      logger.debug(`[NotificationService ${this.serviceId}] ⏰ Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
       
       setTimeout(() => {
-        console.log(`[NotificationService ${this.serviceId}] 🔄 Triggering reconnection attempt ${this.reconnectAttempts}`);
-        this.connect().catch(console.error);
+        logger.debug(`[NotificationService ${this.serviceId}] 🔄 Triggering reconnection attempt ${this.reconnectAttempts}`);
+        this.connect().catch(logger.error);
       }, delay);
     } else {
-      console.error(`[NotificationService ${this.serviceId}] 🚫 Max reconnection attempts reached. Giving up.`);
+      logger.error(`[NotificationService ${this.serviceId}] 🚫 Max reconnection attempts reached. Giving up.`);
       this.lastError = 'Max reconnection attempts reached. Please check your network connection.';
     }
   }
@@ -378,14 +333,12 @@ class TauriNotificationService implements NotificationService {
  * Only available in Tauri environment
  */
 export function createNotificationService(): NotificationService {
-  console.log('🔧 createNotificationService() called');
   
   if (!browser) {
-    console.warn('⚠️ createNotificationService: Can only be created in browser environment');
+    logger.warn('⚠️ createNotificationService: Can only be created in browser environment');
     throw new Error('NotificationService can only be created in browser environment');
   }
   
-  console.log('✅ Creating TauriNotificationService instance');
   return new TauriNotificationService();
 }
 
@@ -395,36 +348,23 @@ export function createNotificationService(): NotificationService {
 let globalNotificationService: NotificationService | null = null;
 
 export function getNotificationService(): NotificationService {
-  console.log('🔧 getNotificationService() called');
-  
   if (!globalNotificationService) {
-    console.log('🆕 Creating new global notification service');
     globalNotificationService = createNotificationService();
   } else {
-    console.log('♻️ Reusing existing global notification service');
+    logger.debug('♻️ Reusing existing global notification service');
   }
   return globalNotificationService;
 }
 
 // Initialize on module load
-console.log('🚀 Notification module loaded');
 getNotificationService(); // Initialize the service
 
 // Auto-connect when auth token changes - only connect with valid authentication
 authToken.subscribe((token: string | null) => {
-  console.log(`🔑 Auth token changed: ${token ? 'TOKEN_AVAILABLE' : 'NO_TOKEN'}`);
-  console.log(`🔍 Global service available: ${!!globalNotificationService}`);
   
   if (token && globalNotificationService) {
-    console.log('🔗 Auth token available, securely connecting to notifications...');
-    globalNotificationService.connect().catch(console.error);
+    globalNotificationService.connect().catch(logger.error);
   } else if (!token && globalNotificationService) {
-    console.log('🔌 No auth token, disconnecting from notifications for security...');
     globalNotificationService.disconnect();
-  } else {
-    console.log('⚠️ Cannot connect: token=' + !!token + ', service=' + !!globalNotificationService);
   }
 });
-
-// Note: Connection will be handled by the auth token subscription
-// No immediate connection attempt to prevent server spam before authentication

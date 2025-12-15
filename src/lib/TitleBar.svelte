@@ -3,6 +3,7 @@
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { minimizeToTray, closeToTray } from '$lib/stores';
 	import { Minus, Maximize2, Minimize2, X, Pin, PinOff } from '@lucide/svelte';
+	import logger from '$lib/logger';
 
 	interface Props {
 		window?: any;
@@ -38,15 +39,12 @@
 	onMount(async () => {
 	  try {
 	    appWindow = propWindow || getCurrentWindow();
-	    console.log('TitleBar: Got window:', appWindow, 'propWindow provided:', !!propWindow);
 	    title = await appWindow.title();
-	    console.log('TitleBar: Window title:', title);
 	    isTimeEntriesWindow = title === 'Time Entries';
 	    isAlwaysOnTop = await appWindow.isAlwaysOnTop();
 	    isMaximized = await appWindow.isMaximized();
-	    console.log('TitleBar: Initialized for window:', title);
 	  } catch (error) {
-	    console.error('TitleBar: Failed to initialize:', error);
+	    logger.error('TitleBar: Failed to initialize:', error);
 	  }
 
 	  // Listen for window resize/maximize events to update icon state
@@ -56,43 +54,28 @@
 	});
 
 	function minimize() {
-		console.log('Minimize clicked, minimizeToTrayValue:', minimizeToTrayValue);
-		console.log('appWindow:', appWindow);
 		if (minimizeToTrayValue) {
-			console.log('Hiding window to tray');
 			appWindow?.hide();
 		} else {
-			console.log('Minimizing window normally');
 			appWindow?.minimize();
 		}
 	}
 
 	async function toggleMaximize() {
-		console.log('Toggle maximize clicked');
-		console.log('appWindow:', appWindow);
 		await appWindow?.toggleMaximize();
-		// Update the maximized state after toggling
 		isMaximized = await appWindow?.isMaximized();
-		console.log('Window maximized state:', isMaximized);
 	}
 
 	function close() {
-	  console.log('Close clicked, closeToTrayValue:', closeToTrayValue);
-	  console.log('appWindow:', appWindow);
 	  if (closeToTrayValue) {
-	    console.log('Hiding window to tray');
 	    appWindow?.hide();
 	  } else {
-	    console.log('Closing window');
 	    appWindow?.close();
 	  }
 	}
 
 	async function toggleAlwaysOnTop() {
-	  console.log('Toggle always on top clicked');
-	  console.log('appWindow:', appWindow);
 	  isAlwaysOnTop = !isAlwaysOnTop;
-	  console.log('Setting always on top to:', isAlwaysOnTop);
 	  await appWindow?.setAlwaysOnTop(isAlwaysOnTop);
 	}
 	async function handleTitleBarMouseDown(event: MouseEvent) {
@@ -106,7 +89,7 @@
 		try {
 			await appWindow?.startDragging();
 		} catch (error) {
-			console.error('Failed to start dragging:', error);
+			logger.error('Failed to start dragging:', error);
 		}
 	}
 
@@ -118,7 +101,7 @@
 		try {
 			await toggleMaximize();
 		} catch (error) {
-			console.error('Failed to toggle maximize:', error);
+			logger.error('Failed to toggle maximize:', error);
 		}
 	}
 </script>

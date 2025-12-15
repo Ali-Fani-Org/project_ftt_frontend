@@ -13,6 +13,7 @@
 	import { preload } from '$lib/preload';
 	import { themeChange } from 'theme-change';
 	import WaveBackground from '$lib/WaveBackground.svelte';
+	import logger from '$lib/logger';
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -24,7 +25,6 @@
 	const authStore = setAuthContext();
 
 	onMount(async () => {
-		console.log('Layout onMount started at', new Date().toISOString());
 		// Initialize theme-change immediately (no DOMContentLoaded wait)
 		themeChange(false);
 		try {
@@ -32,12 +32,10 @@
 			const currentWindow = getCurrentWindow();
 			currentWindow; // Test if it works
 			isTauri = true;
-			console.log('Running in Tauri, showing title bar at', new Date().toISOString());
 
 			// Listen for single instance event
 			const { listen } = await import('@tauri-apps/api/event');
 			listen('single-instance', async () => {
-				console.log('Another instance launched, focusing current window');
 				await currentWindow.unminimize();
 				await currentWindow.show();
 				await currentWindow.setFocus();
@@ -45,7 +43,6 @@
 
 			// Listen for theme change events from other windows
 			listen('theme-changed', (event) => {
-				console.log('Received theme change event:', event.payload);
 				const payload = event.payload as { theme: string; isCustom: boolean; customVars?: Record<string, string> };
 				const { theme, isCustom, customVars } = payload;
 				if (isCustom && customVars) {
@@ -62,17 +59,14 @@
 				const { LazyStore } = await import('@tauri-apps/plugin-store');
 				const tauriStore = new LazyStore('auth.json');
 				const token = await tauriStore.get<string | null>('authToken');
-				console.log('Token loaded at', new Date().toISOString(), token ? 'with token' : 'no token');
 				if (token) authToken.set(token);
 				const userData = await tauriStore.get<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null } | null>('user');
-				console.log('User loaded at', new Date().toISOString(), userData ? 'with user' : 'no user');
 				if (userData) user.set(userData);
 			} catch (e) {
-				console.error('Failed to load from Tauri store', e);
+				logger.error('Failed to load from Tauri store', e);
 			}
 		} catch {
 			isTauri = false;
-			console.log('Running in browser, no title bar at', new Date().toISOString());
 		}
 
 		// Initialize authentication state
@@ -81,27 +75,23 @@
 
 		// Preload commonly accessed data after initial authentication is set up
 		if ($authToken) {
-			// Preload timer page resources after a short delay to avoid blocking initial render
-			setTimeout(() => {
-				// Use SvelteKit's preload feature for faster subsequent navigation
-				import('$app/navigation').then(({ preloadData }) => {
-					// Preload the /timer route if available
-					const timerLink = document.createElement('a');
-					timerLink.href = '/timer';
-					if (preloadData && typeof preloadData === 'function') {
-						preloadData(timerLink).catch(() => {
-							// Ignore errors during preloading
-						});
-					} else {
-						// Fallback: pre-cache the API calls that will be made
-						import('$lib/api').then(({ projects, timeEntries }) => {
-							// Preload data that's typically needed
-							projects.list().catch(err => console.warn('Failed to preload projects in layout:', err));
-							timeEntries.getCurrentActive().catch(err => console.warn('Failed to preload active timer in layout:', err));
-						});
-					}
-				});
-			}, 1000); // 1 second delay to allow initial load to complete
+			// Preload timer page resources after initial render
+			const preloadTimer = () => {
+				if (typeof preloadData === 'function') {
+					preloadData('/timer').catch(() => {});
+				} else {
+					import('$lib/api').then(({ projects, timeEntries }) => {
+						projects.list().catch(err => logger.warn('Failed to preload projects in layout:', err));
+						timeEntries.getCurrentActive().catch(err => logger.warn('Failed to preload active timer in layout:', err));
+					});
+				}
+			};
+			
+			if ('requestIdleCallback' in window) {
+				requestIdleCallback(preloadTimer);
+			} else {
+				setTimeout(preloadTimer, 0);
+			}
 		}
 	});
 
@@ -112,14 +102,13 @@
 	// Apply theme to document
 	$effect(() => {
 		if (typeof document !== 'undefined') {
-			console.log('Applying theme:', $theme, 'is custom:', $theme in $customThemes);
 			applyTheme($theme);
 
 			// Emit theme change event to other windows
 			if (isTauri) {
 				import('@tauri-apps/api/event').then(({ emit }) => {
 					emit('theme-changed', { theme: $theme, isCustom: $theme in $customThemes, customVars: $customThemes[$theme] });
-				}).catch(err => console.error('Failed to emit theme change event:', err));
+				}).catch(err => logger.error('Failed to emit theme change event:', err));
 			}
 		}
 	});
@@ -140,7 +129,6 @@
 		if ($theme in $customThemes) {
 			document.documentElement.setAttribute('data-theme', '');
 			const vars = $customThemes[$theme];
-			console.log('Applying custom vars:', vars);
 			for (const [key, value] of Object.entries(vars)) {
 				document.documentElement.style.setProperty(key, value);
 			}
@@ -211,7 +199,7 @@
 				});
 			};
 		} catch (err) {
-			console.warn('Failed to init stats panel', err);
+			logger.warn('Failed to init stats panel', err);
 			return null;
 		}
 	}

@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
+import logger from '$lib/logger';
 
 // Initialize Tauri settings store
 let tauriSettingsStore: any = null;
@@ -15,9 +16,9 @@ async function initializeTauriSettingsStore() {
       tauriSettingsStore = new LazyStore('settings.json');
       await tauriSettingsStore.load();
       tauriSettingsInitialized = true;
-      console.log('✅ Tauri settings store initialized');
+      logger.debug('✅ Tauri settings store initialized');
     } catch (e) {
-      console.error('Failed to initialize Tauri settings store:', e);
+      logger.error('Failed to initialize Tauri settings store:', e);
       tauriSettingsInitialized = true; // Prevent repeated failed attempts
     }
   }
@@ -31,12 +32,12 @@ async function getTauriSetting<T>(key: string, initialValue: T): Promise<T> {
     if (store) {
       const value = await store.get(key);
       if (value !== undefined && value !== null) {
-        console.log(`✅ Loaded setting ${key} from Tauri store:`, value);
+        logger.debug(`✅ Loaded setting ${key} from Tauri store:`, value);
         return value as T;
       }
     }
   } catch (e) {
-    console.error(`Failed to load setting ${key} from Tauri store:`, e);
+    logger.error(`Failed to load setting ${key} from Tauri store:`, e);
   }
   
   // Fallback to localStorage for web development
@@ -45,17 +46,17 @@ async function getTauriSetting<T>(key: string, initialValue: T): Promise<T> {
     if (storedValue !== null) {
       try {
         const parsedValue = JSON.parse(storedValue);
-        console.log(`✅ Loaded setting ${key} from localStorage (fallback, JSON):`, parsedValue);
+        logger.debug(`✅ Loaded setting ${key} from localStorage (fallback, JSON):`, parsedValue);
         return parsedValue;
       } catch {
         // Some keys (e.g., theme) may be stored as plain strings by theme-change
-        console.log(`✅ Loaded setting ${key} from localStorage (fallback, raw):`, storedValue);
+        logger.debug(`✅ Loaded setting ${key} from localStorage (fallback, raw):`, storedValue);
         return storedValue as T;
       }
     }
   }
   
-  console.log(`🔄 Using default value for ${key}:`, initialValue);
+  logger.debug(`🔄 Using default value for ${key}:`, initialValue);
   return initialValue;
 }
 
@@ -65,21 +66,49 @@ async function setTauriSetting(key: string, value: any): Promise<void> {
     if (store) {
       await store.set(key, value);
       await store.save();
-      console.log(`✅ Saved setting ${key} to Tauri store:`, value);
+      logger.debug(`✅ Saved setting ${key} to Tauri store:`, value);
     }
   } catch (e) {
-    console.error(`Failed to save setting ${key} to Tauri store:`, e);
+    logger.error(`Failed to save setting ${key} to Tauri store:`, e);
   }
   
   // Also save to localStorage as fallback for web development
   if (browser) {
     try {
       localStorage.setItem(key, JSON.stringify(value));
-      console.log(`✅ Saved setting ${key} to localStorage (fallback)`);
+      if (!window.__pendingLocalStorageLogs) {
+        window.__pendingLocalStorageLogs = new Map();
+      }
+      window.__pendingLocalStorageLogs.set(key, value);
+      scheduleLogBatch();
     } catch (e) {
-      console.error(`Failed to save setting ${key} to localStorage:`, e);
+      logger.error(`Failed to save setting ${key} to localStorage:`, e);
     }
   }
+}
+
+// Batch logging variables
+declare global {
+  interface Window {
+    __pendingLocalStorageLogs?: Map<string, any>;
+    __logTimeout?: NodeJS.Timeout | null;
+  }
+}
+
+function scheduleLogBatch() {
+  if (window.__logTimeout) clearTimeout(window.__logTimeout);
+  
+  window.__logTimeout = setTimeout(() => {
+    if (window.__pendingLocalStorageLogs && window.__pendingLocalStorageLogs.size > 0) {
+      logger.debug(`✅ Saved ${window.__pendingLocalStorageLogs.size} settings to localStorage`, {
+        changes: Object.fromEntries(window.__pendingLocalStorageLogs),
+        supportedKeys: ['authToken', 'user', 'baseUrl', 'theme', 'customThemes', 'minimizeToTray', 
+                      'closeToTray', 'autostart', 'timeEntriesDisplayMode', 'sidebarCollapsed']
+      });
+      window.__pendingLocalStorageLogs.clear();
+    }
+    window.__logTimeout = null;
+  }, 100); // 100ms batching window
 }
 
 function createPersistentStore<T>(key: string, initialValue: T) {
@@ -168,7 +197,7 @@ baseUrl.subscribe((newBaseUrl: string) => {
     previousBaseUrl = newBaseUrl;
   } else if (previousBaseUrl !== newBaseUrl) {
     // Base URL has changed after initial load, log out the user and show appropriate message
-    console.log(`Base URL changed from ${previousBaseUrl} to ${newBaseUrl}, logging out user`);
+    logger.log(`Base URL changed from ${previousBaseUrl} to ${newBaseUrl}, logging out user`);
 
     // Perform logout with a custom message about the base URL change
     const customMessage = `Base URL changed from "${previousBaseUrl}" to "${newBaseUrl}". You have been logged out for security reasons.`;
@@ -204,7 +233,7 @@ export function globalLogout(autoLogout = false, customMessage?: string) {
         try {
           preservedSettings[key] = JSON.parse(storedValue);
         } catch (e) {
-          console.warn(`Failed to parse setting ${key}:`, e);
+          logger.warn(`Failed to parse setting ${key}:`, e);
         }
       }
     }
@@ -217,7 +246,7 @@ export function globalLogout(autoLogout = false, customMessage?: string) {
       try {
         localStorage.setItem(key, JSON.stringify(value));
       } catch (e) {
-        console.error(`Failed to restore setting ${key}:`, e);
+        logger.error(`Failed to restore setting ${key}:`, e);
       }
     }
 
@@ -309,7 +338,7 @@ function createFeatureFlagsStore() {
           lastUpdated: new Date(),
         }));
       } catch (error) {
-        console.error('Failed to load feature flags:', error);
+        logger.error('Failed to load feature flags:', error);
         update(state => ({
           ...state,
           loading: false,
@@ -359,7 +388,7 @@ function createFeatureFlagsStore() {
             };
           });
         } catch (error) {
-          console.error(`Failed to check feature flag ${featureKey}:`, error);
+          logger.error(`Failed to check feature flag ${featureKey}:`, error);
           // Return false on error (fail secure)
           isEnabled = false;
         }
@@ -374,7 +403,7 @@ function createFeatureFlagsStore() {
         const { featureFlags } = await import('./api');
         await featureFlags.logAccess(featureKey);
       } catch (error) {
-        console.error(`Failed to log access for feature ${featureKey}:`, error);
+        logger.error(`Failed to log access for feature ${featureKey}:`, error);
         // Don't throw - logging failure shouldn't break UX
       }
     },
@@ -438,7 +467,7 @@ export interface ActivityLog {
 
 // Enhanced Tauri detection function
 function isTauriAvailable(): boolean {
-  console.log('🔍 Checking Tauri availability...');
+  logger.debug('🔍 Checking Tauri availability...');
   
   // Check multiple ways to detect Tauri
   const checks = [
@@ -450,7 +479,7 @@ function isTauriAvailable(): boolean {
   
   const isAvailable = checks.some(check => check);
   
-  console.log('🔍 Tauri detection results:', {
+  logger.debug('🔍 Tauri detection results:', {
     window_exists: typeof window !== 'undefined',
     window_tauri: typeof window !== 'undefined' ? !!(window as any).__TAURI__ : false,
     window_tauri_internals: typeof window !== 'undefined' ? !!(window as any).__TAURI_INTERNALS__ : false,
@@ -464,7 +493,7 @@ function isTauriAvailable(): boolean {
 
 // Function to get Tauri API with retry
 async function getTauriApi(): Promise<any | null> {
-  console.log('🔧 Getting Tauri API...');
+  logger.debug('🔧 Getting Tauri API...');
   
   // Try multiple approaches to get Tauri API
   const approaches = [
@@ -488,15 +517,15 @@ async function getTauriApi(): Promise<any | null> {
     try {
       const result = await approach();
       if (result.available) {
-        console.log('✅ Tauri API obtained successfully');
+        logger.debug('✅ Tauri API obtained successfully');
         return result;
       }
     } catch (error) {
-      console.warn('⚠️ Failed to get Tauri API with approach:', error);
+      logger.warn('⚠️ Failed to get Tauri API with approach:', error);
     }
   }
   
-  console.log('❌ Failed to get Tauri API with all approaches');
+  logger.debug('❌ Failed to get Tauri API with all approaches');
   return null;
 }
 
@@ -533,7 +562,7 @@ function createIdleMonitorStore() {
         update(state => ({ ...state, isEnabled }));
         
         if (!isEnabled) {
-          console.log('User idle monitoring is disabled via feature flag');
+          logger.debug('User idle monitoring is disabled via feature flag');
           return;
         }
 
@@ -542,18 +571,18 @@ function createIdleMonitorStore() {
         update(state => ({ ...state, tauriDetected: tauriAvailable }));
         
         if (!tauriAvailable) {
-          console.log('❌ Tauri not detected in initialization');
+          logger.debug('❌ Tauri not detected in initialization');
           return;
         }
 
-        console.log('✅ Tauri detected, setting up event listeners...');
+        logger.debug('✅ Tauri detected, setting up event listeners...');
         
         // Set up event listeners for idle status updates
         const { listen } = await import('@tauri-apps/api/event');
         
         // Listen for idle status changes
         eventListener = await listen('idle-status-changed', (event) => {
-          console.log('🎉 IDLE STATUS CHANGED EVENT RECEIVED:', event.payload);
+          logger.debug('🎉 IDLE STATUS CHANGED EVENT RECEIVED:', event.payload);
           const payload = event.payload as any;
           const newStatus: IdleStatus = {
             is_idle: payload.is_idle,
@@ -581,7 +610,7 @@ function createIdleMonitorStore() {
 
         // Listen for periodic idle status updates
         await listen('idle-status-update', (event) => {
-          console.log('🔄 IDLE STATUS UPDATE EVENT RECEIVED:', event.payload);
+          logger.debug('🔄 IDLE STATUS UPDATE EVENT RECEIVED:', event.payload);
           const payload = event.payload as any;
           const newStatus: IdleStatus = {
             is_idle: payload.is_idle,
@@ -596,16 +625,16 @@ function createIdleMonitorStore() {
           }));
         });
 
-        console.log('✅ Idle monitoring initialized successfully');
+        logger.debug('✅ Idle monitoring initialized successfully');
       } catch (error) {
-        console.error('Failed to initialize idle monitoring:', error);
+        logger.error('Failed to initialize idle monitoring:', error);
         update(state => ({ ...state, error: 'Failed to initialize idle monitoring' }));
       }
     },
     
     // Get current idle status via Tauri command
     getIdleStatus: async (): Promise<IdleStatus | null> => {
-      console.log('🔍 getIdleStatus called');
+      logger.debug('🔍 getIdleStatus called');
       
       try {
         // Use the enhanced Tauri detection
@@ -614,24 +643,24 @@ function createIdleMonitorStore() {
         }
         
         if (tauriApi && tauriApi.invoke) {
-          console.log('✅ Tauri detected in getIdleStatus, invoking command...');
+          logger.debug('✅ Tauri detected in getIdleStatus, invoking command...');
           const status = await tauriApi.invoke('get_idle_status');
-          console.log('✅ getIdleStatus successful:', status);
+          logger.debug('✅ getIdleStatus successful:', status);
           return status as IdleStatus;
         }
         
-        console.log('❌ Tauri not detected in getIdleStatus');
+        logger.debug('❌ Tauri not detected in getIdleStatus');
         update(state => ({ ...state, tauriDetected: false }));
         return null;
       } catch (error) {
-        console.error('❌ Failed to get idle status:', error);
+        logger.error('❌ Failed to get idle status:', error);
         return null;
       }
     },
     
     // Get idle time via Tauri command
     getIdleTime: async (): Promise<number | null> => {
-      console.log('⏰ getIdleTime called');
+      logger.debug('⏰ getIdleTime called');
       
       try {
         if (!tauriApi) {
@@ -640,21 +669,21 @@ function createIdleMonitorStore() {
         
         if (tauriApi && tauriApi.invoke) {
           const idleTime = await tauriApi.invoke('get_idle_time');
-          console.log('✅ getIdleTime successful:', idleTime);
+          logger.debug('✅ getIdleTime successful:', idleTime);
           return idleTime as number;
         }
         
-        console.log('❌ Tauri not detected in getIdleTime');
+        logger.debug('❌ Tauri not detected in getIdleTime');
         return null;
       } catch (error) {
-        console.error('Failed to get idle time:', error);
+        logger.error('Failed to get idle time:', error);
         return null;
       }
     },
     
     // Check if user is idle via Tauri command
     isUserIdle: async (): Promise<boolean | null> => {
-      console.log('🛏️ isUserIdle called');
+      logger.debug('🛏️ isUserIdle called');
       
       try {
         if (!tauriApi) {
@@ -663,14 +692,14 @@ function createIdleMonitorStore() {
         
         if (tauriApi && tauriApi.invoke) {
           const isIdle = await tauriApi.invoke('is_user_idle');
-          console.log('✅ isUserIdle successful:', isIdle);
+          logger.debug('✅ isUserIdle successful:', isIdle);
           return isIdle as boolean;
         }
         
-        console.log('❌ Tauri not detected in isUserIdle');
+        logger.debug('❌ Tauri not detected in isUserIdle');
         return null;
       } catch (error) {
-        console.error('Failed to check idle status:', error);
+        logger.error('Failed to check idle status:', error);
         return null;
       }
     },
@@ -695,7 +724,7 @@ export function invalidateCache(pattern?: string) {
   if (typeof window !== 'undefined' && (window as any).__TAURI__) {
     // In Tauri environment, we can use Tauri's cache management
     // For now, we'll just log the invalidation
-    console.log('Cache invalidation requested:', pattern || 'all');
+    logger.log('Cache invalidation requested:', pattern || 'all');
   }
 
   // Import the api module to clear its cache
@@ -712,7 +741,7 @@ export function invalidateCache(pattern?: string) {
       apiCache.clear();
     }
   }).catch(err => {
-    console.error('Failed to clear cache:', err);
+    logger.error('Failed to clear cache:', err);
   });
 }
 
