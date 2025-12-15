@@ -10,7 +10,6 @@
 	import Sidebar from '$lib/Sidebar.svelte';
 	import Navbar from '$lib/Navbar.svelte';
 	import '$lib/notifications'; // Initialize notification service
-	import { preload } from '$lib/preload';
 	import { themeChange } from 'theme-change';
 	import WaveBackground from '$lib/WaveBackground.svelte';
 	import logger from '$lib/logger';
@@ -77,14 +76,10 @@
 		if ($authToken) {
 			// Preload timer page resources after initial render
 			const preloadTimer = () => {
-				if (typeof preloadData === 'function') {
-					preloadData('/timer').catch(() => {});
-				} else {
-					import('$lib/api').then(({ projects, timeEntries }) => {
-						projects.list().catch(err => logger.warn('Failed to preload projects in layout:', err));
-						timeEntries.getCurrentActive().catch(err => logger.warn('Failed to preload active timer in layout:', err));
-					});
-				}
+				import('$lib/api').then(({ projects, timeEntries }) => {
+					projects.list().catch(err => logger.warn('Failed to preload projects in layout:', err));
+					timeEntries.getCurrentActive().catch(err => logger.warn('Failed to preload active timer in layout:', err));
+				});
 			};
 			
 			if ('requestIdleCallback' in window) {
@@ -123,7 +118,7 @@
 		}
 	});
 
-	function applyTheme(themeName: string) {
+	function applyTheme(themeName: string | null) {
 		// Clear any previous inline vars from custom themes
 		document.documentElement.style.cssText = '';
 		if ($theme in $customThemes) {
@@ -134,12 +129,12 @@
 			}
 			// Keep theme name in storage so theme-change remembers selection
 			if (typeof localStorage !== 'undefined') {
-				localStorage.setItem('theme', themeName);
+				localStorage.setItem('theme', themeName as string);
 			}
 		} else {
 			// Let theme-change handle applying and persisting the theme
 			if (typeof localStorage !== 'undefined') {
-				localStorage.setItem('theme', themeName);
+				localStorage.setItem('theme', themeName as string);
 			}
 			themeChange(false);
 		}

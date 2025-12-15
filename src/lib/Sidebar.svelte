@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Clock, BarChart3, FileText, Settings, Sun, Moon, LogOut, ChevronLeft, ChevronRight, Menu } from '@lucide/svelte';
   import { user, logout, theme, sidebarCollapsed } from '$lib/stores';
-  import { getAuthContext } from './auth-context';
+  import { getAuthContext, createAuthStore } from './auth-context';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { get } from 'svelte/store';
@@ -9,7 +9,21 @@
   import { generateDicebearAvatar } from './utils';
 
   // Get auth context
-  const authStore: any = getAuthContext();
+  interface User {
+    username?: string;
+    first_name?: string;
+    last_name?: string;
+    profile_image?: string | null;
+  }
+
+  interface AuthStore {
+    logout: () => void;
+    initialize: () => void;
+    login: (username: string, password: string, rememberMe?: boolean) => Promise<{success: boolean; error?: string}>;
+    // Add other methods as needed
+  }
+
+  const authStore = getAuthContext() as AuthStore;
 
   // Date/time state
   let currentTime = $state(new Date());
@@ -22,11 +36,12 @@
 
   // Sidebar state - using the new persistent store
   let isCollapsed = $state(get(sidebarCollapsed));
-  let isMobile = $state(false);
+  let isMobile = $state(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  let effectiveCollapsed = $derived(isMobile ? false : isCollapsed);
 
   // Subscribe to sidebar collapsed state changes
   $effect(() => {
-    const unsubscribe = sidebarCollapsed.subscribe((value) => {
+    const unsubscribe = sidebarCollapsed.subscribe((value: boolean) => {
       isCollapsed = value;
     });
     return unsubscribe;
@@ -100,6 +115,7 @@
 
   // Sidebar toggle function
   function toggleSidebar() {
+    if (isMobile) return;
     sidebarCollapsed.set(!isCollapsed);
   }
 
@@ -169,6 +185,10 @@
   }
 
   function navigate(href: string) {
+    if (isMobile && typeof document !== 'undefined') {
+      const drawer = document.getElementById('app-drawer') as HTMLInputElement | null;
+      if (drawer) drawer.checked = false;
+    }
     goto(href);
     // Drawer will automatically close on mobile after navigation due to the overlay click
   }
@@ -179,7 +199,7 @@
 
   // Generate Dicebear avatar SVG for user with theme-aware background
   function getUserAvatar() {
-    const currentUser = get(user);
+    const currentUser = get(user) as User | null;
     const currentTheme = get(theme);
     if (currentUser?.username) {
       return generateDicebearAvatar(currentUser.username, currentTheme);
@@ -199,23 +219,27 @@
   }
 
   // Get separate first and last names for line-by-line display
-  function getFirstName() {
-    const currentUser = get(user);
+  function getFirstName(): string {
+    const currentUser = get(user) as User | null;
     return currentUser?.first_name || '';
   }
 
-  function getLastName() {
-    const currentUser = get(user);
+  function getLastName(): string {
+    const currentUser = get(user) as User | null;
     return currentUser?.last_name || '';
   }
 
   // Get username for bottom section (always show username)
-  function getUsername() {
-    const currentUser = get(user);
+  function getUsername(): string {
+    const currentUser = get(user) as User | null;
     return currentUser?.username || '';
   }
 
   function navigateToProfile() {
+    if (isMobile && typeof document !== 'undefined') {
+      const drawer = document.getElementById('app-drawer') as HTMLInputElement | null;
+      if (drawer) drawer.checked = false;
+    }
     goto('/profile');
   }
 </script>
@@ -226,26 +250,28 @@
   <label for="app-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
   
   <!-- Sidebar content with dynamic width -->
-  <div class="flex min-h-full flex-col items-start bg-base-200 transition-all duration-300 ease-in-out {isCollapsed ? 'w-16' : 'w-80'}">
+  <div class="flex min-h-full flex-col items-start bg-base-200 transition-all duration-300 ease-in-out {effectiveCollapsed ? 'w-16' : 'w-80'}">
     <!-- Sidebar header with app name and toggle button -->
-    <div class="p-4 border-b border-base-300 w-full flex items-center {isCollapsed ? 'justify-center' : 'justify-between'}">
-      {#if !isCollapsed}
+    <div class="p-4 border-b border-base-300 w-full flex items-center {effectiveCollapsed ? 'justify-center' : 'justify-between'}">
+      {#if !effectiveCollapsed}
         <h2 class="text-xl font-bold text-primary truncate">Time Tracker</h2>
       {/if}
       
-      <!-- Toggle button (always visible) -->
-      <button
-        class="btn btn-ghost {isCollapsed ? 'mx-auto' : ''}"
-        onclick={toggleSidebar}
-        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      >
-        {#if isCollapsed}
-          <Menu class="w-4 h-4" />
-        {:else}
-          <ChevronLeft class="w-4 h-4" />
-        {/if}
-      </button>
+      <!-- Toggle button (hidden on mobile) -->
+      {#if !isMobile}
+        <button
+          class="btn btn-ghost {effectiveCollapsed ? 'mx-auto' : ''}"
+          onclick={toggleSidebar}
+          title={effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {#if effectiveCollapsed}
+            <Menu class="w-4 h-4" />
+          {:else}
+            <ChevronLeft class="w-4 h-4" />
+          {/if}
+        </button>
+      {/if}
     </div>
     
     <!-- Navigation -->
@@ -261,22 +287,23 @@
           -->
           <button
             aria-current={isActivePath(item.href) ? 'page' : undefined}
-            class="flex items-center rounded-lg transition-all duration-200 {isActivePath(item.href) ? 'bg-primary text-primary-content hover:bg-primary hover:text-primary-content' : 'hover:bg-base-300'} {isCollapsed ? 'justify-center px-2 w-full' : 'px-3 space-x-3'}"
+            class="flex items-center rounded-lg transition-all duration-200 {isActivePath(item.href) ? 'bg-primary text-primary-content hover:bg-primary hover:text-primary-content' : 'hover:bg-base-300'} {effectiveCollapsed ? 'justify-center px-2 w-full' : 'px-3 space-x-3'}"
             onclick={() => navigate(item.href)}
-            title={isCollapsed ? item.name : (isActivePath(item.href) ? '' : item.name)}
+            title={effectiveCollapsed ? item.name : (isActivePath(item.href) ? '' : item.name)}
             aria-label={item.name}
           >
             <item.icon class="w-5 h-5 flex-shrink-0" />
-            {#if !isCollapsed}
+            {#if !effectiveCollapsed}
               <span class="font-medium truncate">{item.name}</span>
             {/if}
+          </button>
         </li>
       {/each}
     </ul>
 
     <!-- User profile section at bottom -->
     <div class="p-4 border-t border-base-300 bg-base-200 w-full">
-      {#if !isCollapsed}
+      {#if !effectiveCollapsed}
 
 
         <!-- User section using DaisyUI card with image on side -->

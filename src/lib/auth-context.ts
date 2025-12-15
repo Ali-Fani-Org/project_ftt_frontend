@@ -14,7 +14,7 @@ export interface AuthState {
 }
 
 // Create the auth state store
-function createAuthStore() {
+export function createAuthStore(): AuthStore {
   const { subscribe, set, update } = writable<AuthState>({
     isAuthenticated: false,
     isLoading: true,
@@ -28,7 +28,7 @@ function createAuthStore() {
     // Initialize authentication state from stores
     initialize: () => {
       // Subscribe to changes in auth stores
-      authToken.subscribe(tokenValue => {
+      authToken.subscribe((tokenValue: string | null) => {
         update(state => ({
           ...state,
           isAuthenticated: !!tokenValue,
@@ -37,7 +37,7 @@ function createAuthStore() {
         }));
       });
 
-      user.subscribe(userValue => {
+      user.subscribe((userValue: any | null) => {
         update(state => ({
           ...state,
           user: userValue,
@@ -246,4 +246,16 @@ export function setAuthContext() {
 // Function to get auth context
 export function getAuthContext() {
   return getContext(AUTH_CONTEXT_KEY);
+}
+
+// AuthStore interface
+export interface AuthStore {
+  subscribe: any;
+  initialize: () => void;
+  login: (username: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean } | { success: false, error: string }>;
+  register: (username: string, password: string, firstName: string, lastName: string) => Promise<{ success: boolean } | { success: false, error: string }>;
+  logout: () => void;
+  clearError: () => void;
+  checkAuthStatus: () => void;
+  getSessionType: () => string;
 }

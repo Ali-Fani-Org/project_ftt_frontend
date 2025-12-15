@@ -28,19 +28,19 @@
 </script>
 
 <!-- Navbar -->
-<nav class="navbar w-full bg-base-100 border-b border-base-300 px-4 lg:px-6 h-16">
+<nav class="navbar w-full bg-base-100 border-b border-base-300 px-4 lg:px-6 h-16 relative">
   <!-- Left section: Sidebar toggle + Page title -->
   <div class="navbar-start">
-    <!-- Sidebar toggle button -->
-    <!-- <label
+    <!-- Sidebar toggle button (mobile only) -->
+    <label
       for="app-drawer"
       aria-label="open sidebar"
-      class="btn btn-square btn-ghost mr-2 hover:bg-base-200"
+      class="btn btn-square btn-ghost mr-2 hover:bg-base-200 lg:hidden"
     >
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
       </svg>
-    </label> -->
+    </label>
 
     <!-- Page title -->
     {#if !isTauri}
@@ -52,7 +52,7 @@
 
   <!-- Center section: Mobile page title -->
   {#if !isTauri}
-    <div class="navbar-center lg:hidden">
+    <div class="navbar-center lg:hidden absolute left-1/2 -translate-x-1/2">
       <h1 class="text-lg font-semibold text-base-content">{currentTitle}</h1>
     </div>
   {/if}
