@@ -57,7 +57,8 @@
 	       "sunset",
 	       "caramellatte",
 	       "abyss",
-	       "silk"
+	       "silk",
+	       "dark-futuristic"
 	];
 
 	let themes = $derived([...builtInThemes, ...Object.keys($customThemes), 'custom']);
@@ -74,22 +75,26 @@
 	});
 
 	function applyTheme(themeName: string) {
-		// Clear previous custom theme styles
-		document.documentElement.removeAttribute('data-theme');
-		const previousVars = document.documentElement.style.cssText.split(';').filter(prop => prop.trim());
-		previousVars.forEach(() => {}); // Clear all inline styles
-		
+		// Reset inline vars before applying a theme
+		document.documentElement.style.cssText = '';
 		if (themeName in $customThemes) {
-			// Apply custom theme
 			document.documentElement.setAttribute('data-theme', '');
 			const vars = $customThemes[themeName];
 			console.log('Applying custom vars:', vars);
-			for (const [key, value] of Object.entries(vars)) {
+			for (const [key, value] of Object.entries(vars as Record<string, string>)) {
 				document.documentElement.style.setProperty(key, value);
 			}
+
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('theme', themeName);
+			}
 		} else {
-			// Apply built-in theme
+			// Let theme-change handle applying and persisting the theme
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('theme', themeName);
+			}
 			document.documentElement.setAttribute('data-theme', themeName);
+			import('theme-change').then(({ themeChange }) => themeChange(false));
 		}
 	}
 
@@ -121,7 +126,7 @@
 			}
 
 			console.log('Parsed custom theme:', { originalName, displayName, vars });
-			customThemes.update(ct => ({ ...ct, [displayName]: vars }));
+			customThemes.update((ct: Record<string, Record<string, string>>) => ({ ...ct, [displayName]: vars }));
 			theme.set(displayName);
 		} else {
 			theme.set(localTheme);
@@ -200,27 +205,36 @@
 					{#each Object.keys($customThemes) as ct}
 						<div class="flex justify-between items-center bg-base-200 p-2 rounded">
 							<span>{ct}</span>
-							<button class="btn btn-sm btn-error" onclick={() => customThemes.update(cts => { const newCts = { ...cts }; delete newCts[ct]; return newCts; })}>Remove</button>
+							<button
+								class="btn btn-sm btn-error"
+								onclick={() =>
+									customThemes.update((cts: Record<string, Record<string, string>>) => {
+										const newCts = { ...cts };
+										delete newCts[ct];
+										return newCts;
+									})
+								}
+							>
+								Remove
+							</button>
 						</div>
 					{/each}
 				</div>
 			</div>
 		{/if}
 
-		{#if localTheme === 'custom'}
-			<div class="form-control">
-				<label class="label" for="customTheme">
-					<span class="label-text">Custom Theme Definition</span>
-				</label>
-				<textarea
-					id="customTheme"
-					bind:value={customTheme}
-					placeholder="Paste the full custom theme definition from DaisyUI website"
-					class="textarea textarea-bordered"
-					rows="10"
-				></textarea>
-			</div>
-		{/if}
+		<div class="form-control">
+			<label class="label" for="customTheme">
+				<span class="label-text">Custom Theme Definition</span>
+			</label>
+			<textarea
+				id="customTheme"
+				bind:value={customTheme}
+				placeholder="Paste the full custom theme definition from DaisyUI website"
+				class="textarea textarea-bordered"
+				rows="10"
+			></textarea>
+		</div>
 
 		{#if enablePreview}
 			<div class="form-control">

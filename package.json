@@ -48,6 +48,8 @@
 		"bun-types": "^1.1.33",
 		"canvas-confetti": "^1.9.4",
 		"chart.js": "^4.5.1",
-		"ky": "^1.14.0"
+		"ky": "^1.14.0",
+		"theme-change": "^2.5.0",
+		"three": "^0.182.0"
 	}
 }

@@ -41,15 +41,17 @@ async function getTauriSetting<T>(key: string, initialValue: T): Promise<T> {
   
   // Fallback to localStorage for web development
   if (browser) {
-    try {
-      const storedValue = localStorage.getItem(key);
-      if (storedValue) {
+    const storedValue = localStorage.getItem(key);
+    if (storedValue !== null) {
+      try {
         const parsedValue = JSON.parse(storedValue);
-        console.log(`✅ Loaded setting ${key} from localStorage (fallback):`, parsedValue);
+        console.log(`✅ Loaded setting ${key} from localStorage (fallback, JSON):`, parsedValue);
         return parsedValue;
+      } catch {
+        // Some keys (e.g., theme) may be stored as plain strings by theme-change
+        console.log(`✅ Loaded setting ${key} from localStorage (fallback, raw):`, storedValue);
+        return storedValue as T;
       }
-    } catch (e) {
-      console.error(`Failed to load setting ${key} from localStorage:`, e);
     }
   }
   

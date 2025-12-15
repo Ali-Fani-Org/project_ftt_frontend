@@ -11,6 +11,7 @@
 	import Navbar from '$lib/Navbar.svelte';
 	import '$lib/notifications'; // Initialize notification service
 	import { preload } from '$lib/preload';
+	import { themeChange } from 'theme-change';
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -22,6 +23,8 @@
 
 	onMount(async () => {
 		console.log('Layout onMount started at', new Date().toISOString());
+		// Initialize theme-change immediately (no DOMContentLoaded wait)
+		themeChange(false);
 		try {
 			const { getCurrentWindow } = await import('@tauri-apps/api/window');
 			const currentWindow = getCurrentWindow();
@@ -126,6 +129,8 @@
 	});
 
 	function applyTheme(themeName: string) {
+		// Clear any previous inline vars from custom themes
+		document.documentElement.style.cssText = '';
 		if ($theme in $customThemes) {
 			document.documentElement.setAttribute('data-theme', '');
 			const vars = $customThemes[$theme];
@@ -133,8 +138,16 @@
 			for (const [key, value] of Object.entries(vars)) {
 				document.documentElement.style.setProperty(key, value);
 			}
+			// Keep theme name in storage so theme-change remembers selection
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('theme', themeName);
+			}
 		} else {
-			document.documentElement.setAttribute('data-theme', themeName);
+			// Let theme-change handle applying and persisting the theme
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('theme', themeName);
+			}
+			themeChange(false);
 		}
 	}
 
