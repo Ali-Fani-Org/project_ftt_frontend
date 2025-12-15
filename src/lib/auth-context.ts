@@ -24,7 +24,7 @@ function createAuthStore() {
 
   return {
     subscribe,
-    
+
     // Initialize authentication state from stores
     initialize: () => {
       // Subscribe to changes in auth stores
@@ -48,10 +48,10 @@ function createAuthStore() {
     // Login function with session management
     login: async (username: string, password: string, rememberMe = false) => {
       update(state => ({ ...state, isLoading: true, error: null }));
-      
+
       try {
         const token = await auth.login(username, password);
-        
+
         // Handle session management based on remember me
         if (browser) {
           if (rememberMe) {
@@ -61,18 +61,18 @@ function createAuthStore() {
             // For no "remember me", use sessionStorage instead
             sessionStorage.setItem('auth_token', token);
             sessionStorage.setItem('session_type', 'session');
-            
+
             // Clear from localStorage but keep the token for now
             // In a real app, you'd want to handle this more carefully
             localStorage.removeItem('authToken');
           }
         }
-        
+
         authToken.set(token);
-        
+
         const userData = await auth.getUser();
         user.set(userData);
-        
+
         update(state => ({
           ...state,
           isAuthenticated: true,
@@ -80,19 +80,19 @@ function createAuthStore() {
           error: null,
           user: userData,
         }));
-        
+
         return { success: true };
       } catch (error: any) {
-        const errorMessage = error.response?.status === 400 
-          ? 'Invalid username or password' 
+        const errorMessage = error.response?.status === 400
+          ? 'Invalid username or password'
           : 'Login failed. Please try again.';
-        
+
         update(state => ({
           ...state,
           isLoading: false,
           error: errorMessage,
         }));
-        
+
         return { success: false, error: errorMessage };
       }
     },
@@ -100,17 +100,17 @@ function createAuthStore() {
     // Register function
     register: async (username: string, password: string, firstName: string, lastName: string) => {
       update(state => ({ ...state, isLoading: true, error: null }));
-      
+
       try {
         await auth.register(username, password, firstName, lastName);
-        
+
         // After successful registration, automatically login
         const result = await auth.login(username, password);
         authToken.set(result);
-        
+
         const userData = await auth.getUser();
         user.set(userData);
-        
+
         update(state => ({
           ...state,
           isAuthenticated: true,
@@ -118,26 +118,83 @@ function createAuthStore() {
           error: null,
           user: userData,
         }));
-        
+
         return { success: true };
       } catch (error: any) {
         let errorMessage = 'Registration failed. Please try again.';
-        
+        const validationErrors: {[key: string]: string} = {};
+
         if (error.response?.status === 400) {
-          const data = error.response?._data;
-          if (data?.username) {
-            errorMessage = 'Username already exists';
-          } else if (data?.password) {
-            errorMessage = 'Password requirements not met';
+          // Try multiple possible locations for the error data depending on Ky's response format
+          let data = error.response?._data || error.response?.data || error.data;
+
+          // Handle field-specific validation errors
+          if (data) {
+            // Map server-side field validation errors to field names
+            if (Array.isArray(data.username)) {
+              validationErrors.username = data.username.join(', ');
+            } else if (typeof data.username === 'string') {
+              validationErrors.username = data.username;
+            }
+
+            if (Array.isArray(data.password)) {
+              validationErrors.password = data.password.join(', ');
+            } else if (typeof data.password === 'string') {
+              validationErrors.password = data.password;
+            }
+
+            if (Array.isArray(data.first_name)) {
+              validationErrors.firstName = data.first_name.join(', ');
+            } else if (typeof data.first_name === 'string') {
+              validationErrors.firstName = data.first_name;
+            }
+
+            if (Array.isArray(data.last_name)) {
+              validationErrors.lastName = data.last_name.join(', ');
+            } else if (typeof data.last_name === 'string') {
+              validationErrors.lastName = data.last_name;
+            }
+
+            if (Array.isArray(data.email)) {
+              validationErrors.email = data.email.join(', ');
+            } else if (typeof data.email === 'string') {
+              validationErrors.email = data.email;
+            }
+
+            // If we have field-specific validation errors, return them
+            if (Object.keys(validationErrors).length > 0) {
+              update(state => ({
+                ...state,
+                isLoading: false,
+                error: null,
+              }));
+
+              return { success: false, validationErrors };
+            }
+
+            // If we have a general error message from the server
+            if (data.detail) {
+              errorMessage = data.detail;
+            } else if (data.non_field_errors && Array.isArray(data.non_field_errors)) {
+              errorMessage = data.non_field_errors[0];
+            }
           }
+          // If no specific field errors were found but status is 400, try to show raw response
+          else {
+            console.log('Error response data structure:', error.response);
+          }
+        } else if (error.response?.status === 401) {
+          errorMessage = 'Unauthorized access. Please try again.';
+        } else if (error.response?.status === 500) {
+          errorMessage = 'Server error. Please try again later.';
         }
-        
+
         update(state => ({
           ...state,
           isLoading: false,
           error: errorMessage,
         }));
-        
+
         return { success: false, error: errorMessage };
       }
     },
@@ -157,7 +214,7 @@ function createAuthStore() {
     checkAuthStatus: () => {
       const currentToken = authToken;
       const currentUser = user;
-      
+
       update(state => ({
         ...state,
         isAuthenticated: !!currentToken,

@@ -16,6 +16,10 @@
   let hasNext = $state(false);
   let hasPrevious = $state(false);
 
+  // Filter and sort state
+  let selectedTimeRange = $state<string>('all'); // 'all', 'last7days', 'lastweek', 'thisweek', 'lastmonth', 'thismonth', 'thisyear', 'lastyear'
+  let selectedSort = $state<string>('-start_time'); // default sort by start_time descending
+
   onMount(async () => {
     const token = get(authToken);
     if (!token) {
@@ -23,14 +27,140 @@
       return;
     }
 
+    // Add event listener to close dropdowns when clicking outside
+    document.addEventListener('click', handleOutsideClick);
+
+    // Load initial data
     await loadData();
+
+    // Cleanup event listener on unmount
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+    };
   });
+
+  function handleOutsideClick(event) {
+    console.log('handleOutsideClick called');
+    // Check if the click is inside a dropdown
+    const isInsideDropdown = event.target.closest('.dropdown');
+    
+    if (!isInsideDropdown) {
+      console.log('Click outside dropdown, closing all');
+      // Close all dropdowns by removing focus from dropdown buttons
+      const dropdownButtons = document.querySelectorAll('.dropdown [tabindex="0"]');
+      dropdownButtons.forEach(button => {
+        if (button instanceof HTMLElement) {
+          button.blur();
+        }
+      });
+    } else {
+      console.log('Click inside dropdown, keeping open');
+    }
+  }
+
+  function getTimeRangeDates(range: string): { start: string | null, end: string | null } {
+    const now = new Date();
+    let start: Date | null = null;
+    let end: Date | null = null;
+
+    switch (range) {
+      case 'last7days':
+        start = new Date(now);
+        start.setDate(now.getDate() - 7);
+        end = now;
+        break;
+      case 'lastweek':
+        // Calculate the start of last week (Monday of last week)
+        const today = new Date(now);
+        const dayOfWeek = today.getDay(); // 0 (Sunday) to 6 (Saturday)
+        const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Adjust to get Monday
+        start = new Date(today);
+        start.setDate(today.getDate() - daysSinceMonday - 7); // Go back to Monday of last week
+        end = new Date(start);
+        end.setDate(end.getDate() + 6); // End of last week (Sunday)
+        break;
+      case 'thisweek':
+        // Calculate the start of this week (Monday of this week)
+        const thisToday = new Date(now);
+        const thisDayOfWeek = thisToday.getDay(); // 0 (Sunday) to 6 (Saturday)
+        const thisDaysSinceMonday = thisDayOfWeek === 0 ? 6 : thisDayOfWeek - 1; // Adjust to get Monday
+        start = new Date(thisToday);
+        start.setDate(thisToday.getDate() - thisDaysSinceMonday); // Go back to Monday of this week
+        end = now;
+        break;
+      case 'lastmonth':
+        start = new Date(now.getFullYear(), now.getMonth() - 1, 1); // First day of last month
+        end = new Date(now.getFullYear(), now.getMonth(), 0); // Last day of last month
+        break;
+      case 'thismonth':
+        start = new Date(now.getFullYear(), now.getMonth(), 1); // First day of this month
+        end = now;
+        break;
+      case 'thisyear':
+        start = new Date(now.getFullYear(), 0, 1); // First day of this year
+        end = now;
+        break;
+      case 'lastyear':
+        start = new Date(now.getFullYear() - 1, 0, 1); // First day of last year
+        end = new Date(now.getFullYear() - 1, 11, 31); // Last day of last year
+        break;
+      default:
+        return { start: null, end: null };
+    }
+
+    return {
+      start: start ? start.toISOString().split('T')[0] : null,
+      end: end ? end.toISOString().split('T')[0] : null
+    };
+  }
+
+  function getTimeRangeDisplay(range: string): string {
+    switch (range) {
+      case 'last7days': return 'Last 7 Days';
+      case 'lastweek': return 'Last Week';
+      case 'thisweek': return 'This Week';
+      case 'lastmonth': return 'Last Month';
+      case 'thismonth': return 'This Month';
+      case 'thisyear': return 'This Year';
+      case 'lastyear': return 'Last Year';
+      default: return 'All Time';
+    }
+  }
+
+  function getSortDisplay(sort: string): string {
+    switch (sort) {
+      case '-start_time': return 'Start Time (Newest First)';
+      case 'start_time': return 'Start Time (Oldest First)';
+      case '-end_time': return 'End Time (Newest First)';
+      case 'end_time': return 'End Time (Oldest First)';
+      case '-duration': return 'Duration (Longest First)';
+      case 'duration': return 'Duration (Shortest First)';
+      case 'title': return 'Title (A-Z)';
+      case '-title': return 'Title (Z-A)';
+      case 'project_name': return 'Project (A-Z)';
+      case '-project_name': return 'Project (Z-A)';
+      case '-is_active': return 'Status (Active First)';
+      case 'is_active': return 'Status (Completed First)';
+      default: return 'Start Time (Newest First)';
+    }
+  }
 
   async function loadData(cursor?: string | null) {
     try {
       loading = true;
       error = '';
-      const result = await timeEntries.list(cursor || undefined);
+
+      // Get time range filter parameters
+      const timeRange = getTimeRangeDates(selectedTimeRange);
+
+      // Use the timeEntries.listWithFilters function with all parameters
+      const result = await timeEntries.listWithFilters({
+        start_date_after: timeRange.start,
+        start_date_before: timeRange.end,
+        cursor: cursor || undefined,
+        ordering: selectedSort
+      });
+
       data = result;
       currentCursor = cursor || null;
       hasNext = !!result.next;
@@ -60,6 +190,12 @@
       const cursor = extractCursor(data.previous);
       await loadData(cursor);
     }
+  }
+
+  function handleFilterChange() {
+    console.log('handleFilterChange called with:', selectedTimeRange, selectedSort);
+    // Reset to first page when filters change
+    loadData();
   }
 
   function formatDate(dateStr: string): string {
@@ -99,6 +235,63 @@
   <div class="mb-8">
     <h1 class="text-3xl font-bold text-primary">Time Entries</h1>
     <p class="text-base-content/70">View and manage all your tracked time</p>
+  </div>
+
+  <!-- Filter Controls -->
+  <div class="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+    <!-- Time Range Filter -->
+    <div class="flex-1 min-w-0">
+      <label class="label">
+        <span class="label-text">Time Range</span>
+      </label>
+      <div class="dropdown">
+        <div tabindex="0" role="button" class="btn btn-outline w-full max-w-xs" onclick={() => console.log('Time range button clicked')}>
+          {getTimeRangeDisplay(selectedTimeRange)}
+          <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+          </svg>
+        </div>
+        <ul tabindex="-1" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+          <li><a class="dropdown-close" onclick={() => { console.log('All Time clicked'); selectedTimeRange = 'all'; handleFilterChange(); }}>All Time</a></li>
+          <li><a class="dropdown-close" onclick={() => { console.log('Last 7 Days clicked'); selectedTimeRange = 'last7days'; handleFilterChange(); }}>Last 7 Days</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'lastweek'; handleFilterChange(); }}>Last Week</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'thisweek'; handleFilterChange(); }}>This Week</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'lastmonth'; handleFilterChange(); }}>Last Month</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'thismonth'; handleFilterChange(); }}>This Month</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'thisyear'; handleFilterChange(); }}>This Year</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedTimeRange = 'lastyear'; handleFilterChange(); }}>Last Year</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Sort Filter -->
+    <div class="flex-1 min-w-0">
+      <label class="label">
+        <span class="label-text">Sort By</span>
+      </label>
+      <div class="dropdown">
+        <div tabindex="0" role="button" class="btn btn-outline w-full max-w-xs" onclick={() => console.log('Sort button clicked')}>
+          {getSortDisplay(selectedSort)}
+          <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+          </svg>
+        </div>
+        <ul tabindex="-1" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64">
+          <li><a class="dropdown-close" onclick={() => { selectedSort = '-start_time'; handleFilterChange(); }}>Start Time (Newest First)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = 'start_time'; handleFilterChange(); }}>Start Time (Oldest First)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = '-end_time'; handleFilterChange(); }}>End Time (Newest First)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = 'end_time'; handleFilterChange(); }}>End Time (Oldest First)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = '-duration'; handleFilterChange(); }}>Duration (Longest First)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = 'duration'; handleFilterChange(); }}>Duration (Shortest First)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = 'title'; handleFilterChange(); }}>Title (A-Z)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = '-title'; handleFilterChange(); }}>Title (Z-A)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = 'project_name'; handleFilterChange(); }}>Project (A-Z)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = '-project_name'; handleFilterChange(); }}>Project (Z-A)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = '-is_active'; handleFilterChange(); }}>Status (Active First)</a></li>
+          <li><a class="dropdown-close" onclick={() => { selectedSort = 'is_active'; handleFilterChange(); }}>Status (Completed First)</a></li>
+        </ul>
+      </div>
+    </div>
   </div>
 
   {#if loading}
@@ -247,5 +440,5 @@
 
 <!-- Time Entry Detail Modal -->
 {#if selectedEntry}
-  <TimeEntryDetailModal entry={selectedEntry} on:close={closeEntryModal} />
+  <TimeEntryDetailModal entry={selectedEntry} onclose={closeEntryModal} />
 {/if}

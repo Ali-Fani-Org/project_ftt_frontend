@@ -1,7 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
-  import NotificationStatusIndicator from '$lib/NotificationStatusIndicator.svelte';
 
   // Get current page title from URL
   const pageTitles: Record<string, string> = {
@@ -33,9 +32,9 @@
   <!-- Left section: Sidebar toggle + Page title -->
   <div class="navbar-start">
     <!-- Sidebar toggle button -->
-    <!-- <label 
-      for="app-drawer" 
-      aria-label="open sidebar" 
+    <!-- <label
+      for="app-drawer"
+      aria-label="open sidebar"
       class="btn btn-square btn-ghost mr-2 hover:bg-base-200"
     >
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -58,9 +57,6 @@
     </div>
   {/if}
 
-  <!-- Right section: Notification Status Indicator -->
-  <div class="navbar-end">
-    <NotificationStatusIndicator />
-  </div>
+  <!-- Right section: Empty -->
 
 </nav>

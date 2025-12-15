@@ -24,6 +24,7 @@
   let firstName = $state('');
   let lastName = $state('');
   let confirmPassword = $state('');
+  let email = $state(''); // Added for email validation support
 
   // Validation state
   let validationErrors = $state<{[key: string]: string}>({});
@@ -31,7 +32,7 @@
   onMount(async () => {
     // Clear any previous errors when component mounts
     authStore.clearError();
-    
+
     // Check for existing authentication
     await checkExistingAuth();
     isCheckingAuth = false;
@@ -42,7 +43,7 @@
     try {
       // Try to get user data to validate the token
       const userData = await auth.getUser();
-      
+
       // If successful, user is authenticated - redirect to dashboard
       if (userData) {
         goto('/dashboard');
@@ -106,17 +107,18 @@
   // Handle form submission
   const onsubmit = async (event: Event) => {
     event.preventDefault();
-    
+
     if (!validateForm()) {
       return;
     }
 
     loading = true;
     error = '';
+    validationErrors = {}; // Clear any previous validation errors
 
     try {
       let result;
-      
+
       if (isLogin) {
         result = await authStore.login(username, password, rememberMe);
         if (result.success) {
@@ -130,7 +132,12 @@
       }
 
       if (!result.success) {
-        error = result.error || 'Authentication failed';
+        // Handle server-side validation errors
+        if (result.validationErrors) {
+          validationErrors = result.validationErrors;
+        } else {
+          error = result.error || 'Authentication failed';
+        }
       }
     } catch (err: any) {
       error = 'An unexpected error occurred. Please try again.';
@@ -181,7 +188,7 @@
       <div class="text-center lg:text-left">
         <h1 class="text-5xl font-bold text-primary">Time Tracker</h1>
         <p class="py-6 text-lg">Track your time efficiently and boost your productivity.</p>
-        
+
         {#if isLogin}
           <div class="hidden lg:block">
             <div class="stats shadow bg-base-100">
@@ -195,7 +202,7 @@
                 <div class="stat-value text-primary">Efficiently</div>
                 <div class="stat-desc">Organize your daily activities</div>
               </div>
-              
+
               <div class="stat">
                 <div class="stat-figure text-secondary">
                   <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -226,7 +233,7 @@
       <div class="card bg-base-100 w-full max-w-md shadow-2xl relative">
         <!-- Settings Gear Icon -->
         <div class="absolute top-4 right-4">
-          <button 
+          <button
             class="btn btn-ghost btn-sm"
             onclick={openSettingsModal}
             title="Settings"
@@ -424,9 +431,9 @@
 
             <!-- Submit Button -->
             <div class="form-control mt-6">
-              <button 
-                type="submit" 
-                class="btn btn-primary" 
+              <button
+                type="submit"
+                class="btn btn-primary"
                 disabled={loading}
               >
                 {#if loading}
@@ -443,7 +450,7 @@
 
           <!-- Toggle Mode -->
           <div class="divider">OR</div>
-          
+
           <div class="text-center">
             <p class="text-sm text-base-content/70">
               {#if isLogin}
@@ -452,7 +459,7 @@
                 Already have an account?
               {/if}
             </p>
-            <button 
+            <button
               type="button"
               class="btn btn-ghost btn-sm mt-2"
               onclick={toggleMode}

@@ -139,7 +139,30 @@ const apiCache = new Map<string, { data: any; timestamp: number; ttl: number }>(
 // Cache TTL in milliseconds (5 minutes for most data)
 const CACHE_TTL = 5 * 60 * 1000;
 
+// Flag to disable caching globally
+let disableCache = true;
+
+/**
+ * Enable or disable API caching globally
+ * @param flag - true to disable cache, false to enable cache
+ */
+export function setCacheDisabled(flag: boolean) {
+  disableCache = flag;
+  console.log(`API cache ${flag ? 'disabled' : 'enabled'}`);
+}
+
+/**
+ * Get cached data if available and not expired
+ * @param key - Cache key
+ * @returns Cached data or null if not available/expired
+ */
 function getCached(key: string) {
+  // Return null if caching is disabled
+  if (disableCache) {
+    console.log(`Cache disabled, returning null for: ${key}`);
+    return null;
+  }
+  
   const cached = apiCache.get(key);
   if (cached && Date.now() - cached.timestamp < cached.ttl) {
     console.log(`Cache hit for: ${key}`);
@@ -164,9 +187,23 @@ export const auth = {
     return response.auth_token;
   },
   register: async (username: string, password: string, first_name: string, last_name: string) => {
-    await ky.post(`${get(baseUrl)}/auth/users/`, {
-      json: { username, password, first_name, last_name },
-    });
+    try {
+      await ky.post(`${get(baseUrl)}/auth/users/`, {
+        json: { username, password, first_name, last_name },
+      });
+    } catch (error: any) {
+      if (error.response) {
+        // Add the JSON data to the error response for field-specific errors
+        try {
+          const errorData = await error.response.json();
+          error.response._data = errorData;
+        } catch (parseError) {
+          // If parsing fails, continue with original error
+          console.warn('Could not parse error response as JSON:', parseError);
+        }
+      }
+      throw error;
+    }
   },
   getUser: async () => {
     const cacheKey = 'user:me';
@@ -236,6 +273,7 @@ export const timeEntries = {
     project?: number;
     cursor?: string;
     limit?: number;
+    ordering?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters?.start_date_after) params.append('start_date_after', filters.start_date_after);
@@ -251,6 +289,7 @@ export const timeEntries = {
     if (filters?.project) params.append('project', filters.project.toString());
     if (filters?.cursor) params.append('cursor', filters.cursor);
     if (filters?.limit) params.append('limit', filters.limit.toString());
+    if (filters?.ordering) params.append('ordering', filters.ordering);
     const url = `api/time_entries/?${params.toString()}`;
     const cacheKey = `time_entries:filtered:${url}`;
 
