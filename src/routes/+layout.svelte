@@ -1,10 +1,10 @@
 <script lang="ts">
 	import '../app.css';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { dev } from '$app/environment';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { authToken, user, theme, customThemes } from '$lib/stores';
+	import { authToken, user, theme, customThemes, backgroundAnimationEnabled, statsPanelEnabled } from '$lib/stores';
 	import { setAuthContext, getAuthContext } from '$lib/auth-context';
 	import TitleBar from '$lib/TitleBar.svelte';
 	import Sidebar from '$lib/Sidebar.svelte';
@@ -12,11 +12,13 @@
 	import '$lib/notifications'; // Initialize notification service
 	import { preload } from '$lib/preload';
 	import { themeChange } from 'theme-change';
+	import WaveBackground from '$lib/WaveBackground.svelte';
 
 	let { children } = $props();
 	let isTauri = $state(false);
 	let authInitialized = $state(false);
 	let drawerCheckbox = $state<HTMLInputElement>();
+	let statsCleanup: (() => void) | null = null;
 
 	// Set up authentication context
 	const authStore = setAuthContext();
@@ -103,6 +105,10 @@
 		}
 	});
 
+	onDestroy(() => {
+		if (statsCleanup) statsCleanup();
+	});
+
 	// Apply theme to document
 	$effect(() => {
 		if (typeof document !== 'undefined') {
@@ -156,7 +162,64 @@
 	
 	// Only show main layout for authenticated users
 	const showMainLayout = $derived($authToken && !isLoginPage);
+
+	$effect(() => {
+		if (typeof document === 'undefined') return;
+		if ($statsPanelEnabled && !statsCleanup) {
+			initStatsPanel().then((cleanup) => {
+				statsCleanup = cleanup;
+			});
+		} else if (!$statsPanelEnabled && statsCleanup) {
+			statsCleanup();
+			statsCleanup = null;
+		}
+	});
+
+	async function initStatsPanel() {
+		try {
+			const { default: Stats } = await import('stats.js');
+			const panels = [0, 1, 2]; // fps, ms, mb
+			const wrappers: HTMLElement[] = [];
+
+			panels.forEach((panel, idx) => {
+				const stats = new Stats();
+				stats.showPanel(panel);
+				const dom = stats.dom;
+				dom.style.position = 'fixed';
+				dom.style.left = `${8 + idx * 90}px`;
+				dom.style.top = '8px';
+				dom.style.zIndex = '2147483647';
+				dom.style.pointerEvents = 'none';
+				document.body.appendChild(dom);
+
+				let rafId: number;
+				const loop = () => {
+					stats.begin();
+					stats.end();
+					rafId = requestAnimationFrame(loop);
+				};
+				rafId = requestAnimationFrame(loop);
+
+				// store cleanup per panel
+				(wrappers as any).push({ dom, rafId });
+			});
+
+			return () => {
+				(wrappers as any).forEach((item: { dom: HTMLElement; rafId: number }, idx: number) => {
+					cancelAnimationFrame(item.rafId);
+					item.dom.remove();
+				});
+			};
+		} catch (err) {
+			console.warn('Failed to init stats panel', err);
+			return null;
+		}
+	}
 </script>
+
+{#if $backgroundAnimationEnabled}
+	<WaveBackground />
+{/if}
 
 {#if isTauri}
 	<TitleBar />

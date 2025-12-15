@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart, logout } from './stores';
+	import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart, logout, backgroundAnimationEnabled } from './stores';
+
 	import { enable, disable } from '@tauri-apps/plugin-autostart';
 	import { createEventDispatcher } from 'svelte';
 	import { onMount } from 'svelte';
@@ -14,6 +15,8 @@
 	let localMinimizeToTray = $state($minimizeToTray);
 	let localCloseToTray = $state($closeToTray);
 	let localAutostart = $state($autostart);
+	let localBackgroundAnimation = $state($backgroundAnimationEnabled);
+
 	let appVersion = $state('');
 	let showLogoutConfirm = $state(false);
 
@@ -58,7 +61,7 @@
 	       "caramellatte",
 	       "abyss",
 	       "silk",
-	       "dark-futuristic"
+	       "web3hub"
 	];
 
 	let themes = $derived([...builtInThemes, ...Object.keys($customThemes), 'custom']);
@@ -103,6 +106,7 @@
 		minimizeToTray.set(localMinimizeToTray);
 		closeToTray.set(localCloseToTray);
 		autostart.set(localAutostart);
+		backgroundAnimationEnabled.set(localBackgroundAnimation);
 		try {
 			if (localAutostart) {
 				await enable();
@@ -145,6 +149,10 @@
 
 	function cancelLogout() {
 		showLogoutConfirm = false;
+	}
+
+	function saveBackgroundAnimation() {
+		backgroundAnimationEnabled.set(localBackgroundAnimation);
 	}
 </script>
 
@@ -196,6 +204,18 @@
 					<input type="checkbox" bind:checked={localAutostart} class="checkbox" />
 				</label>
 			</div>
+		</div>
+
+		<div class="form-control mt-4">
+			<label class="label cursor-pointer">
+				<span class="label-text">Show animated background</span>
+				<input
+					type="checkbox"
+					bind:checked={localBackgroundAnimation}
+					onchange={saveBackgroundAnimation}
+					class="checkbox"
+				/>
+			</label>
 		</div>
 
 		{#if Object.keys($customThemes).length > 0}

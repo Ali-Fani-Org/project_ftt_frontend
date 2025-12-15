@@ -507,8 +507,8 @@
   }
 </script>
 
-<div class="card bg-base-100 shadow-sm">
-  <div class="card-body p-4">
+<div class="card bg-base-100 shadow-lg border border-base-200 glass-card h-full flex flex-col">
+  <div class="card-body p-4 flex-1 flex flex-col">
     <h2 class="card-title text-sm mb-4 flex items-center">
       <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
@@ -543,12 +543,11 @@
 
             <!-- Activity segments container: bar chart -->
             <div class="flex-1 flex flex-col items-center">
-              <div class="flex items-end justify-center w-full space-x-1 mb-1">
+              <div class="segments-row flex items-end justify-center w-full space-x-1 mb-1">
                 {#each day.segments as segment, index}
                   <div class="tooltip tooltip-top" data-tip={getSegmentTooltip(day, index)}>
                     <div
-                      class="w-3 rounded-sm bg-base-200/50 relative overflow-hidden"
-                      style="min-height: 0.25rem; width: 1rem; height: 1.75rem;"
+                      class="segment-bar rounded-sm bg-base-200/50 relative overflow-hidden"
                     >
                       <div
                         class="absolute inset-x-0 bottom-0 rounded-sm bg-primary transition-all duration-300 ease-out"
@@ -558,9 +557,9 @@
                   </div>
                 {/each}
               </div>
-              <div class="flex justify-center w-full space-x-1">
+              <div class="segments-row flex justify-center w-full space-x-1">
                 {#each day.segments as segment, index}
-                  <div class="text-[0.6rem] text-base-content/60 w-3" style="width: 1rem;">
+                  <div class="text-[0.6rem] text-base-content/60 segment-label">
                     {getSegmentTimeRangeLabel(index).substring(0, 2)}
                   </div>
                 {/each}
@@ -603,5 +602,26 @@
   .animate-slide-in {
     animation: slideInFromBottom 0.5s ease-out forwards;
     transform-origin: bottom;
+  }
+
+  .glass-card {
+    background-color: color-mix(in oklch, oklch(var(--b1)) 85%, transparent);
+    border-color: oklch(var(--b2));
+    backdrop-filter: blur(10px);
+  }
+
+  .segments-row {
+    gap: clamp(0.25rem, 0.5vw, 0.5rem);
+  }
+
+  .segment-bar {
+    width: clamp(0.7rem, 1.8vw, 1.1rem);
+    min-height: 0.25rem;
+    height: clamp(1.25rem, 5vw, 1.9rem);
+  }
+
+  .segment-label {
+    width: clamp(0.7rem, 1.8vw, 1.1rem);
+    text-align: center;
   }
 </style>

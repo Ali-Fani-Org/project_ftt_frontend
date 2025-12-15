@@ -339,7 +339,7 @@
 	}
 </script>
 
-<div class="p-4">
+<div class="p-4 card bg-base-100 shadow-lg border border-base-200 glass-card h-full flex flex-col">
 	<h2 class="card-title text-sm mb-4 flex items-center">
 		<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path
@@ -439,5 +439,10 @@
 			opacity: 1;
 			transform: translateY(0);
 		}
+	}
+	.glass-card {
+		background-color: color-mix(in oklch, oklch(var(--b1)) 85%, transparent);
+		border-color: oklch(var(--b2));
+		backdrop-filter: blur(10px);
 	}
 </style>

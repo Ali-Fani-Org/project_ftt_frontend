@@ -17,6 +17,8 @@
   let rememberMe = $state(true);
   let showSettingsModal = $state(false);
   let isCheckingAuth = $state(true);
+  let authStatus = $state('Checking saved session...');
+  let hasStoredToken = $state(false);
 
   // Form fields
   let username = $state('');
@@ -30,32 +32,53 @@
   let validationErrors = $state<{[key: string]: string}>({});
 
   onMount(async () => {
-    // Clear any previous errors when component mounts
     authStore.clearError();
-
-    // Check for existing authentication
-    await checkExistingAuth();
-    isCheckingAuth = false;
+    const redirected = await checkExistingAuth();
+    if (!redirected) {
+      isCheckingAuth = false;
+    }
   });
 
   // Check for existing authentication token
-  async function checkExistingAuth() {
+  async function checkExistingAuth(): Promise<boolean> {
     try {
-      // Try to get user data to validate the token
-      const userData = await auth.getUser();
+      authStatus = 'Checking saved session...';
+      hasStoredToken =
+        typeof localStorage !== 'undefined' &&
+        !!(localStorage.getItem('authToken') || sessionStorage.getItem('auth_token'));
 
-      // If successful, user is authenticated - redirect to dashboard
+      if (!hasStoredToken) {
+        authStatus = 'No saved session found';
+        return false;
+      }
+
+      authStatus = 'Validating token...';
+
+      // Race auth check against a short timeout to avoid long hangs
+      const userData = await Promise.race([
+        auth.getUser(),
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+      ]);
+
       if (userData) {
+        authStatus = 'Authenticated, redirecting...';
         goto('/dashboard');
+        return true;
       }
+
+      authStatus = 'Session invalid, please sign in';
+      return false;
     } catch (error: any) {
-      // If we get a 401 error, the token is invalid - clear it
-      if (error.response?.status === 401) {
-        // Clear the invalid token
+      if (error.message === 'timeout') {
+        authStatus = 'Auth check timed out, please sign in';
+      } else if (error.response?.status === 401) {
         authStore.logout();
+        authStatus = 'Session expired, please sign in';
+      } else {
+        authStatus = 'Auth check failed, please sign in';
       }
-      // For any other error, just continue to login page
       console.log('Auth check failed:', error.message);
+      return false;
     }
   }
 
@@ -176,9 +199,12 @@
 {#if isCheckingAuth}
   <div class="hero bg-base-200 min-h-screen">
     <div class="hero-content">
-      <div class="text-center">
-        <span class="loading loading-spinner loading-lg"></span>
-        <p class="mt-4">Checking authentication...</p>
+      <div class="text-center space-y-4">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+        <div>
+          <p class="font-semibold">Checking authentication…</p>
+          <p class="text-sm text-base-content/70">{authStatus}</p>
+        </div>
       </div>
     </div>
   </div>

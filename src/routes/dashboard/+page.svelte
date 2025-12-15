@@ -190,7 +190,7 @@
 
 <div class="container mx-auto p-4 lg:p-8">
   <!-- Header -->
-  <div class="mb-8">
+  <div class="mb-6">
     <h1 class="text-3xl font-bold text-primary">Dashboard</h1>
     <p class="text-base-content/70">{getGreeting()}, {$user?.first_name || 'User'}!</p>
   </div>
@@ -273,7 +273,7 @@
     </div>
   {:else}
     <!-- Quick Stats -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
       <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
           <div class="flex items-center justify-between">
@@ -324,16 +324,12 @@
     </div>
 
     <!-- Charts Section -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3 mb-4 items-stretch auto-rows-fr">
       <!-- Last 7 Days Chart -->
-      <div class="card shadow-lg">
-        <div class="card-body"><Last7DaysChart /></div>
-      </div>
+      <div class="h-full min-h-[420px]"><Last7DaysChart /></div>
 
       <!-- Calendar Heatmap -->
-      <div class="card shadow-lg">
-        <div class="card-body"><CalendarHeatmap /></div>
-      </div>
+      <div class="h-full min-h-[420px]"><CalendarHeatmap /></div>
     </div>
 
     <!-- Recent Activity & Quick Actions -->

@@ -3,7 +3,7 @@
 @import "tailwindcss/utilities";
 @plugin "daisyui";
 @plugin "daisyui/theme" {
-  name: "dark-futuristic";
+  name: "web3hub";
   default: true;
   prefersdark: false;
   color-scheme: "dark";

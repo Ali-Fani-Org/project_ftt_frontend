@@ -16,7 +16,7 @@ export default {
     themes: [
       {
         ...require("daisyui/src/theming/themes"),
-        "dark-futuristic": {
+        "web3hub": {
 
           "primary": "oklch(65% 0.20 245)",
           "primary-content": "oklch(97% 0.01 255)",

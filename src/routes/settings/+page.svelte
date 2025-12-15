@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart } from '$lib/stores';
+  import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart, backgroundAnimationEnabled, statsPanelEnabled } from '$lib/stores';
+
   import { enable, disable } from '@tauri-apps/plugin-autostart';
   import IdleMonitorDebug from '$lib/IdleMonitorDebug.svelte';
   import { isUserIdleMonitoringEnabled, isUserIdleMonitorDebugEnabled } from '$lib/stores';
   import { featureFlagsStore } from '$lib/stores';
+
   import { onMount } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
   import { goto } from '$app/navigation';
@@ -15,6 +17,9 @@
   let localMinimizeToTray = $state($minimizeToTray);
   let localCloseToTray = $state($closeToTray);
   let localAutostart = $state($autostart);
+  let localBackgroundAnimation = $state($backgroundAnimationEnabled);
+  let localStatsPanel = $state($statsPanelEnabled);
+
   let appVersion = $state('');
   let showLogoutConfirm = $state(false);
   let showIdleDebug = $state(false);
@@ -25,7 +30,7 @@
     try {
       await featureFlagsStore.loadFeatures();
       showIdleDebug = await isUserIdleMonitorDebugEnabled();
-      console.log('🔍 Debug feature flag check result:', showIdleDebug);
+      console.log(' Debug feature flag check result:', showIdleDebug);
     } catch (error) {
       console.error('Failed to load feature flags for debug check:', error);
       showIdleDebug = false;
@@ -37,7 +42,7 @@
        "synthwave", "retro", "cyberpunk", "valentine", "halloween", "garden",
        "forest", "aqua", "lofi", "pastel", "fantasy", "wireframe", "black",
        "luxury", "dracula", "cmyk", "autumn", "business", "acid", "lemonade",
-       "night", "coffee", "winter","dark-futuristic"
+       "night", "coffee", "winter","web3hub"
   ];
 
   async function saveBaseUrl() {
@@ -66,6 +71,7 @@
   async function saveTraySettings() {
     minimizeToTray.set(localMinimizeToTray);
     closeToTray.set(localCloseToTray);
+    backgroundAnimationEnabled.set(localBackgroundAnimation);
   }
 
   async function saveAutostart() {
@@ -75,6 +81,14 @@
     } else {
       await disable();
     }
+  }
+
+  function saveBackgroundAnimation() {
+    backgroundAnimationEnabled.set(localBackgroundAnimation);
+  }
+
+  function saveStatsPanel() {
+    statsPanelEnabled.set(localStatsPanel);
   }
 
   function confirmLogout() {
@@ -236,6 +250,31 @@
               class="checkbox checkbox-primary"
             />
           </label>
+        </div>
+
+        <div class="form-control mt-4">
+          <label class="cursor-pointer label">
+            <span class="label-text font-medium text-base">Show animated background</span>
+            <input
+              type="checkbox"
+              bind:checked={localBackgroundAnimation}
+              onchange={saveBackgroundAnimation}
+              class="checkbox checkbox-primary"
+            />
+          </label>
+        </div>
+
+        <div class="form-control mt-2">
+          <label class="cursor-pointer label">
+            <span class="label-text font-medium text-base">Show performance stats panel</span>
+            <input
+              type="checkbox"
+              bind:checked={localStatsPanel}
+              onchange={saveStatsPanel}
+              class="checkbox checkbox-primary"
+            />
+          </label>
+          <p class="text-xs text-base-content/70 ml-1">When enabled, a small FPS/MB panel appears in the top-left.</p>
         </div>
       </div>
     </div>
