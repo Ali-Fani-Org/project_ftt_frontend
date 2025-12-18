@@ -5,6 +5,11 @@
   import { authToken, user, timeEntriesDisplayMode, featureFlagsStore } from '$lib/stores';
   import { projects, timeEntries, type Project, type TimeEntry } from '$lib/api';
   import { preventDefault } from '$lib/commands.svelte';
+  
+  // Add logging to debug the invoke issue
+  console.log('🔍 Timer page loading, checking Tauri environment...');
+  console.log('🔍 Window object exists:', typeof window !== 'undefined');
+  console.log('🔍 Tauri flag:', typeof window !== 'undefined' ? (window as any).__TAURI__ : 'N/A');
   import TasksModal from '$lib/TasksModal.svelte';
   import type { PageData } from './$types';
 
@@ -69,9 +74,10 @@
           activeEntry = await timeEntries.getCurrentActive();
           if (activeEntry) startTimer();
           console.log('Active entry loaded at', new Date().toISOString(), activeEntry ? 'with active entry' : 'no active entry');
-        } catch (err) {
+        } catch (err: unknown) {
           // 404 is expected when no active timer, so we don't treat it as an error
-          if (err?.response?.status !== 404) {
+          const status = (err as { response?: { status?: number } })?.response?.status;
+          if (status !== 404) {
             console.error('Error loading active entry:', err);
             error = 'Failed to load active timer';
           }
@@ -202,7 +208,7 @@
 
       // Filter to only include completed sessions (not active) and limit to 5
       const completedSessions = response.results
-        .filter(entry => !entry.is_active)
+        .filter((entry: TimeEntry) => !entry.is_active)
         .slice(0, 5);
 
       todaySessions = completedSessions;

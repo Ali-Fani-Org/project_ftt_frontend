@@ -5,6 +5,10 @@ import { auth } from './api';
 import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
 
+const AUTH_CONTEXT_KEY = Symbol('authContext');
+
+let authContext: AuthStore | null = null;
+
 // Authentication state interface
 export interface AuthState {
   isAuthenticated: boolean;
@@ -232,20 +236,21 @@ export function createAuthStore(): AuthStore {
   };
 }
 
-// Create and export the auth store
-export const authStore = createAuthStore();
-
-// Context key for authentication
-export const AUTH_CONTEXT_KEY = 'auth-context';
+function createAuthContext(): AuthStore {
+	return createAuthStore();
+}
 
 // Function to set auth context
 export function setAuthContext() {
-  return setContext(AUTH_CONTEXT_KEY, authStore);
+	if (!authContext) {
+		authContext = createAuthContext();
+	}
+	return setContext(AUTH_CONTEXT_KEY, authContext);
 }
 
 // Function to get auth context
 export function getAuthContext() {
-  return getContext(AUTH_CONTEXT_KEY);
+	return getContext<AuthStore>(AUTH_CONTEXT_KEY);
 }
 
 // AuthStore interface

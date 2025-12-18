@@ -124,15 +124,6 @@ export interface FeatureFlagCheck {
   user_has_access: boolean;
 }
 
-export interface Notification {
-  id: string;
-  type: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS' | 'CRITICAL' | 'OTHER';
-  message: string;
-  created_at: string;
-  read: boolean;
-  delivered_at: string | null;
-}
-
 // Cache for API responses to improve performance
 const apiCache = new Map<string, { data: any; timestamp: number; ttl: number }>();
 
@@ -140,16 +131,7 @@ const apiCache = new Map<string, { data: any; timestamp: number; ttl: number }>(
 const CACHE_TTL = 5 * 60 * 1000;
 
 // Flag to disable caching globally
-let disableCache = true;
-
-/**
- * Enable or disable API caching globally
- * @param flag - true to disable cache, false to enable cache
- */
-export function setCacheDisabled(flag: boolean) {
-  disableCache = flag;
-  console.log(`API cache ${flag ? 'disabled' : 'enabled'}`);
-}
+let disableCache = false;
 
 /**
  * Get cached data if available and not expired
@@ -159,23 +141,27 @@ export function setCacheDisabled(flag: boolean) {
 function getCached(key: string) {
   // Return null if caching is disabled
   if (disableCache) {
-    console.log(`Cache disabled, returning null for: ${key}`);
+    console.log(`🚫 Cache disabled, returning null for: ${key}`);
     return null;
   }
   
   const cached = apiCache.get(key);
   if (cached && Date.now() - cached.timestamp < cached.ttl) {
-    console.log(`Cache hit for: ${key}`);
+    console.log(`🎯 Cache HIT for: ${key} (age: ${Math.floor((Date.now() - cached.timestamp)/1000)}s)`);
     return cached.data;
   }
   // Remove expired cache entry
   if (cached) {
+    console.log(`🗑️  Cache EXPIRED for: ${key} (age: ${Math.floor((Date.now() - cached.timestamp)/1000)}s)`);
     apiCache.delete(key);
+  } else {
+    console.log(`🔍 Cache MISS for: ${key}`);
   }
   return null;
 }
 
 function setCached(key: string, data: any, ttl: number = CACHE_TTL) {
+  console.log(`💾 Cache SET for: ${key} (TTL: ${ttl/1000}s)`);
   apiCache.set(key, { data, timestamp: Date.now(), ttl });
 }
 
@@ -355,11 +341,5 @@ export const featureFlags = {
   logAccess: async (featureKey: string): Promise<{ message: string; feature_key: string; feature_name: string }> => {
     // Don't cache log access calls as they should always hit the server
     return await api.post(`api/feature-flags/user-features/${featureKey}/log-access/`).json<{ message: string; feature_key: string; feature_name: string }>();
-  }
-};
-
-export const notifications = {
-  acknowledge: async (notificationId: string): Promise<{ message: string }> => {
-    return await api.post(`api/notifications/${notificationId}/acknowledge/`).json<{ message: string }>();
   }
 };

@@ -163,7 +163,7 @@
         const token = get(authToken);
         const baseUrlValue = get(baseUrl);
         // Construct full URL - if currentPageUrl is a relative path, add baseUrl with trailing slash
-        let fullUrl;
+        let fullUrl: string;
         if (currentPageUrl.startsWith('http')) {
           // If currentPageUrl is already a full URL (from next/previous), use as-is
           fullUrl = currentPageUrl;
@@ -529,7 +529,7 @@
             <!-- Day label with date tooltip -->
             <div
               class="w-14 text-[0.7rem] font-medium text-base-content/90 mr-1.5 flex-shrink-0 relative"
-              on:mouseenter={() => showDateTooltip(day.date, event)}
+              on:mouseenter={(event) => showDateTooltip(day.date, event)}
               on:mouseleave={() => hideDateTooltip()}
             >
               <div>{day.label}</div>

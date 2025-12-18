@@ -29,7 +29,7 @@
   let loadingFeatureFlags = $state(true);
 
   // Track preloading state
-  const preloadingStates = {
+  const preloadingStates: Record<'/timer' | '/entries' | '/settings' | '/processes', boolean> = {
     '/timer': false,
     '/entries': false,
     '/settings': false,
@@ -37,23 +37,36 @@
   };
 
   // Handler to update preloading state
-  function setPreloading(path, state) {
+  function setPreloading(path: keyof typeof preloadingStates, state: boolean) {
     preloadingStates[path] = state;
   }
 
-  // Note: Authentication is now handled globally in the layout
   onMount(async () => {
     try {
       loading = true;
       loadingFeatureFlags = true;
 
       // Load feature flags
+      console.log('🔄 Starting feature flags load');
       await featureFlagsStore.loadFeatures();
+      console.log('✅ Feature flags loaded');
       showProcessMonitorButton = await featureFlagsStore.isFeatureEnabled('process-monitor-ui');
       loadingFeatureFlags = false;
 
-      // Load projects, today's entries, and active entry in parallel
+      // Load fresh data
+      await loadFreshData();
+      loading = false;
+    } catch (err) {
+      console.error('Dashboard loading error:', err);
+      error = 'Failed to load dashboard data';
+      loading = false;
+    }
+  });
+
+  async function loadFreshData() {
+    try {
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+
       const [projectsResult, todayEntriesResult, recentEntriesResult, activeResult] = await Promise.allSettled([
         projects.list(),
         timeEntries.listWithFilters({
@@ -89,14 +102,10 @@
       if (activeResult.status === 'fulfilled') {
         activeEntry = activeResult.value;
       }
-
-      loading = false;
     } catch (err) {
-      console.error('Dashboard loading error:', err);
-      error = 'Failed to load dashboard data';
-      loading = false;
+      console.error('Failed to load fresh data:', err);
     }
-  });
+  }
 
   function filterTodayEntries(entries: TimeEntry[]): TimeEntry[] {
     // With the API now returning timezone-aware datetimes, we can still do client-side filtering
@@ -376,9 +385,6 @@
             <div class="card-actions mt-4">
               <button class="btn btn-outline btn-sm" 
                       use:preloadOnHover={'/entries'} 
-                      on:preloadstart={() => setPreloading('/entries', true)}
-                      on:preloadend={() => setPreloading('/entries', false)}
-                      on:preloadcancel={() => setPreloading('/entries', false)}
                       on:click={openTimeEntries}>
                 {#if preloadingStates['/entries']}
                   <span class="loading loading-spinner loading-xs mr-2"></span>
@@ -405,9 +411,6 @@
           <div class="space-y-3">
             <button class="btn btn-primary btn-block justify-start" 
                     use:preloadOnHover={'/timer'} 
-                    on:preloadstart={() => setPreloading('/timer', true)}
-                    on:preloadend={() => setPreloading('/timer', false)}
-                    on:preloadcancel={() => setPreloading('/timer', false)}
                     on:click={() => goto('/timer')}>
               {#if preloadingStates['/timer']}
                 <span class="loading loading-spinner loading-xs mr-2"></span>
@@ -421,9 +424,6 @@
 
             <button class="btn btn-outline btn-block justify-start" 
                     use:preloadOnHover={'/entries'} 
-                    on:preloadstart={() => setPreloading('/entries', true)}
-                    on:preloadend={() => setPreloading('/entries', false)}
-                    on:preloadcancel={() => setPreloading('/entries', false)}
                     on:click={openTimeEntries}>
               {#if preloadingStates['/entries']}
                 <span class="loading loading-spinner loading-xs mr-2"></span>
@@ -437,9 +437,6 @@
 
             <button class="btn btn-outline btn-block justify-start" 
                     use:preloadOnHover={'/settings'} 
-                    on:preloadstart={() => setPreloading('/settings', true)}
-                    on:preloadend={() => setPreloading('/settings', false)}
-                    on:preloadcancel={() => setPreloading('/settings', false)}
                     on:click={() => goto('/settings')}>
               {#if preloadingStates['/settings']}
                 <span class="loading loading-spinner loading-xs mr-2"></span>
@@ -455,9 +452,6 @@
             {#if !loadingFeatureFlags && showProcessMonitorButton}
               <button class="btn btn-outline btn-block justify-start" 
                       use:preloadOnHover={'/processes'} 
-                      on:preloadstart={() => setPreloading('/processes', true)}
-                      on:preloadend={() => setPreloading('/processes', false)}
-                      on:preloadcancel={() => setPreloading('/processes', false)}
                       on:click={openProcessMonitor}>
                 {#if preloadingStates['/processes']}
                   <span class="loading loading-spinner loading-xs mr-2"></span>

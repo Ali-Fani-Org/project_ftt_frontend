@@ -71,7 +71,3 @@ export function preload(path: string) {
 }
 
 export { preloadRoute };
-
-// Additional optimization: Keep frequently used components in memory
-// This prevents the need to re-instantiate them each time
-export const componentCache = new Map();
