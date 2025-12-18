@@ -329,18 +329,35 @@ class TauriNotificationService implements NotificationService {
 }
 
 /**
+ * Create and return the notification service
+ * Only available in Tauri environment
+ */
+export function createNotificationService(): NotificationService {
+  
+  if (!browser) {
+    logger.warn('⚠️ createNotificationService: Can only be created in browser environment');
+    throw new Error('NotificationService can only be created in browser environment');
+  }
+  
+  return new TauriNotificationService();
+}
+
+/**
  * Auto-connect to notifications when auth token is available
  */
 let globalNotificationService: NotificationService | null = null;
 
-function getNotificationService(): NotificationService {
+export function getNotificationService(): NotificationService {
   if (!globalNotificationService) {
-    globalNotificationService = new TauriNotificationService();
+    globalNotificationService = createNotificationService();
+  } else {
+    logger.debug('♻️ Reusing existing global notification service');
   }
   return globalNotificationService;
 }
 
-const notifications = getNotificationService();
+// Initialize on module load
+getNotificationService(); // Initialize the service
 
 // Auto-connect when auth token changes - only connect with valid authentication
 authToken.subscribe((token: string | null) => {

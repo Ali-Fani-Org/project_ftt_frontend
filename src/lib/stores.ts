@@ -1,5 +1,4 @@
 import { writable } from 'svelte/store';
-import type { Writable, Unsubscriber } from 'svelte/store';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import logger from '$lib/logger';
@@ -112,8 +111,8 @@ function scheduleLogBatch() {
   }, 100); // 100ms batching window
 }
 
-function createPersistentStore<T>(key: string, initialValue: T): Writable<T> {
-  let store: Writable<T>;
+function createPersistentStore<T>(key: string, initialValue: T) {
+  let store: any;
   let isInitialized = false;
 
   // Create the store with proper initialization
@@ -137,7 +136,7 @@ function createPersistentStore<T>(key: string, initialValue: T): Writable<T> {
 
   // Return a proxy that will be properly initialized
   return {
-    subscribe: (run) => {
+    subscribe: (run: any) => {
       if (!isInitialized) {
         // If not initialized yet, wait for it
         const initInterval = setInterval(() => {
@@ -146,7 +145,7 @@ function createPersistentStore<T>(key: string, initialValue: T): Writable<T> {
             return store.subscribe(run);
           }
         }, 10);
-        return (() => clearInterval(initInterval)) as Unsubscriber;
+        return () => clearInterval(initInterval);
       }
       return store.subscribe(run);
     },
@@ -163,7 +162,7 @@ function createPersistentStore<T>(key: string, initialValue: T): Writable<T> {
       }
       store.set(value);
     },
-    update: (fn) => {
+    update: (fn: any) => {
       if (!isInitialized) {
         // Wait for initialization
         const initInterval = setInterval(() => {
@@ -281,6 +280,9 @@ export function globalLogout(autoLogout = false, customMessage?: string) {
     show: true,
     message: message
   });
+
+  // Redirect to login page
+  goto('/');
 }
 
 export const logout = () => globalLogout(false);
@@ -324,8 +326,8 @@ function createFeatureFlagsStore() {
           response = await featureFlags.getMyFeatures();
         }
 
-        const enabledKeys = new Set<string>(response.enabled_features.map((f: any) => f.key));
-        const disabledKeys = new Set<string>(response.disabled_features.map((f: any) => f.key));
+        const enabledKeys = new Set(response.enabled_features.map(f => f.key));
+        const disabledKeys = new Set(response.disabled_features.map(f => f.key));
 
         update(state => ({
           ...state,
@@ -368,8 +370,8 @@ function createFeatureFlagsStore() {
           
           // Update cache
           update(state => {
-            const newEnabled = new Set<string>(state.enabledFeatures);
-            const newDisabled = new Set<string>(state.disabledFeatures);
+            const newEnabled = new Set(state.enabledFeatures);
+            const newDisabled = new Set(state.disabledFeatures);
             
             if (isEnabled) {
               newEnabled.add(featureKey);
@@ -431,6 +433,12 @@ function createFeatureFlagsStore() {
 }
 
 export const featureFlagsStore = createFeatureFlagsStore();
+
+// Helper function to check if process monitor UI is enabled
+export const isProcessMonitorUIEnabled = () => featureFlagsStore.isFeatureEnabled('process-monitor-ui');
+
+// Helper function to check if process monitor backend is enabled
+export const isProcessMonitorBackendEnabled = () => featureFlagsStore.isFeatureEnabled('process-monitor-backend');
 
 // Helper function to check if user idle monitoring is enabled
 export const isUserIdleMonitoringEnabled = () => featureFlagsStore.isFeatureEnabled('user-idle-monitoring');
@@ -709,6 +717,32 @@ function createIdleMonitorStore() {
       }
     }
   };
+}
+
+// Cache management functions
+export function invalidateCache(pattern?: string) {
+  if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+    // In Tauri environment, we can use Tauri's cache management
+    // For now, we'll just log the invalidation
+    logger.log('Cache invalidation requested:', pattern || 'all');
+  }
+
+  // Import the api module to clear its cache
+  import('./api').then(({ apiCache }) => {
+    if (pattern) {
+      // Clear specific cache entries matching the pattern
+      for (const key of apiCache.keys()) {
+        if (key.includes(pattern)) {
+          apiCache.delete(key);
+        }
+      }
+    } else {
+      // Clear all cache
+      apiCache.clear();
+    }
+  }).catch(err => {
+    logger.error('Failed to clear cache:', err);
+  });
 }
 
 export const idleMonitorStore = createIdleMonitorStore();

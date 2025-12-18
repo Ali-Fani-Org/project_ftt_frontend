@@ -2,7 +2,6 @@ import { browser } from '$app/environment';
 import { page } from '$app/stores';
 import { get } from 'svelte/store';
 import { preload } from '$lib/preload';
-import type { HandleClientError } from '@sveltejs/kit';
 
 // Client-side hooks for navigation
 if (browser) {
@@ -30,10 +29,11 @@ export const csr = true;
 export const prerender = true;
 
 // Handle errors that occur during client-side navigation
-export const handleError: HandleClientError = ({ error, event }) => {
+export const handleError = ({ error, event }) => {
   console.error('Client-side error:', error, 'at', event.url);
   return {
-    message: 'An error occurred during navigation'
+    message: 'An error occurred during navigation',
+    error
   };
 };
 

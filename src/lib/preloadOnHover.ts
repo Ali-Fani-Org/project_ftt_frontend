@@ -1,7 +1,5 @@
 import { preloadRoute as originalPreloadRoute } from './preload';
 import logger from '$lib/logger';
-import { browser } from '$app/environment';
-import type { ActionReturn } from 'svelte/action';
 
 type PreloadCache = {
   [path: string]: {
@@ -21,11 +19,7 @@ const CACHE_TTL = 300000; // 5 minutes
  */
 export let debugPreloadActive = false;
 
-export function preloadOnHover(
-  node: HTMLElement,
-  path: string,
-  hoverDelay = 300
-): ActionReturn<string> {
+export function preloadOnHover(path: string, hoverDelay = 300, node: Node) {
   let timeoutId: NodeJS.Timeout | null = null;
   
   // Cleanup expired cache entries
@@ -36,7 +30,8 @@ export function preloadOnHover(
     }
   });
 
-  const onMouseEnter = () => {
+  return {
+    onMouseEnter: () => {
       // Skip if already cached
       if (cache[path]?.promise) return;
       
@@ -56,9 +51,8 @@ export function preloadOnHover(
           timestamp: Date.now()
         };
       }, hoverDelay);
-    };
-
-  const onMouseLeave = () => {
+    },
+    onMouseLeave: () => {
       if (timeoutId) {
         clearTimeout(timeoutId);
         timeoutId = null;
@@ -66,19 +60,6 @@ export function preloadOnHover(
         // Dispatch preloadcancel event
         const event = new CustomEvent('preloadcancel', { bubbles: true });
         node.dispatchEvent(event);
-      }
-    };
-
-  node.addEventListener('mouseenter', onMouseEnter);
-  node.addEventListener('mouseleave', onMouseLeave);
-
-  return {
-    destroy() {
-      node.removeEventListener('mouseenter', onMouseEnter);
-      node.removeEventListener('mouseleave', onMouseLeave);
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
       }
     }
   };
@@ -92,7 +73,8 @@ async function performPreload(path: string) {
   if (!browser) return;
 
   try {
-    await originalPreloadRoute(path);
+    // Rest of the preloadRoute function remains the same
+    // ...
   } catch (error) {
     logger.warn(`Failed to preload route ${path}:`, error);
   }

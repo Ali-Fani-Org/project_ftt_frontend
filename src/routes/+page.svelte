@@ -6,6 +6,9 @@
   import { logoutAlert } from '$lib/stores';
   import LoginSettingsModal from '$lib/LoginSettingsModal.svelte';
 
+  // Get auth context
+  const authStore: any = getAuthContext();
+
   // Form state
   let isLogin = $state(true);
   let loading = $state(false);
@@ -29,7 +32,7 @@
   let validationErrors = $state<{[key: string]: string}>({});
 
   onMount(async () => {
-    getAuthContext().clearError();
+    authStore.clearError();
     const redirected = await checkExistingAuth();
     if (!redirected) {
       isCheckingAuth = false;
@@ -69,7 +72,7 @@
       if (error.message === 'timeout') {
         authStatus = 'Auth check timed out, please sign in';
       } else if (error.response?.status === 401) {
-        getAuthContext().logout();
+        authStore.logout();
         authStatus = 'Session expired, please sign in';
       } else {
         authStatus = 'Auth check failed, please sign in';
@@ -137,17 +140,15 @@
     validationErrors = {}; // Clear any previous validation errors
 
     try {
-      let result:
-        | { success: true }
-        | { success: false; error?: string; validationErrors?: Record<string, string> };
+      let result;
 
       if (isLogin) {
-        result = await getAuthContext().login(username, password, rememberMe);
+        result = await authStore.login(username, password, rememberMe);
         if (result.success) {
           goto('/dashboard');
         }
       } else {
-        result = await getAuthContext().register(username, password, firstName, lastName);
+        result = await authStore.register(username, password, firstName, lastName);
         if (result.success) {
           goto('/dashboard');
         }

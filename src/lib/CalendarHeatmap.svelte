@@ -66,7 +66,7 @@
 				const token = get(authToken);
 				const baseUrlValue = get(baseUrl);
 				// Construct full URL - if currentPageUrl is a relative path, add baseUrl with trailing slash
-				let fullUrl: string;
+				let fullUrl;
 				if (currentPageUrl.startsWith('http')) {
 					// If currentPageUrl is already a full URL (from next/previous), use as-is
 					fullUrl = currentPageUrl;
