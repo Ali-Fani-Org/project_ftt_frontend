@@ -2,11 +2,12 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { goto } from '$app/navigation';
-  import { authToken, user, timeEntriesDisplayMode, featureFlagsStore } from '$lib/stores';
+  import { authToken, user, timeEntriesDisplayMode, featureFlagsStore, timerRefreshInterval } from '$lib/stores';
   import { projects, timeEntries, type Project, type TimeEntry } from '$lib/api';
   import { preventDefault } from '$lib/commands.svelte';
   import TasksModal from '$lib/TasksModal.svelte';
   import type { PageData } from './$types';
+  import { network } from '$lib/network';
 
   // Get any data loaded on server (may be empty)
   const { data } = $props<{ data: PageData }>();
@@ -38,6 +39,70 @@
   // Feature flags state
   let showProcessMonitorButton = $state(false);
 
+  // Last server update timestamp
+  let lastServerUpdate = $state<Date | null>(null);
+
+  // Auto-refresh interval
+  let refreshInterval = $state<any>(null);
+  let currentRefreshIntervalValue = $state<number>(30000);
+
+  // LocalStorage key constants
+  const LAST_ACTIVE_ENTRY_KEY = 'timer_last_active_entry';
+  const LAST_TODAY_SESSIONS_KEY = 'timer_last_today_sessions';
+  const LAST_UPDATE_KEY = 'timer_last_update';
+
+  /**
+   * Save data to localStorage with timestamp
+   */
+  function saveToLocalStorage<T>(key: string, data: T): void {
+    try {
+      const storageData = {
+        data,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(key, JSON.stringify(storageData));
+    } catch (err) {
+      console.error('Error saving to localStorage:', err);
+    }
+  }
+
+  /**
+   * Load data from localStorage
+   */
+  function loadFromLocalStorage<T>(key: string): { data: T | null; timestamp: number | null } {
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return { data: parsed.data, timestamp: parsed.timestamp };
+      }
+    } catch (err) {
+      console.error('Error loading from localStorage:', err);
+    }
+    return { data: null, timestamp: null };
+  }
+
+  /**
+   * Get cached data from localStorage
+   */
+  function getLocalStorageData<T>(key: string, maxAge: number = 24 * 60 * 60 * 1000): T | null {
+    const { data, timestamp } = loadFromLocalStorage<T>(key);
+    if (!data || !timestamp) return null;
+    
+    // Check if data is not too old
+    if (Date.now() - timestamp > maxAge) {
+      console.log(`LocalStorage data for ${key} is too old, removing...`);
+      try {
+        localStorage.removeItem(key);
+      } catch (err) {
+        console.error('Error removing stale localStorage data:', err);
+      }
+      return null;
+    }
+    
+    return data;
+  }
+
   onMount(async () => {
     console.log('Timer onMount started at', new Date().toISOString());
     const token = get(authToken);
@@ -67,15 +132,33 @@
         loadingActiveEntry = true;
         try {
           activeEntry = await timeEntries.getCurrentActive();
-          if (activeEntry) startTimer();
+          if (activeEntry) {
+            saveToLocalStorage(LAST_ACTIVE_ENTRY_KEY, activeEntry);
+            startTimer();
+          } else {
+            // Server returned null (no active timer) - clear localStorage cache
+            console.log('No active timer on server, clearing localStorage cache');
+            try {
+              localStorage.removeItem(LAST_ACTIVE_ENTRY_KEY);
+            } catch (e) {
+              console.error('Error clearing localStorage:', e);
+            }
+            activeEntry = null;
+          }
           console.log('Active entry loaded at', new Date().toISOString(), activeEntry ? 'with active entry' : 'no active entry');
         } catch (err) {
-          // 404 is expected when no active timer, so we don't treat it as an error
-          if (err?.response?.status !== 404) {
-            console.error('Error loading active entry:', err);
-            error = 'Failed to load active timer';
+          // For any error, try to load from localStorage as fallback
+          console.error('Error loading active entry:', err);
+          
+          // Try to load from localStorage as fallback
+          const cachedEntry = getLocalStorageData<TimeEntry>(LAST_ACTIVE_ENTRY_KEY, 24 * 60 * 60 * 1000);
+          if (cachedEntry) {
+            console.log('Using cached active entry from localStorage after error');
+            activeEntry = cachedEntry;
+            startTimer();
+          } else {
+            activeEntry = null;
           }
-          activeEntry = null;
         } finally {
           loadingActiveEntry = false;
         }
@@ -99,14 +182,45 @@
 
       // Load today's sessions
       await loadTodaySessions();
+      
+      // Initial data load complete, update timestamp
+      updateLastServerUpdate();
     } catch (err) {
       console.error('Error loading data at', new Date().toISOString(), err);
+      
+      // If we have cached data in localStorage, use it
+      const cachedSessions = getLocalStorageData<TimeEntry[]>(LAST_TODAY_SESSIONS_KEY, 24 * 60 * 60 * 1000);
+      if (cachedSessions && todaySessions.length === 0) {
+        console.log('Using cached today\'s sessions from localStorage after error');
+        todaySessions = cachedSessions;
+        
+        // Load the last update timestamp from localStorage
+        const { timestamp } = loadFromLocalStorage(LAST_UPDATE_KEY);
+        if (timestamp) {
+          lastServerUpdate = new Date(timestamp);
+        }
+      }
+      
       error = 'Failed to load data';
       loadingProjects = false;
       loadingActiveEntry = false;
       loadingFeatureFlags = false;
       loadingTodaySessions = false;
     }
+
+    // Start auto-refresh interval with user-configurable value
+    currentRefreshIntervalValue = get(timerRefreshInterval) || 30000;
+    refreshInterval = setInterval(async () => {
+      await refreshAllData();
+    }, currentRefreshIntervalValue);
+
+    // Cleanup function for onMount
+    return () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+    };
 
     // Listen for events from Tauri
     if (typeof window !== 'undefined' && (window as any).__TAURI__) {
@@ -179,6 +293,82 @@
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
 
+  function updateLastServerUpdate() {
+    lastServerUpdate = new Date();
+    saveToLocalStorage(LAST_UPDATE_KEY, lastServerUpdate.toISOString());
+  }
+
+  function formatLastUpdateTime(date: Date | null): string {
+    if (!date) return 'Never';
+    return date.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    });
+  }
+
+  async function refreshAllData() {
+    console.log('Auto-refreshing data at', new Date().toISOString());
+    
+    // Refresh active entry (silently uses cache on failure)
+    const activeResult = await timeEntries.getCurrentActive();
+    
+    if (activeResult) {
+      if (!activeEntry || activeEntry.id !== activeResult.id) {
+        // New active entry found that differs from current
+        activeEntry = activeResult;
+        startTimer();
+      }
+      // Save to localStorage
+      saveToLocalStorage(LAST_ACTIVE_ENTRY_KEY, activeResult);
+      // If activeEntry exists and matches, just keep the timer running
+    } else if (activeEntry) {
+      // No active entry on server but we have one locally - it was stopped externally
+      activeEntry = null;
+      // Clear localStorage cache since server has no active timer
+      try {
+        localStorage.removeItem(LAST_ACTIVE_ENTRY_KEY);
+        console.log('Cleared localStorage active entry cache - no active timer on server');
+      } catch (e) {
+        console.error('Error clearing localStorage:', e);
+      }
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+      elapsed = 0;
+    }
+    
+    // Refresh today's sessions using fetchWithCache (silently uses cache on failure)
+    const now = new Date();
+    const year = now.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
+    const month = now.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
+    const day = now.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
+    const dateStr = `${year}-${month}-${day}`;
+    
+    const response = await timeEntries.listWithFilters({
+      start_date_after_tz: dateStr,
+      start_date_before_tz: dateStr,
+      ordering: '-start_time'
+    });
+    
+    // Handle the response - it could be an array or the PaginatedTimeEntries object
+    const entries = Array.isArray(response) ? response : (response?.results || []);
+    
+    // Filter to only include completed sessions (not active) and limit to 5
+    const completedSessions = entries
+      .filter((entry: TimeEntry) => !entry.is_active)
+      .slice(0, 5);
+    
+    todaySessions = completedSessions;
+    
+    // Save to localStorage
+    saveToLocalStorage(LAST_TODAY_SESSIONS_KEY, completedSessions);
+    
+    // Update the last server update timestamp
+    updateLastServerUpdate();
+  }
+
   async function loadTodaySessions() {
     loadingTodaySessions = true;
     try {
@@ -200,15 +390,38 @@
         ordering: '-start_time' // Most recent first
       });
 
+      // Handle the response - it could be an array or the PaginatedTimeEntries object
+      const entries = Array.isArray(response) ? response : (response?.results || []);
+
       // Filter to only include completed sessions (not active) and limit to 5
-      const completedSessions = response.results
+      const completedSessions = entries
         .filter(entry => !entry.is_active)
         .slice(0, 5);
 
       todaySessions = completedSessions;
+      
+      // Save to localStorage
+      saveToLocalStorage(LAST_TODAY_SESSIONS_KEY, completedSessions);
+      
+      // Update the last server update timestamp
+      updateLastServerUpdate();
     } catch (err) {
       console.error('Error loading today\'s sessions:', err);
-      error = 'Failed to load today\'s sessions';
+      
+      // Try to load from localStorage as fallback
+      const cachedSessions = getLocalStorageData<TimeEntry[]>(LAST_TODAY_SESSIONS_KEY, 24 * 60 * 60 * 1000);
+      if (cachedSessions) {
+        console.log('Using cached today\'s sessions from localStorage');
+        todaySessions = cachedSessions;
+        
+        // Load the last update timestamp from localStorage
+        const { timestamp } = loadFromLocalStorage(LAST_UPDATE_KEY);
+        if (timestamp) {
+          lastServerUpdate = new Date(timestamp);
+        }
+      } else {
+        error = 'Failed to load today\'s sessions';
+      }
     } finally {
       loadingTodaySessions = false;
     }
@@ -216,6 +429,12 @@
 
   const onStartTimer = preventDefault(async () => {
     if (!selectedProject || !title) return;
+
+    // Check if online before starting timer
+    if (!$network.isOnline) {
+      error = 'Cannot start timer while offline. Please check your internet connection.';
+      return;
+    }
 
     try {
       isStartingTimer = true;
@@ -247,6 +466,12 @@
 
   const onStopTimer = async () => {
     if (!activeEntry) return;
+
+    // Check if online before stopping timer
+    if (!$network.isOnline) {
+      error = 'Cannot stop timer while offline. Please check your internet connection.';
+      return;
+    }
 
     try {
       await timeEntries.stop(activeEntry.id);
@@ -336,14 +561,68 @@
   // DevTools control removed from dashboard. Use Settings to inspect the
   // feature flag and the backend will only open devtools when allowed.
 
+  // Reactive effect to handle timer refresh interval changes
+  $effect(() => {
+    const newInterval = $timerRefreshInterval || 30000;
+    if (newInterval !== currentRefreshIntervalValue) {
+      console.log(`Timer refresh interval changed from ${currentRefreshIntervalValue}ms to ${newInterval}ms`);
+      currentRefreshIntervalValue = newInterval;
+      
+      // Clear existing interval and start new one with updated value
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = setInterval(async () => {
+          await refreshAllData();
+        }, currentRefreshIntervalValue);
+      }
+    }
+  });
+
 </script>
 
 <div class="container mx-auto p-4 lg:p-8 max-w-7xl">
   <!-- Page Header -->
   <div class="mb-8">
-    <h1 class="text-3xl font-bold text-primary">Timer</h1>
-    <p class="text-base-content/70">Track your time with precision</p>
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-bold text-primary">Timer</h1>
+        <p class="text-base-content/70">Track your time with precision</p>
+      </div>
+      <div class="flex items-center gap-2 text-sm text-base-content/60">
+        {#if !$network.isOnline}
+          <!-- Offline Indicator -->
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-error"></span>
+          </span>
+          <span class="text-error font-medium">Offline</span>
+        {:else}
+          {@const indicatorColor = lastServerUpdate ? 'bg-success' : 'bg-error'}
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full {indicatorColor} opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 {indicatorColor}"></span>
+          </span>
+          <span>Last updated: {formatLastUpdateTime(lastServerUpdate)}</span>
+          {#if !lastServerUpdate}
+            <span class="text-error">(connection failed)</span>
+          {/if}
+        {/if}
+      </div>
+    </div>
   </div>
+
+  <!-- Offline Warning Banner -->
+  {#if !$network.isOnline}
+    <div class="alert alert-warning mb-6">
+      <svg class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+      </svg>
+      <div>
+        <h3 class="font-bold">No Internet Connection</h3>
+        <div class="text-sm">You're currently offline. Some features may be limited. The app will automatically reconnect when your internet connection is restored.</div>
+      </div>
+    </div>
+  {/if}
 
   {#if loadingProjects}
      <div class="flex justify-center items-center min-h-[50vh]">

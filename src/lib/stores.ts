@@ -214,6 +214,7 @@ export const autostart = createPersistentStore<boolean>('autostart', false);
 export const timeEntriesDisplayMode = createPersistentStore<string>('timeEntriesDisplayMode', 'window');
 export const backgroundAnimationEnabled = createPersistentStore<boolean>('backgroundAnimationEnabled', true);
 export const statsPanelEnabled = createPersistentStore<boolean>('statsPanelEnabled', false);
+export const timerRefreshInterval = createPersistentStore<number>('timerRefreshInterval', 30000); // Default: 30 seconds (30000ms)
 
 // Logout alert state
 export const logoutAlert = writable<{show: boolean, message: string}>({show: false, message: ''});

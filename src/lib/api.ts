@@ -136,11 +136,14 @@ export interface Notification {
 // Cache for API responses to improve performance
 const apiCache = new Map<string, { data: any; timestamp: number; ttl: number }>();
 
-// Cache TTL in milliseconds (5 minutes for most data)
-const CACHE_TTL = 5 * 60 * 1000;
+// Cache TTL in milliseconds (7 days for all the data)
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 // Flag to disable caching globally
-let disableCache = true;
+let disableCache = false;
+
+// LocalStorage key prefix for persistence across app restarts
+const LOCALSTORAGE_PREFIX = 'api_cache_';
 
 /**
  * Enable or disable API caching globally
@@ -149,6 +152,71 @@ let disableCache = true;
 export function setCacheDisabled(flag: boolean) {
   disableCache = flag;
   console.log(`API cache ${flag ? 'disabled' : 'enabled'}`);
+}
+
+/**
+ * Save cache to localStorage
+ */
+function saveToLocalStorage(key: string, data: any, ttl: number) {
+  try {
+    const storageData = {
+      data,
+      timestamp: Date.now(),
+      ttl
+    };
+    localStorage.setItem(LOCALSTORAGE_PREFIX + key, JSON.stringify(storageData));
+  } catch (err) {
+    console.warn('Failed to save to localStorage:', err);
+  }
+}
+
+/**
+ * Load cache from localStorage
+ */
+function loadFromLocalStorage(key: string) {
+  try {
+    const stored = localStorage.getItem(LOCALSTORAGE_PREFIX + key);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (err) {
+    console.warn('Failed to load from localStorage:', err);
+  }
+  return null;
+}
+
+/**
+ * Try to fetch data from API, falling back to cache on failure
+ * @param key - Cache key
+ * @param fetchFn - Function to fetch data from API
+ * @param ttl - Cache TTL in milliseconds
+ * @returns Object with data and stale flag
+ */
+export async function fetchWithCache<T>(
+  key: string, 
+  fetchFn: () => Promise<T>, 
+  ttl: number = CACHE_TTL
+): Promise<{ data: T | null; stale: boolean }> {
+  // Try to fetch from API
+  try {
+    const data = await fetchFn();
+    // Cache the successful response
+    setCached(key, data, ttl);
+    return { data, stale: false };
+  } catch (error) {
+    console.warn(`API call failed for ${key}, trying cache...`, error);
+    
+    // Try to get cached data
+    const cached = getCached(key);
+    if (cached) {
+      console.log(`Using cached data for ${key}`);
+      return { data: cached, stale: true };
+    }
+    
+    // No cached data available
+    console.warn(`No cached data available for ${key}`);
+    return { data: null, stale: true };
+  }
 }
 
 /**
@@ -163,20 +231,41 @@ function getCached(key: string) {
     return null;
   }
   
-  const cached = apiCache.get(key);
+  // First check in-memory cache
+  let cached = apiCache.get(key);
+  
+  // If not in memory, try localStorage
+  if (!cached) {
+    const stored = loadFromLocalStorage(key);
+    if (stored) {
+      // Restore to in-memory cache
+      apiCache.set(key, stored);
+      cached = stored;
+    }
+  }
+  
   if (cached && Date.now() - cached.timestamp < cached.ttl) {
     console.log(`Cache hit for: ${key}`);
     return cached.data;
   }
+  
   // Remove expired cache entry
   if (cached) {
     apiCache.delete(key);
+    try {
+      localStorage.removeItem(LOCALSTORAGE_PREFIX + key);
+    } catch (err) {
+      console.warn('Failed to remove stale cache from localStorage:', err);
+    }
   }
+  
   return null;
 }
 
 function setCached(key: string, data: any, ttl: number = CACHE_TTL) {
-  apiCache.set(key, { data, timestamp: Date.now(), ttl });
+  const cacheData = { data, timestamp: Date.now(), ttl };
+  apiCache.set(key, cacheData);
+  saveToLocalStorage(key, data, ttl);
 }
 
 export const auth = {
@@ -217,6 +306,9 @@ export const auth = {
   updateUser: async (data: { username?: string; first_name?: string; last_name?: string; profile_image?: string | null }) => {
     // Clear cache when updating
     apiCache.delete('user:me');
+    try {
+      localStorage.removeItem(LOCALSTORAGE_PREFIX + 'user:me');
+    } catch (err) {}
     // Use PUT to replace or update the resource; many DRF endpoints also accept PATCH
     const result = await api.put('auth/users/me/', { json: data }).json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
     setCached('user:me', result, CACHE_TTL);
@@ -225,6 +317,9 @@ export const auth = {
   updateUserForm: async (form: FormData) => {
     // Clear cache when updating
     apiCache.delete('user:me');
+    try {
+      localStorage.removeItem(LOCALSTORAGE_PREFIX + 'user:me');
+    } catch (err) {}
     // Use PATCH with form data to support partial updates and file upload.
     const result = await api.patch('auth/users/me/', { body: form }).json<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null }>();
     setCached('user:me', result, CACHE_TTL);
@@ -252,12 +347,8 @@ export const timeEntries = {
     const url = `api/time_entries/?${params.toString()}`;
     const cacheKey = `time_entries:list:${url}`;
 
-    const cached = getCached(cacheKey);
-    if (cached) return cached;
-
-    const result = await api.get(url).json<PaginatedTimeEntries>();
-    setCached(cacheKey, result, CACHE_TTL);
-    return result;
+    const result = await fetchWithCache(cacheKey, () => api.get(url).json<PaginatedTimeEntries>());
+    return result.data;
   },
   listWithFilters: async (filters?: {
     start_date_after?: string;
@@ -293,17 +384,17 @@ export const timeEntries = {
     const url = `api/time_entries/?${params.toString()}`;
     const cacheKey = `time_entries:filtered:${url}`;
 
-    const cached = getCached(cacheKey);
-    if (cached) return cached;
-
-    const result = await api.get(url).json<PaginatedTimeEntries>();
-    setCached(cacheKey, result, CACHE_TTL);
-    return result;
+    const result = await fetchWithCache(cacheKey, () => api.get(url).json<PaginatedTimeEntries>());
+    return result.data;
   },
   start: async (data: { title: string; description?: string; project: number; tags?: number[] }) => {
     // Clear related caches when starting a new timer
     apiCache.delete('time_entries:all');
     apiCache.delete('time_entries:current_active');
+    try {
+      localStorage.removeItem(LOCALSTORAGE_PREFIX + 'time_entries:all');
+      localStorage.removeItem(LOCALSTORAGE_PREFIX + 'time_entries:current_active');
+    } catch (err) {}
     const result = await api.post('api/time_entries/', { json: data }).json<TimeEntry>();
     return result;
   },
@@ -311,22 +402,45 @@ export const timeEntries = {
     // Clear related caches when stopping a timer
     apiCache.delete('time_entries:all');
     apiCache.delete('time_entries:current_active');
+    try {
+      localStorage.removeItem(LOCALSTORAGE_PREFIX + 'time_entries:all');
+      localStorage.removeItem(LOCALSTORAGE_PREFIX + 'time_entries:current_active');
+    } catch (err) {}
     const result = await api.post(`api/time_entries/${id}/stop/`).json<TimeEntry>();
     return result;
   },
   getCurrentActive: async () => {
     const cacheKey = 'time_entries:current_active';
-    const cached = getCached(cacheKey);
-    if (cached) return cached;
-
+    
     try {
-      const result = await api.get('api/time_entries/current_active/').json<TimeEntry>();
-      setCached(cacheKey, result, CACHE_TTL);
-      return result;
-    } catch (error) {
-      // For current active, we cache null results briefly to avoid repeated API calls
-      setCached(cacheKey, null, 30000); // 30 seconds for null results
-      return null;
+      // Try to fetch from API first
+      const data = await api.get('api/time_entries/current_active/').json<TimeEntry>();
+      // Cache the successful response
+      setCached(cacheKey, data, 7 * 24 * 60 * 60 * 1000);
+      return data;
+    } catch (error: any) {
+      // 404 means no active timer - this is expected, clear cache and return null
+      if (error?.response?.status === 404) {
+        console.log('No active timer found (404), clearing cache');
+        apiCache.delete(cacheKey);
+        try {
+          localStorage.removeItem(LOCALSTORAGE_PREFIX + cacheKey);
+        } catch (err) {
+          // Ignore localStorage errors
+        }
+        return null;
+      }
+      
+      // For other errors, try to get cached data
+      console.warn(`API call failed for ${cacheKey}, trying cache...`, error);
+      const cached = getCached(cacheKey);
+      if (cached) {
+        console.log(`Using cached data for ${cacheKey}`);
+        return cached;
+      }
+      
+      // No cached data available - rethrow the error
+      throw error;
     }
   },
 };

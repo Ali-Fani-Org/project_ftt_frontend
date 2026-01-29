@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart, backgroundAnimationEnabled, statsPanelEnabled } from '$lib/stores';
+  import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart, backgroundAnimationEnabled, statsPanelEnabled, timerRefreshInterval } from '$lib/stores';
 
   import { enable, disable } from '@tauri-apps/plugin-autostart';
   import IdleMonitorDebug from '$lib/IdleMonitorDebug.svelte';
@@ -19,6 +19,7 @@
   let localAutostart = $state($autostart);
   let localBackgroundAnimation = $state($backgroundAnimationEnabled);
   let localStatsPanel = $state($statsPanelEnabled);
+  let localTimerRefreshInterval = $state($timerRefreshInterval);
 
   let appVersion = $state('');
   let showLogoutConfirm = $state(false);
@@ -89,6 +90,10 @@
 
   function saveStatsPanel() {
     statsPanelEnabled.set(localStatsPanel);
+  }
+
+  function saveTimerRefreshInterval() {
+    timerRefreshInterval.set(localTimerRefreshInterval);
   }
 
   function confirmLogout() {
@@ -275,6 +280,37 @@
             />
           </label>
           <p class="text-xs text-base-content/70 ml-1">When enabled, a small FPS/MB panel appears in the top-left.</p>
+        </div>
+
+        <div class="form-control mt-4">
+          <label class="label" for="timerRefreshInterval">
+            <span class="label-text font-medium text-base">Timer auto-refresh interval</span>
+          </label>
+          <div class="join">
+            <input
+              id="timerRefreshInterval"
+              type="number"
+              bind:value={localTimerRefreshInterval}
+              onchange={saveTimerRefreshInterval}
+              min="1000"
+              max="300000"
+              step="1000"
+              class="input input-bordered join-item flex-1"
+            />
+            <span class="btn btn-disabled join-item no-animation">ms</span>
+          </div>
+          <p class="text-xs text-base-content/70 ml-1 mt-1">
+            How often the timer page checks for updates (1000ms - 300000ms, default: 30000ms)
+          </p>
+          <div class="flex flex-wrap gap-2 mt-2">
+            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 1000; saveTimerRefreshInterval(); }}>1s</button>
+            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 5000; saveTimerRefreshInterval(); }}>5s</button>
+            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 10000; saveTimerRefreshInterval(); }}>10s</button>
+            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 30000; saveTimerRefreshInterval(); }}>30s</button>
+            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 60000; saveTimerRefreshInterval(); }}>1m</button>
+            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 120000; saveTimerRefreshInterval(); }}>2m</button>
+            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 300000; saveTimerRefreshInterval(); }}>5m</button>
+          </div>
         </div>
       </div>
     </div>
