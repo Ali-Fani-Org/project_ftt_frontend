@@ -10,7 +10,7 @@ sounds/
 ├── config.toml        # Sound configuration file
 ├── default/           # Default notification sounds
 │   ├── info.mp3       # Info notification sound
-│   ├── warning.mp3    # Warning notification sound  
+│   ├── warning.mp3    # Warning notification sound
 │   ├── error.mp3      # Error notification sound
 │   ├── success.mp3    # Success notification sound
 │   └── critical.mp3   # Critical notification sound
@@ -25,6 +25,7 @@ sounds/
 To add or replace default notification sounds:
 
 1. Add your audio file to the appropriate directory:
+
    - `default/` for system default sounds
    - `custom/` for user-provided sounds (future feature)
 
@@ -52,6 +53,7 @@ See `config.toml` for sound-to-notification-type mappings and settings.
 ## Quick Start
 
 1. **Add sound files** to the `default/` directory:
+
    - `info.mp3` or `info.wav`
    - `warning.mp3` or `warning.wav`
    - `error.mp3` or `error.wav`
@@ -59,16 +61,17 @@ See `config.toml` for sound-to-notification-type mappings and settings.
    - `critical.mp3` or `critical.wav`
 
 2. **Test the system** using the new test commands:
+
    ```javascript
    import { invoke } from '@tauri-apps/api/core';
-   
+
    // Test individual notification types
    await invoke('test_notification_sound', { notificationType: 'INFO' });
    await invoke('test_notification_sound', { notificationType: 'WARNING' });
    await invoke('test_notification_sound', { notificationType: 'ERROR' });
    await invoke('test_notification_sound', { notificationType: 'SUCCESS' });
    await invoke('test_notification_sound', { notificationType: 'CRITICAL' });
-   
+
    // Debug the entire sound system
    await invoke('debug_sound_system');
    ```

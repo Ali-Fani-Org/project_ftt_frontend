@@ -11,7 +11,7 @@
 	let canvasContainer: HTMLDivElement;
 	let colorReference: HTMLDivElement; // Hidden element to grab CSS variables
 	let animationId: number;
-	
+
 	// Three.js instances
 	let renderer: THREE.WebGLRenderer;
 	let scene: THREE.Scene;
@@ -19,7 +19,7 @@
 	let particles: THREE.Points;
 	let material: THREE.PointsMaterial;
 	let themeObserver: MutationObserver;
-	
+
 	// Color Helper
 	let canvasCtx: CanvasRenderingContext2D;
 
@@ -56,7 +56,7 @@
 		if (!scene || !material || !colorReference) return;
 
 		const computed = getComputedStyle(colorReference);
-		
+
 		// 1. Get Background Color (maps to --b1)
 		const bgCSS = computed.getPropertyValue('background-color');
 		const bgHex = getResolvedColor(bgCSS);
@@ -99,11 +99,7 @@
 		for (let x = 0; x < density; x++) {
 			for (let z = 0; z < density; z++) {
 				// We only set X and Z. Y is calculated on the GPU.
-				positions.push(
-					x * separation - totalWidth / 2, 
-					0, 
-					z * separation - totalDepth / 2
-				);
+				positions.push(x * separation - totalWidth / 2, 0, z * separation - totalDepth / 2);
 			}
 		}
 		geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -122,7 +118,8 @@
 			shader.uniforms.uWaveHeight = uniforms.uWaveHeight;
 
 			// Inject code into the vertex shader header
-			shader.vertexShader = `
+			shader.vertexShader =
+				`
 				uniform float uTime;
 				uniform float uWaveHeight;
 			` + shader.vertexShader;
@@ -154,10 +151,10 @@
 		// 5. Animation Loop
 		const animate = () => {
 			animationId = requestAnimationFrame(animate);
-			
+
 			// Only update the time uniform. No heavy JS math here.
 			uniforms.uTime.value += speed;
-			
+
 			renderer.render(scene, camera);
 		};
 		animate();
@@ -180,7 +177,7 @@
 		if (typeof window === 'undefined') return;
 		cancelAnimationFrame(animationId);
 		themeObserver?.disconnect();
-		
+
 		// Clean up Three.js resources to prevent memory leaks
 		if (renderer) {
 			renderer.dispose();
@@ -189,9 +186,9 @@
 		if (material) material.dispose();
 		if (particles && particles.geometry) particles.geometry.dispose();
 	});
-	
+
 	// Reactive updates if props change
-	$: if(uniforms) uniforms.uWaveHeight.value = waveHeight;
+	$: if (uniforms) uniforms.uWaveHeight.value = waveHeight;
 </script>
 
 <div bind:this={canvasContainer} class="wave-bg" aria-hidden="true"></div>
@@ -201,8 +198,8 @@
 	We map --p (primary) to color and --b1 (base-100) to background-color.
 	We use oklch explicitly here to ensure we capture the variables correctly.
 -->
-<div 
-	bind:this={colorReference} 
+<div
+	bind:this={colorReference}
 	style="display: none; color: oklch(var(--p)); background-color: oklch(var(--b1));"
 ></div>
 
@@ -218,11 +215,10 @@
 	}
 
 	.wave-bg::after {
-		content: "";
+		content: '';
 		position: absolute;
 		inset: 0;
-		background:
-			radial-gradient(
+		background: radial-gradient(
 				120% 70% at 50% 35%,
 				color-mix(in oklch, oklch(var(--b1)) 85%, transparent) 0%,
 				transparent 55%

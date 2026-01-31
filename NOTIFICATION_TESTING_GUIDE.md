@@ -5,6 +5,7 @@ This guide provides step-by-step instructions to test and troubleshoot the notif
 ## Quick Diagnostic Checklist
 
 ### 1. Visual Status Check
+
 1. **Run the Tauri desktop app**
 2. **Log in** to get an auth token
 3. **Check the notification status indicator** in the navbar:
@@ -14,16 +15,18 @@ This guide provides step-by-step instructions to test and troubleshoot the notif
    - 🔴 **Disconnected** = Not authenticated or service unavailable
 
 ### 2. Browser Console Check
+
 1. **Open Developer Tools** (F12)
 2. **Check Console tab** for notification logs
 3. **Look for these patterns**:
+
    ```
    ✅ SUCCESS PATTERNS:
    [NotificationService xxx] ✅ SSE connection opened successfully
    [NotificationService xxx] 📨 Received SSE message: {notification_data}
    [NotificationService xxx] 🎯 showNotification() called
    [NotificationService xxx] ✅ Native notification shown
-   
+
    ❌ ERROR PATTERNS:
    [NotificationService xxx] ❌ Cloudflare timeout - SSE connection timed out
    [NotificationService xxx] ❌ Possible Cloudflare blocking - 403 Forbidden
@@ -35,6 +38,7 @@ This guide provides step-by-step instructions to test and troubleshoot the notif
 ### Phase 1: Basic Connection Test
 
 1. **Start the Tauri app**
+
    ```bash
    # In the Tauri project directory
    npm run tauri dev
@@ -43,6 +47,7 @@ This guide provides step-by-step instructions to test and troubleshoot the notif
 2. **Log in** to obtain an auth token
 
 3. **Monitor the status indicator**
+
    - Should show "Connecting" briefly, then "Connected"
    - If it stays on "Connecting" for >10 seconds, likely Cloudflare blocking
 
@@ -53,22 +58,26 @@ This guide provides step-by-step instructions to test and troubleshoot the notif
 ### Phase 2: Cloudflare Configuration Check
 
 1. **Verify Cloudflare Dashboard Settings**:
+
    - Go to [Cloudflare Dashboard](https://dash.cloudflare.com)
    - Select your domain: `tracker.afni.qzz.io`
    - Check these settings:
 
 2. **SSL/TLS Settings**:
+
    - **SSL/TLS → Overview**:
      - Encryption Mode: "Full (strict)"
      - Always Use HTTPS: ✅ ON
      - Minimum TLS Version: 1.2
 
 3. **Network Settings**:
+
    - **Speed → Network**:
      - 0-RTT Connection Resumption: ✅ ON
      - WebSocket Support: ✅ ON
 
 4. **Security Settings**:
+
    - **Security → Settings**:
      - Security Level: "Medium" or lower
      - Browser Integrity Check: ✅ ON (or OFF if having issues)
@@ -99,7 +108,7 @@ Transfer-Encoding: chunked
 
 # Problematic responses (if Cloudflare blocking):
 HTTP/1.1 408 Request Timeout
-HTTP/1.1 499 Client Closed Request  
+HTTP/1.1 499 Client Closed Request
 HTTP/1.1 403 Forbidden
 HTTP/1.1 502 Bad Gateway
 HTTP/1.1 504 Gateway Timeout
@@ -119,22 +128,24 @@ HTTP/1.1 504 Gateway Timeout
 If basic settings don't work, try these advanced configurations:
 
 #### Option A: Worker Rule (Advanced)
+
 1. **Go to Workers & Pages**
 2. **Create a new Worker** if needed
 3. **Configure to bypass Cloudflare for SSE**:
    ```javascript
    export default {
-     async fetch(request, env, ctx) {
-       if (request.url.includes('/api/notifications/sse/')) {
-         // Bypass Cloudflare processing for SSE
-         return fetch(request);
-       }
-       return fetch(request);
-     }
+   	async fetch(request, env, ctx) {
+   		if (request.url.includes('/api/notifications/sse/')) {
+   			// Bypass Cloudflare processing for SSE
+   			return fetch(request);
+   		}
+   		return fetch(request);
+   	}
    };
    ```
 
 #### Option B: Transform Rules
+
 1. **Rules → Transform Rules**
 2. **Modify Response Headers**:
    - Name: `X-Accel-Buffering`
@@ -142,7 +153,8 @@ If basic settings don't work, try these advanced configurations:
    - For URLs matching: `*/api/notifications/sse/*`
 
 #### Option C: Custom Headers
-1. **Rules → Transform Rules**  
+
+1. **Rules → Transform Rules**
 2. **Modify Response Headers**:
    - Add headers to disable Cloudflare features for SSE:
    ```
@@ -154,29 +166,37 @@ If basic settings don't work, try these advanced configurations:
 ## Error Diagnosis & Solutions
 
 ### Error: "Connection timeout after 10000ms"
+
 **Cause**: Cloudflare is blocking/buffering the SSE connection  
-**Solution**: 
+**Solution**:
+
 1. Enable WebSocket support in Cloudflare
 2. Add page rule to bypass cache for SSE endpoint
 3. Check security level settings
 
 ### Error: "Possible Cloudflare blocking - 403 Forbidden"
+
 **Cause**: Cloudflare security rules are blocking the request  
 **Solution**:
+
 1. Reduce security level temporarily
 2. Add WAF rule to allow the SSE endpoint
 3. Check if Cloudflare "Bot Fight Mode" is enabled
 
 ### Error: "Cloudflare proxy timeout - 408"
+
 **Cause**: Cloudflare's proxy timeout (usually 100 seconds for free tier)  
-**Solution**: 
+**Solution**:
+
 1. This shouldn't happen with proper SSE, indicates buffering issue
 2. Enable "Always Online" = OFF for API endpoints
 3. Contact Cloudflare support if persists
 
 ### Status: "Connecting" indefinitely
+
 **Cause**: SSE connection hanging through Cloudflare  
 **Solution**:
+
 1. Check if the connection eventually times out
 2. If yes, apply Cloudflare SSE configuration
 3. If no timeout, check for infinite loading in browser
@@ -184,6 +204,7 @@ If basic settings don't work, try these advanced configurations:
 ## Monitoring & Debugging
 
 ### Real-time Console Monitoring
+
 1. **Keep console open** during testing
 2. **Watch for new notification logs**:
    ```
@@ -194,6 +215,7 @@ If basic settings don't work, try these advanced configurations:
    ```
 
 ### Network Tab Monitoring
+
 1. **Open Network tab** in DevTools
 2. **Filter by "notifications/sse"**
 3. **Look for**:
@@ -202,10 +224,12 @@ If basic settings don't work, try these advanced configurations:
    - ⏱️ **Long response times** (>1s indicates Cloudflare interference)
 
 ### Testing Notifications
+
 Once connection is established, test actual notifications:
 
 1. **Create a test notification** from the backend
 2. **Watch console** for:
+
    ```
    [NotificationService xxx] 📨 Received SSE message: {notification_data}
    [NotificationService xxx] 📱 Calling show_notification
@@ -217,6 +241,7 @@ Once connection is established, test actual notifications:
 ## Validation Checklist
 
 ✅ **All systems operational when**:
+
 - [ ] Notification indicator shows "Connected" (🟢)
 - [ ] Console shows successful SSE connection
 - [ ] No timeout/Cloudflare error messages
@@ -225,6 +250,7 @@ Once connection is established, test actual notifications:
 - [ ] Network tab shows healthy SSE connection
 
 ❌ **Immediate Cloudflare intervention needed if**:
+
 - [ ] Consistently getting 408/499/502/504 errors
 - [ ] SSE test hangs or times out
 - [ ] Console shows "Cloudflare blocking" messages
@@ -235,10 +261,12 @@ Once connection is established, test actual notifications:
 If Cloudflare configuration doesn't resolve the issue:
 
 1. **Bypass Cloudflare for testing**:
+
    - Temporarily set DNS to direct IP (not through Cloudflare)
    - Test if notifications work without Cloudflare
 
 2. **Alternative notification methods**:
+
    - Implement polling fallback
    - Use WebSocket instead of SSE
    - Switch to push notifications via Service Worker
@@ -253,7 +281,7 @@ If Cloudflare configuration doesn't resolve the issue:
 Once notifications are working:
 
 1. **Enable auto-reconnection** in production
-2. **Monitor Cloudflare analytics** for ongoing issues  
+2. **Monitor Cloudflare analytics** for ongoing issues
 3. **Set up alerting** for notification service failures
 4. **Document** your final Cloudflare configuration
 5. **Test periodically** to ensure continued operation

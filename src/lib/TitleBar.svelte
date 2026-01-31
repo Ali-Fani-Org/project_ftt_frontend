@@ -37,20 +37,20 @@
 	});
 
 	onMount(async () => {
-	  try {
-	    appWindow = propWindow || getCurrentWindow();
-	    title = await appWindow.title();
-	    isTimeEntriesWindow = title === 'Time Entries';
-	    isAlwaysOnTop = await appWindow.isAlwaysOnTop();
-	    isMaximized = await appWindow.isMaximized();
-	  } catch (error) {
-	    logger.error('TitleBar: Failed to initialize:', error);
-	  }
+		try {
+			appWindow = propWindow || getCurrentWindow();
+			title = await appWindow.title();
+			isTimeEntriesWindow = title === 'Time Entries';
+			isAlwaysOnTop = await appWindow.isAlwaysOnTop();
+			isMaximized = await appWindow.isMaximized();
+		} catch (error) {
+			logger.error('TitleBar: Failed to initialize:', error);
+		}
 
-	  // Listen for window resize/maximize events to update icon state
-	  unlistenResize = await appWindow.listen('tauri://resize', async () => {
-	    isMaximized = await appWindow?.isMaximized();
-	  });
+		// Listen for window resize/maximize events to update icon state
+		unlistenResize = await appWindow.listen('tauri://resize', async () => {
+			isMaximized = await appWindow?.isMaximized();
+		});
 	});
 
 	function minimize() {
@@ -67,16 +67,16 @@
 	}
 
 	function close() {
-	  if (closeToTrayValue) {
-	    appWindow?.hide();
-	  } else {
-	    appWindow?.close();
-	  }
+		if (closeToTrayValue) {
+			appWindow?.hide();
+		} else {
+			appWindow?.close();
+		}
 	}
 
 	async function toggleAlwaysOnTop() {
-	  isAlwaysOnTop = !isAlwaysOnTop;
-	  await appWindow?.setAlwaysOnTop(isAlwaysOnTop);
+		isAlwaysOnTop = !isAlwaysOnTop;
+		await appWindow?.setAlwaysOnTop(isAlwaysOnTop);
 	}
 	async function handleTitleBarMouseDown(event: MouseEvent) {
 		// Only handle left mouse button (primary button)
@@ -106,48 +106,65 @@
 	}
 </script>
 
-<div class="titlebar" data-tauri-drag-region onmousedown={handleTitleBarMouseDown} ondblclick={handleTitleBarDoubleClick}>
-  <div class="title-container">
-    <span class="title-text">{title}</span>
-  </div>
-  <div class="controls">
-    {#if !isTimeEntriesWindow}
-      <button id="titlebar-minimize" onclick={minimize} title="minimize" aria-label="Minimize window" class="hover:bg-base-200">
-        <Minus size={16} />
-      </button>
-    {/if}
-    {#if isTimeEntriesWindow}
-      <button
-        id="titlebar-pin"
-        onclick={toggleAlwaysOnTop}
-        title={isAlwaysOnTop ? "unpin window" : "pin window on top"}
-        aria-label="Toggle always on top"
-        class="pin-button {isAlwaysOnTop ? 'active' : ''} hover:bg-base-200"
-      >
-        {#if isAlwaysOnTop}
-          <Pin size={16} class="toggle-icon-active" />
-        {:else}
-          <PinOff size={16} class="toggle-icon-inactive" />
-        {/if}
-      </button>
-    {/if}
-    <button
-      id="titlebar-maximize"
-      onclick={toggleMaximize}
-      title={isMaximized ? "restore" : "maximize"}
-      aria-label={isMaximized ? "Restore window" : "Maximize window"}
-      class="hover:bg-base-200"
-    >
-      {#if isMaximized}
-        <Minimize2 size={16} />
-      {:else}
-        <Maximize2 size={16} />
-      {/if}
-    </button>
-    <button id="titlebar-close" onclick={close} title="close" aria-label="Close window" class="hover:bg-base-200">
-      <X size={16} />
-    </button>
-  </div>
+<div
+	class="titlebar"
+	data-tauri-drag-region
+	onmousedown={handleTitleBarMouseDown}
+	ondblclick={handleTitleBarDoubleClick}
+>
+	<div class="title-container">
+		<span class="title-text">{title}</span>
+	</div>
+	<div class="controls">
+		{#if !isTimeEntriesWindow}
+			<button
+				id="titlebar-minimize"
+				onclick={minimize}
+				title="minimize"
+				aria-label="Minimize window"
+				class="hover:bg-base-200"
+			>
+				<Minus size={16} />
+			</button>
+		{/if}
+		{#if isTimeEntriesWindow}
+			<button
+				id="titlebar-pin"
+				onclick={toggleAlwaysOnTop}
+				title={isAlwaysOnTop ? 'unpin window' : 'pin window on top'}
+				aria-label="Toggle always on top"
+				class="pin-button {isAlwaysOnTop ? 'active' : ''} hover:bg-base-200"
+			>
+				{#if isAlwaysOnTop}
+					<Pin size={16} class="toggle-icon-active" />
+				{:else}
+					<PinOff size={16} class="toggle-icon-inactive" />
+				{/if}
+			</button>
+		{/if}
+		<button
+			id="titlebar-maximize"
+			onclick={toggleMaximize}
+			title={isMaximized ? 'restore' : 'maximize'}
+			aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
+			class="hover:bg-base-200"
+		>
+			{#if isMaximized}
+				<Minimize2 size={16} />
+			{:else}
+				<Maximize2 size={16} />
+			{/if}
+		</button>
+		<button
+			id="titlebar-close"
+			onclick={close}
+			title="close"
+			aria-label="Close window"
+			class="hover:bg-base-200"
+		>
+			<X size={16} />
+		</button>
+	</div>
 </div>
 
 <style>
@@ -205,7 +222,7 @@
 	/* Close button uses default hover effect */
 
 	.pin-button {
-	/* Enable touch/pen drag on Windows - removed app-region: drag as it's Windows-specific */
+		/* Enable touch/pen drag on Windows - removed app-region: drag as it's Windows-specific */
 		transition: all 0.2s ease;
 	}
 
@@ -229,7 +246,6 @@
 		padding: 2px;
 		border-radius: 2px;
 	}
-
 
 	/* Enable touch/pen drag on Windows */
 	*[data-tauri-drag-region] {

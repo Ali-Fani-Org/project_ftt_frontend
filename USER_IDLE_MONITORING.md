@@ -20,11 +20,13 @@ user_idle crate → Rust Background Task → Tauri Events → Svelte Store → U
 ## Files Added/Modified
 
 ### Backend (Rust)
+
 - [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs): Background watcher and event emission
 - [`src-tauri/src/commands.rs`](src-tauri/src/commands.rs): Idle detection commands
 - [`src-tauri/Cargo.toml`](src-tauri/Cargo.toml): Added dependencies (tokio, chrono)
 
 ### Frontend (Svelte/TypeScript)
+
 - [`src/lib/stores.ts`](src/lib/stores.ts): Idle monitoring store and state management
 - [`src/lib/IdleMonitorDebug.svelte`](src/lib/IdleMonitorDebug.svelte): Debug UI component
 - [`src/routes/settings/+page.svelte`](src/routes/settings/+page.svelte): Integrated debug component
@@ -32,6 +34,7 @@ user_idle crate → Rust Background Task → Tauri Events → Svelte Store → U
 ## Usage
 
 ### Feature Flag
+
 The idle monitoring system is controlled by the feature flag `user-idle-monitoring`. Enable it in your feature flags system to activate the functionality.
 
 ### API Commands
@@ -49,9 +52,9 @@ const idleTime = await invoke('get_idle_time');
 const isIdle = await invoke('is_user_idle');
 
 // Create activity log entry
-const log = await invoke('create_activity_log', { 
-  idleTimeSeconds: 300, 
-  isIdle: false 
+const log = await invoke('create_activity_log', {
+	idleTimeSeconds: 300,
+	isIdle: false
 });
 ```
 
@@ -67,47 +70,53 @@ import { listen } from '@tauri-apps/api/event';
 
 // Listen for state changes
 await listen('idle-status-changed', (event) => {
-  console.log('Idle state changed:', event.payload);
+	console.log('Idle state changed:', event.payload);
 });
 
 // Listen for periodic updates
 await listen('idle-status-update', (event) => {
-  console.log('Idle status update:', event.payload);
+	console.log('Idle status update:', event.payload);
 });
 ```
 
 ### Data Structures
 
 #### IdleStatus
+
 ```typescript
 interface IdleStatus {
-  is_idle: boolean;
-  idle_time_seconds: number;
-  last_update: string;
-  session_duration_seconds: number;
+	is_idle: boolean;
+	idle_time_seconds: number;
+	last_update: string;
+	session_duration_seconds: number;
 }
 ```
 
 #### ActivityLog
+
 ```typescript
 interface ActivityLog {
-  timestamp: string;
-  idle_time_seconds: number;
-  is_idle: boolean;
-  session_duration_seconds: number;
-  activity_state: string; // "active", "idle", "became_idle", "became_active"
+	timestamp: string;
+	idle_time_seconds: number;
+	is_idle: boolean;
+	session_duration_seconds: number;
+	activity_state: string; // "active", "idle", "became_idle", "became_active"
 }
 ```
 
 ## Configuration
 
 ### Idle Threshold
+
 Currently set to 2 minutes (120 seconds). Modify in:
+
 - [`src-tauri/src/lib.rs:89`](src-tauri/src/lib.rs:89)
 - [`src-tauri/src/commands.rs:24`](src-tauri/src/commands.rs:24)
 
 ### Update Frequency
+
 Background monitoring runs every 5 seconds. Modify in:
+
 - [`src-tauri/src/lib.rs:74`](src-tauri/src/lib.rs:74)
 
 ## Debug UI
@@ -130,15 +139,16 @@ The system is designed for easy server synchronization:
 4. **Feature flag** allows gradual rollout
 
 ### Suggested Server Endpoints
+
 ```typescript
 // POST /api/user-activity/
 interface UserActivityPayload {
-  activity_logs: ActivityLog[];
-  session_summary: {
-    total_active_time: number;
-    total_idle_time: number;
-    activity_transitions: number;
-  };
+	activity_logs: ActivityLog[];
+	session_summary: {
+		total_active_time: number;
+		total_idle_time: number;
+		activity_transitions: number;
+	};
 }
 ```
 
@@ -151,11 +161,13 @@ interface UserActivityPayload {
 ## Dependencies
 
 ### Rust Dependencies
+
 - `user-idle = "0.6.0"`: Cross-platform idle detection
 - `tokio = { version = "1.0", features = ["full"] }`: Async runtime
 - `chrono = { version = "0.4", features = ["serde"] }`: Date/time handling
 
 ### Frontend Dependencies
+
 - Uses existing Svelte stores and Tauri APIs
 - Integrates with existing feature flags system
 
