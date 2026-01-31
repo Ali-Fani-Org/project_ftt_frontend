@@ -1,5 +1,14 @@
 <script lang="ts">
-	import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart, logout, backgroundAnimationEnabled } from './stores';
+	import {
+		baseUrl,
+		theme,
+		customThemes,
+		minimizeToTray,
+		closeToTray,
+		autostart,
+		logout,
+		backgroundAnimationEnabled
+	} from './stores';
 
 	import { enable, disable } from '@tauri-apps/plugin-autostart';
 	import { createEventDispatcher } from 'svelte';
@@ -26,42 +35,42 @@
 	});
 
 	const builtInThemes = [
-	       "light",
-	       "dark",
-	       "cupcake",
-	       "bumblebee",
-	       "emerald",
-	       "corporate",
-	       "synthwave",
-	       "retro",
-	       "cyberpunk",
-	       "valentine",
-	       "halloween",
-	       "garden",
-	       "forest",
-	       "aqua",
-	       "lofi",
-	       "pastel",
-	       "fantasy",
-	       "wireframe",
-	       "black",
-	       "luxury",
-	       "dracula",
-	       "cmyk",
-	       "autumn",
-	       "business",
-	       "acid",
-	       "lemonade",
-	       "night",
-	       "coffee",
-	       "winter",
-	       "dim",
-	       "nord",
-	       "sunset",
-	       "caramellatte",
-	       "abyss",
-	       "silk",
-	       "web3hub"
+		'light',
+		'dark',
+		'cupcake',
+		'bumblebee',
+		'emerald',
+		'corporate',
+		'synthwave',
+		'retro',
+		'cyberpunk',
+		'valentine',
+		'halloween',
+		'garden',
+		'forest',
+		'aqua',
+		'lofi',
+		'pastel',
+		'fantasy',
+		'wireframe',
+		'black',
+		'luxury',
+		'dracula',
+		'cmyk',
+		'autumn',
+		'business',
+		'acid',
+		'lemonade',
+		'night',
+		'coffee',
+		'winter',
+		'dim',
+		'nord',
+		'sunset',
+		'caramellatte',
+		'abyss',
+		'silk',
+		'web3hub'
 	];
 
 	let themes = $derived([...builtInThemes, ...Object.keys($customThemes), 'custom']);
@@ -130,7 +139,10 @@
 			}
 
 			console.log('Parsed custom theme:', { originalName, displayName, vars });
-			customThemes.update((ct: Record<string, Record<string, string>>) => ({ ...ct, [displayName]: vars }));
+			customThemes.update((ct: Record<string, Record<string, string>>) => ({
+				...ct,
+				[displayName]: vars
+			}));
 			theme.set(displayName);
 		} else {
 			theme.set(localTheme);
@@ -232,8 +244,7 @@
 										const newCts = { ...cts };
 										delete newCts[ct];
 										return newCts;
-									})
-								}
+									})}
 							>
 								Remove
 							</button>
@@ -284,7 +295,7 @@
 		</div>
 
 		<div class="modal-action justify-between">
-			<button class="btn btn-error" onclick={() => showLogoutConfirm = true}>Logout</button>
+			<button class="btn btn-error" onclick={() => (showLogoutConfirm = true)}>Logout</button>
 			<div>
 				<button class="btn" onclick={cancel}>Cancel</button>
 				<button class="btn btn-primary" onclick={save}>Save</button>
@@ -295,7 +306,10 @@
 			<div class="modal modal-open">
 				<div class="modal-box max-w-sm">
 					<h3 class="font-bold text-lg">Confirm Logout</h3>
-					<p class="py-4">This will end your current session and require you to log in again. Are you sure you want to logout?</p>
+					<p class="py-4">
+						This will end your current session and require you to log in again. Are you sure you
+						want to logout?
+					</p>
 					<div class="modal-action">
 						<button class="btn" onclick={cancelLogout}>Cancel</button>
 						<button class="btn btn-error" onclick={confirmLogout}>Logout</button>

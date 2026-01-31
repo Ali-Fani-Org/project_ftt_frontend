@@ -21,6 +21,7 @@ A modern, cross-platform desktop time tracking application built with Tauri, Sve
 ## 🛠️ Tech Stack
 
 ### Frontend
+
 - **Svelte 5** - Modern reactive framework
 - **TypeScript** - Type-safe JavaScript
 - **Tailwind CSS** - Utility-first CSS framework
@@ -28,11 +29,13 @@ A modern, cross-platform desktop time tracking application built with Tauri, Sve
 - **Vite** - Fast build tool and dev server
 
 ### Backend
+
 - **Tauri 2** - Framework for building desktop apps with web technologies
 - **Rust** - Systems programming language for high performance
 - **Django REST Framework** - API backend for data persistence
 
 ### Development Tools
+
 - **Bun** - Fast JavaScript runtime and package manager
 - **Prettier** - Code formatting
 - **ESLint** - Code linting
@@ -48,17 +51,20 @@ Before you begin, ensure you have the following installed:
 - **Backend API**: The application requires a running Django REST API server (see API section below)
 
 #### Windows Additional Requirements
+
 - **MSVC**: Install "Desktop development with C++" workload via Visual Studio Installer
 
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone <repository-url>
    cd time-tracker
    ```
 
 2. **Install dependencies**
+
    ```bash
    bun install
    ```
@@ -87,6 +93,7 @@ This will create a native executable in the `src-tauri/target/release/bundle/` d
 ### Time Tracking
 
 1. **Start a timer**:
+
    - Navigate to the dashboard
    - Fill in the task title
    - Select a project
@@ -94,6 +101,7 @@ This will create a native executable in the `src-tauri/target/release/bundle/` d
    - Click "Start Timer"
 
 2. **Monitor active timer**:
+
    - View the running timer in the dashboard
    - See real-time elapsed time
    - Timer continues running even when app is minimized
@@ -184,6 +192,7 @@ bun run lint             # Run ESLint
 ### Development Setup
 
 1. **Install dependencies**
+
    ```bash
    bun install
    ```
@@ -200,6 +209,7 @@ The application will open in development mode with hot reloading enabled.
 ### Code Style
 
 This project uses:
+
 - **Prettier** for code formatting
 - **ESLint** for code linting
 - **TypeScript** for type checking

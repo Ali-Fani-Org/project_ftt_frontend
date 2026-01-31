@@ -18,18 +18,21 @@ The Notification Status Indicator is a visual component that shows the connectio
 ## States
 
 ### 🔴 Disconnected
+
 - **Icon**: WifiOff
 - **Color**: Neutral gray
 - **Description**: Not connected to notification service
 - **Occurs when**: No authentication token, not in Tauri environment, or service unavailable
 
 ### 🟡 Connecting
+
 - **Icon**: Loader2 (spinning)
 - **Color**: Warning yellow
 - **Description**: Connecting to notification service...
 - **Occurs when**: Attempting to establish SSE connection
 
 ### 🟢 Connected
+
 - **Icon**: Bell
 - **Color**: Success green
 - **Description**: Notification service is active
@@ -37,6 +40,7 @@ The Notification Status Indicator is a visual component that shows the connectio
 - **Animation**: Pulsing indicator dot
 
 ### 🔴 Error
+
 - **Icon**: AlertCircle
 - **Color**: Error red
 - **Description**: Failed to connect to notification service
@@ -45,12 +49,14 @@ The Notification Status Indicator is a visual component that shows the connectio
 ## Visual Design
 
 ### Small Indicator (Navbar)
+
 - Located in the right section of the navbar
 - Small bell icon with colored status dot
 - Clean, minimal design that doesn't interfere with other UI elements
 - Tooltip shows current status on hover
 
 ### Details Dropdown
+
 - Appears when indicator is clicked
 - Shows current status with larger icon
 - Displays technical information:
@@ -62,20 +68,24 @@ The Notification Status Indicator is a visual component that shows the connectio
 ## Technical Implementation
 
 ### Component Location
+
 - **File**: `src/lib/NotificationStatusIndicator.svelte`
 - **Usage**: Integrated into `src/lib/Navbar.svelte`
 
 ### Dependencies
+
 - **Lucide Icons**: For status icons (Bell, Wifi, WifiOff, Loader2, AlertCircle)
 - **Svelte Stores**: `authToken` for authentication state
 - **Notification Service**: `getNotificationService()` for connection status
 
 ### Environment Detection
+
 - Checks for Tauri environment using `@tauri-apps/api/window`
 - Only functional in Tauri desktop environment
 - Gracefully degrades in browser environment
 
 ### State Tracking
+
 - **Polling**: Checks connection status every 2 seconds
 - **Reactive Updates**: Responds to authentication token changes
 - **Manual Refresh**: Users can manually trigger status updates
@@ -83,6 +93,7 @@ The Notification Status Indicator is a visual component that shows the connectio
 - **Error Handling**: Graceful handling of connection errors
 
 ### Recent Improvements
+
 - Fixed state detection logic to properly handle connecting vs connected states
 - Removed all debug logging for production use
 - Clean, professional implementation with no console noise
@@ -93,18 +104,22 @@ The Notification Status Indicator is a visual component that shows the connectio
 ## Usage
 
 ### Visual States
+
 The indicator automatically updates based on:
+
 1. Authentication token availability
 2. Tauri environment detection
 3. Notification service connection status
 4. Connection attempt states
 
 ### User Interactions
+
 - **Hover**: Shows tooltip with current status
 - **Click**: Opens details dropdown with technical information
 - **Reconnect**: Manual reconnection button (when applicable)
 
 ### Integration Points
+
 - **Auth Token Changes**: Automatically connects when user logs in
 - **Service Status**: Monitors notification service connection state
 - **Error Handling**: Provides visual feedback for connection issues
@@ -112,6 +127,7 @@ The indicator automatically updates based on:
 ## Testing
 
 ### Manual Testing
+
 1. **Login Flow**: Login and verify indicator shows connecting → connected
 2. **Logout Flow**: Logout and verify indicator shows disconnected
 3. **Browser vs Tauri**: Test in both environments to verify behavior
@@ -121,12 +137,14 @@ The indicator automatically updates based on:
 ### Expected Behavior
 
 #### In Tauri Environment (Desktop App)
+
 - **Disconnected** when not authenticated
 - **Connecting** when authenticating and connecting to SSE
 - **Connected** when successfully receiving notifications
 - **Error** when connection fails
 
 #### In Browser Environment
+
 - **Disconnected** (notifications not available in browser)
 - **Error** state may appear if service initialization fails
 
@@ -142,11 +160,13 @@ The indicator automatically updates based on:
 ### Common Issues
 
 1. **Always Shows Disconnected**
+
    - Check if running in Tauri environment
    - Verify authentication token is present
    - Check notification service initialization
 
 2. **Shows Error State**
+
    - Check network connectivity
    - Verify backend notification service is running
    - Check authentication token validity
@@ -159,6 +179,7 @@ The indicator automatically updates based on:
 ### Debug Information
 
 The component provides detailed logging:
+
 - Connection attempts and status changes
 - Environment detection results
 - Service availability checks
@@ -168,6 +189,7 @@ The component provides detailed logging:
 - State transition details
 
 **Console Logging**: Check browser console for detailed debug information. The component logs:
+
 - "🔍 NotificationStatusIndicator: updateState() called"
 - "✅ Notification service connected: [true/false]"
 - "🟢/🔴 Setting state to: [connected/disconnected/error]"

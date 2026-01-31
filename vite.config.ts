@@ -9,7 +9,9 @@ export default defineConfig({
 	plugins: [
 		sveltekit(),
 		// Enable bundle visualizer when ANALYZE env var is set to 'true'
-		...(process.env.ANALYZE === 'true' ? [visualizer({ filename: 'dist/stats.html', open: false })] : []),
+		...(process.env.ANALYZE === 'true'
+			? [visualizer({ filename: 'dist/stats.html', open: false })]
+			: [])
 	],
 	clearScreen: false,
 	server: {
@@ -18,18 +20,18 @@ export default defineConfig({
 		host: host || false,
 		hmr: host
 			? {
-				protocol: "ws",
-				host,
-				port: 1421,
-			}
+					protocol: 'ws',
+					host,
+					port: 1421
+				}
 			: undefined,
 		watch: {
-			ignored: ["**/src-tauri/**"],
-		},
+			ignored: ['**/src-tauri/**']
+		}
 	},
 	resolve: {
 		alias: {
-			$lib: path.resolve("./src/lib"),
-		},
-	},
+			$lib: path.resolve('./src/lib')
+		}
+	}
 });

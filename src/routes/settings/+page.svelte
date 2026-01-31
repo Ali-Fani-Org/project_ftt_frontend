@@ -1,352 +1,450 @@
 <script lang="ts">
-  import { baseUrl, theme, customThemes, minimizeToTray, closeToTray, autostart, backgroundAnimationEnabled, statsPanelEnabled, timerRefreshInterval } from '$lib/stores';
+	import {
+		baseUrl,
+		theme,
+		customThemes,
+		minimizeToTray,
+		closeToTray,
+		autostart,
+		backgroundAnimationEnabled,
+		statsPanelEnabled,
+		timerRefreshInterval,
+		autoRefreshEnabled,
+		refreshInterval,
+		refreshOnReconnect,
+		refreshOnlyWhenVisible
+	} from '$lib/stores';
 
-  import { enable, disable } from '@tauri-apps/plugin-autostart';
-  import IdleMonitorDebug from '$lib/IdleMonitorDebug.svelte';
-  import { isUserIdleMonitoringEnabled, isUserIdleMonitorDebugEnabled } from '$lib/stores';
-  import { featureFlagsStore } from '$lib/stores';
+	import { enable, disable } from '@tauri-apps/plugin-autostart';
+	import IdleMonitorDebug from '$lib/IdleMonitorDebug.svelte';
+	import { isUserIdleMonitoringEnabled, isUserIdleMonitorDebugEnabled } from '$lib/stores';
+	import { featureFlagsStore } from '$lib/stores';
+	import { refreshController } from '$lib/refreshController';
 
-  import { onMount } from 'svelte';
-  import { getVersion } from '@tauri-apps/api/app';
-  import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { getVersion } from '@tauri-apps/api/app';
+	import { goto } from '$app/navigation';
 
-  let localBaseUrl = $state($baseUrl);
-  let localTheme = $state($theme);
-  let customTheme = $state('');
-  let enablePreview = $state(false);
-  let localMinimizeToTray = $state($minimizeToTray);
-  let localCloseToTray = $state($closeToTray);
-  let localAutostart = $state($autostart);
-  let localBackgroundAnimation = $state($backgroundAnimationEnabled);
-  let localStatsPanel = $state($statsPanelEnabled);
-  let localTimerRefreshInterval = $state($timerRefreshInterval);
+	let localBaseUrl = $state($baseUrl);
+	let localTheme = $state($theme);
+	let customTheme = $state('');
+	let enablePreview = $state(false);
+	let localMinimizeToTray = $state($minimizeToTray);
+	let localCloseToTray = $state($closeToTray);
+	let localAutostart = $state($autostart);
+	let localBackgroundAnimation = $state($backgroundAnimationEnabled);
+	let localStatsPanel = $state($statsPanelEnabled);
 
-  let appVersion = $state('');
-  let showLogoutConfirm = $state(false);
-  let showIdleDebug = $state(false);
+	// Data refresh settings
+	let localAutoRefreshEnabled = $state($autoRefreshEnabled);
+	let localRefreshInterval = $state($refreshInterval);
+	let localRefreshOnReconnect = $state($refreshOnReconnect);
+	let localRefreshOnlyWhenVisible = $state($refreshOnlyWhenVisible);
 
-  onMount(async () => {
-    appVersion = await getVersion();
-    // Load feature flags and check if debug is enabled
-    try {
-      await featureFlagsStore.loadFeatures();
-      showIdleDebug = await isUserIdleMonitorDebugEnabled();
-      console.log(' Debug feature flag check result:', showIdleDebug);
-    } catch (error) {
-      console.error('Failed to load feature flags for debug check:', error);
-      showIdleDebug = false;
-    }
-  });
+	let appVersion = $state('');
+	let showLogoutConfirm = $state(false);
+	let showIdleDebug = $state(false);
 
-  const builtInThemes = [
-       "light", "dark", "cupcake", "bumblebee", "emerald", "corporate",
-       "synthwave", "retro", "cyberpunk", "valentine", "halloween", "garden",
-       "forest", "aqua", "lofi", "pastel", "fantasy", "wireframe", "black",
-       "luxury", "dracula", "cmyk", "autumn", "business", "acid", "lemonade",
-       "night", "coffee", "winter","web3hub"
-  ];
+	onMount(async () => {
+		appVersion = await getVersion();
+		// Load feature flags and check if debug is enabled
+		try {
+			await featureFlagsStore.loadFeatures();
+			showIdleDebug = await isUserIdleMonitorDebugEnabled();
+			console.log(' Debug feature flag check result:', showIdleDebug);
+		} catch (error) {
+			console.error('Failed to load feature flags for debug check:', error);
+			showIdleDebug = false;
+		}
+	});
 
-  async function saveBaseUrl() {
-    baseUrl.set(localBaseUrl);
-  }
+	const builtInThemes = [
+		'light',
+		'dark',
+		'cupcake',
+		'bumblebee',
+		'emerald',
+		'corporate',
+		'synthwave',
+		'retro',
+		'cyberpunk',
+		'valentine',
+		'halloween',
+		'garden',
+		'forest',
+		'aqua',
+		'lofi',
+		'pastel',
+		'fantasy',
+		'wireframe',
+		'black',
+		'luxury',
+		'dracula',
+		'cmyk',
+		'autumn',
+		'business',
+		'acid',
+		'lemonade',
+		'night',
+		'coffee',
+		'winter',
+		'web3hub'
+	];
 
-  async function saveTheme() {
-    theme.set(localTheme);
-  }
+	async function saveBaseUrl() {
+		baseUrl.set(localBaseUrl);
+	}
 
-  async function addCustomTheme() {
-    if (customTheme.trim()) {
-      const themes = $customThemes;
-      themes[customTheme.trim()] = {};
-      customThemes.set(themes);
-      customTheme = '';
-    }
-  }
+	async function saveTheme() {
+		theme.set(localTheme);
+	}
 
-  async function removeCustomTheme(themeName: string) {
-    const themes = $customThemes;
-    delete themes[themeName];
-    customThemes.set(themes);
-  }
+	async function addCustomTheme() {
+		if (customTheme.trim()) {
+			const themes = $customThemes;
+			themes[customTheme.trim()] = {};
+			customThemes.set(themes);
+			customTheme = '';
+		}
+	}
 
-  async function saveTraySettings() {
-    minimizeToTray.set(localMinimizeToTray);
-    closeToTray.set(localCloseToTray);
-    backgroundAnimationEnabled.set(localBackgroundAnimation);
-  }
+	async function removeCustomTheme(themeName: string) {
+		const themes = $customThemes;
+		delete themes[themeName];
+		customThemes.set(themes);
+	}
 
-  async function saveAutostart() {
-    autostart.set(localAutostart);
-    if (localAutostart) {
-      await enable();
-    } else {
-      await disable();
-    }
-  }
+	async function saveTraySettings() {
+		minimizeToTray.set(localMinimizeToTray);
+		closeToTray.set(localCloseToTray);
+		backgroundAnimationEnabled.set(localBackgroundAnimation);
+	}
 
-  function saveBackgroundAnimation() {
-    backgroundAnimationEnabled.set(localBackgroundAnimation);
-  }
+	async function saveAutostart() {
+		autostart.set(localAutostart);
+		if (localAutostart) {
+			await enable();
+		} else {
+			await disable();
+		}
+	}
 
-  function saveStatsPanel() {
-    statsPanelEnabled.set(localStatsPanel);
-  }
+	function saveBackgroundAnimation() {
+		backgroundAnimationEnabled.set(localBackgroundAnimation);
+	}
 
-  function saveTimerRefreshInterval() {
-    timerRefreshInterval.set(localTimerRefreshInterval);
-  }
+	function saveStatsPanel() {
+		statsPanelEnabled.set(localStatsPanel);
+	}
 
-  function confirmLogout() {
-    showLogoutConfirm = true;
-  }
+	function saveDataRefreshSettings() {
+		autoRefreshEnabled.set(localAutoRefreshEnabled);
+		refreshInterval.set(localRefreshInterval);
+		refreshOnReconnect.set(localRefreshOnReconnect);
+		refreshOnlyWhenVisible.set(localRefreshOnlyWhenVisible);
 
-  function cancelLogout() {
-    showLogoutConfirm = false;
-  }
+		refreshController.updateConfig({
+			enabled: localAutoRefreshEnabled,
+			interval: localRefreshInterval,
+			onlyWhenVisible: localRefreshOnlyWhenVisible,
+			refreshOnReconnect: localRefreshOnReconnect
+		});
+	}
 
-  function logout() {
-    showLogoutConfirm = false;
-    import('$lib/stores').then(({ logout }) => {
-      logout();
-    });
-  }
+	function confirmLogout() {
+		showLogoutConfirm = true;
+	}
+
+	function cancelLogout() {
+		showLogoutConfirm = false;
+	}
+
+	function logout() {
+		showLogoutConfirm = false;
+		import('$lib/stores').then(({ logout }) => {
+			logout();
+		});
+	}
 </script>
 
 <div class="container mx-auto p-4 lg:p-8">
-  <!-- Page Header -->
-  <div class="mb-8">
-    <h1 class="text-3xl font-bold text-primary">Settings</h1>
-    <p class="text-base-content/70">Version {appVersion}</p>
-  </div>
+	<!-- Page Header -->
+	<div class="mb-8">
+		<h1 class="text-3xl font-bold text-primary">Settings</h1>
+		<p class="text-base-content/70">Version {appVersion}</p>
+	</div>
 
-  <div class="max-w-4xl mx-auto space-y-8">
+	<div class="max-w-4xl mx-auto space-y-8">
+		<!-- API Configuration -->
+		<div class="card bg-base-100 shadow-xl">
+			<div class="card-body p-6">
+				<h2 class="card-title text-xl mb-6">API Configuration</h2>
+				<div class="form-control">
+					<label class="label" for="baseUrl">
+						<span class="label-text font-medium text-base">Base URL</span>
+					</label>
+					<div class="join">
+						<input
+							id="baseUrl"
+							type="url"
+							bind:value={localBaseUrl}
+							placeholder="Enter API base URL"
+							class="input input-bordered join-item flex-1"
+						/>
+						<button class="btn btn-primary join-item" onclick={saveBaseUrl}> Save </button>
+					</div>
+				</div>
+			</div>
+		</div>
 
-    <!-- API Configuration -->
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body p-6">
-        <h2 class="card-title text-xl mb-6">API Configuration</h2>
-        <div class="form-control">
-          <label class="label" for="baseUrl">
-            <span class="label-text font-medium text-base">Base URL</span>
-          </label>
-          <div class="join">
-            <input
-              id="baseUrl"
-              type="url"
-              bind:value={localBaseUrl}
-              placeholder="Enter API base URL"
-              class="input input-bordered join-item flex-1"
-            />
-            <button class="btn btn-primary join-item" onclick={saveBaseUrl}>
-              Save
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+		<!-- Appearance -->
+		<div class="card bg-base-100 shadow-xl">
+			<div class="card-body p-6">
+				<h2 class="card-title text-xl mb-6">Appearance</h2>
 
-    <!-- Appearance -->
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body p-6">
-        <h2 class="card-title text-xl mb-6">Appearance</h2>
-        
-        <div class="form-control mb-6">
-          <label class="label" for="theme">
-            <span class="label-text font-medium text-base">Theme</span>
-          </label>
-          <select
-            id="theme"
-            bind:value={localTheme}
-            onchange={saveTheme}
-            class="select select-bordered"
-          >
-            {#each builtInThemes as themeOption}
-              <option value={themeOption}>{themeOption}</option>
-            {/each}
-          </select>
-        </div>
+				<div class="form-control mb-6">
+					<label class="label" for="theme">
+						<span class="label-text font-medium text-base">Theme</span>
+					</label>
+					<select
+						id="theme"
+						bind:value={localTheme}
+						onchange={saveTheme}
+						class="select select-bordered"
+					>
+						{#each builtInThemes as themeOption}
+							<option value={themeOption}>{themeOption}</option>
+						{/each}
+					</select>
+				</div>
 
-        <div class="divider my-6">Custom Themes</div>
-        
-        <div class="form-control">
-          <label class="label" for="customTheme">
-            <span class="label-text font-medium text-base">Add Custom Theme</span>
-          </label>
-          <div class="join">
-            <input
-              id="customTheme"
-              type="text"
-              bind:value={customTheme}
-              placeholder="Enter theme name"
-              class="input input-bordered join-item flex-1"
-            />
-            <button class="btn btn-primary join-item" onclick={addCustomTheme}>
-              Add
-            </button>
-          </div>
-        </div>
+				<div class="divider my-6">Custom Themes</div>
 
-        {#if Object.keys($customThemes).length > 0}
-          <div class="mt-6">
-            <h3 class="font-semibold text-lg mb-4">Saved Custom Themes</h3>
-            <div class="flex flex-wrap gap-2">
-              {#each Object.keys($customThemes) as customThemeName}
-                <div class="badge badge-outline gap-1">
-                  {customThemeName}
-                  <button
-                    class="btn btn-xs btn-ghost ml-1"
-                    onclick={() => removeCustomTheme(customThemeName)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/if}
-      </div>
-    </div>
+				<div class="form-control">
+					<label class="label" for="customTheme">
+						<span class="label-text font-medium text-base">Add Custom Theme</span>
+					</label>
+					<div class="join">
+						<input
+							id="customTheme"
+							type="text"
+							bind:value={customTheme}
+							placeholder="Enter theme name"
+							class="input input-bordered join-item flex-1"
+						/>
+						<button class="btn btn-primary join-item" onclick={addCustomTheme}> Add </button>
+					</div>
+				</div>
 
-    <!-- Window Behavior -->
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body p-6">
-        <h2 class="card-title text-xl mb-6">Window Behavior</h2>
-        
-        <div class="space-y-4">
-          <div class="form-control">
-            <label class="cursor-pointer label">
-              <span class="label-text font-medium text-base">Minimize to tray</span>
-              <input
-                type="checkbox"
-                bind:checked={localMinimizeToTray}
-                onchange={saveTraySettings}
-                class="checkbox checkbox-primary"
-              />
-            </label>
-          </div>
+				{#if Object.keys($customThemes).length > 0}
+					<div class="mt-6">
+						<h3 class="font-semibold text-lg mb-4">Saved Custom Themes</h3>
+						<div class="flex flex-wrap gap-2">
+							{#each Object.keys($customThemes) as customThemeName}
+								<div class="badge badge-outline gap-1">
+									{customThemeName}
+									<button
+										class="btn btn-xs btn-ghost ml-1"
+										onclick={() => removeCustomTheme(customThemeName)}
+									>
+										✕
+									</button>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
+		</div>
 
-          <div class="form-control">
-            <label class="cursor-pointer label">
-              <span class="label-text font-medium text-base">Close to tray</span>
-              <input
-                type="checkbox"
-                bind:checked={localCloseToTray}
-                onchange={saveTraySettings}
-                class="checkbox checkbox-primary"
-              />
-            </label>
-          </div>
-        </div>
-      </div>
-    </div>
+		<!-- Window Behavior -->
+		<div class="card bg-base-100 shadow-xl">
+			<div class="card-body p-6">
+				<h2 class="card-title text-xl mb-6">Window Behavior</h2>
 
-    <!-- System -->
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body p-6">
-        <h2 class="card-title text-xl mb-6">System</h2>
-        
-        <div class="form-control">
-          <label class="cursor-pointer label">
-            <span class="label-text font-medium text-base">Start with system</span>
-            <input
-              type="checkbox"
-              bind:checked={localAutostart}
-              onchange={saveAutostart}
-              class="checkbox checkbox-primary"
-            />
-          </label>
-        </div>
+				<div class="space-y-4">
+					<div class="form-control">
+						<label class="cursor-pointer label">
+							<span class="label-text font-medium text-base">Minimize to tray</span>
+							<input
+								type="checkbox"
+								bind:checked={localMinimizeToTray}
+								onchange={saveTraySettings}
+								class="checkbox checkbox-primary"
+							/>
+						</label>
+					</div>
 
-        <div class="form-control mt-4">
-          <label class="cursor-pointer label">
-            <span class="label-text font-medium text-base">Show animated background</span>
-            <input
-              type="checkbox"
-              bind:checked={localBackgroundAnimation}
-              onchange={saveBackgroundAnimation}
-              class="checkbox checkbox-primary"
-            />
-          </label>
-        </div>
+					<div class="form-control">
+						<label class="cursor-pointer label">
+							<span class="label-text font-medium text-base">Close to tray</span>
+							<input
+								type="checkbox"
+								bind:checked={localCloseToTray}
+								onchange={saveTraySettings}
+								class="checkbox checkbox-primary"
+							/>
+						</label>
+					</div>
+				</div>
+			</div>
+		</div>
 
-        <div class="form-control mt-2">
-          <label class="cursor-pointer label">
-            <span class="label-text font-medium text-base">Show performance stats panel</span>
-            <input
-              type="checkbox"
-              bind:checked={localStatsPanel}
-              onchange={saveStatsPanel}
-              class="checkbox checkbox-primary"
-            />
-          </label>
-          <p class="text-xs text-base-content/70 ml-1">When enabled, a small FPS/MB panel appears in the top-left.</p>
-        </div>
+		<!-- System -->
+		<div class="card bg-base-100 shadow-xl">
+			<div class="card-body p-6">
+				<h2 class="card-title text-xl mb-6">System</h2>
 
-        <div class="form-control mt-4">
-          <label class="label" for="timerRefreshInterval">
-            <span class="label-text font-medium text-base">Timer auto-refresh interval</span>
-          </label>
-          <div class="join">
-            <input
-              id="timerRefreshInterval"
-              type="number"
-              bind:value={localTimerRefreshInterval}
-              onchange={saveTimerRefreshInterval}
-              min="1000"
-              max="300000"
-              step="1000"
-              class="input input-bordered join-item flex-1"
-            />
-            <span class="btn btn-disabled join-item no-animation">ms</span>
-          </div>
-          <p class="text-xs text-base-content/70 ml-1 mt-1">
-            How often the timer page checks for updates (1000ms - 300000ms, default: 30000ms)
-          </p>
-          <div class="flex flex-wrap gap-2 mt-2">
-            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 1000; saveTimerRefreshInterval(); }}>1s</button>
-            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 5000; saveTimerRefreshInterval(); }}>5s</button>
-            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 10000; saveTimerRefreshInterval(); }}>10s</button>
-            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 30000; saveTimerRefreshInterval(); }}>30s</button>
-            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 60000; saveTimerRefreshInterval(); }}>1m</button>
-            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 120000; saveTimerRefreshInterval(); }}>2m</button>
-            <button class="btn btn-xs btn-outline" onclick={() => { localTimerRefreshInterval = 300000; saveTimerRefreshInterval(); }}>5m</button>
-          </div>
-        </div>
-      </div>
-    </div>
+				<div class="form-control">
+					<label class="cursor-pointer label">
+						<span class="label-text font-medium text-base">Start with system</span>
+						<input
+							type="checkbox"
+							bind:checked={localAutostart}
+							onchange={saveAutostart}
+							class="checkbox checkbox-primary"
+						/>
+					</label>
+				</div>
 
-    <!-- User Idle Monitoring Debug Section -->
-    {#if showIdleDebug}
-      <div class="card bg-base-100 shadow-xl">
-        <div class="card-body p-6">
-          <IdleMonitorDebug />
-        </div>
-      </div>
-    {/if}
+				<div class="form-control mt-4">
+					<label class="cursor-pointer label">
+						<span class="label-text font-medium text-base">Show animated background</span>
+						<input
+							type="checkbox"
+							bind:checked={localBackgroundAnimation}
+							onchange={saveBackgroundAnimation}
+							class="checkbox checkbox-primary"
+						/>
+					</label>
+				</div>
 
-    <!-- Logout Section -->
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body p-6">
-        <h2 class="card-title text-xl mb-6">Account</h2>
-        
-        <button class="btn btn-error" onclick={confirmLogout}>
-          Logout
-        </button>
-      </div>
-    </div>
-  </div>
+				<div class="form-control mt-2">
+					<label class="cursor-pointer label">
+						<span class="label-text font-medium text-base">Show performance stats panel</span>
+						<input
+							type="checkbox"
+							bind:checked={localStatsPanel}
+							onchange={saveStatsPanel}
+							class="checkbox checkbox-primary"
+						/>
+					</label>
+					<p class="text-xs text-base-content/70 ml-1">
+						When enabled, a small FPS/MB panel appears in the top-left.
+					</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Data Refresh Settings -->
+		<div class="card bg-base-100 shadow-xl">
+			<div class="card-body p-6">
+				<h2 class="card-title text-xl mb-6">Data Refresh Settings</h2>
+
+				<div class="space-y-4">
+					<div class="form-control">
+						<label class="cursor-pointer label">
+							<span class="label-text font-medium text-base">Auto-Refresh</span>
+							<input
+								type="checkbox"
+								bind:checked={localAutoRefreshEnabled}
+								onchange={saveDataRefreshSettings}
+								class="toggle toggle-primary"
+							/>
+						</label>
+						<label class="label">
+							<span class="label-text-alt"> Automatically refresh data at regular intervals </span>
+						</label>
+					</div>
+
+					{#if localAutoRefreshEnabled}
+						<div class="form-control">
+							<label class="label" for="refreshInterval">
+								<span class="label-text font-medium text-base">Refresh Interval</span>
+							</label>
+							<select
+								id="refreshInterval"
+								bind:value={localRefreshInterval}
+								onchange={saveDataRefreshSettings}
+								class="select select-bordered"
+							>
+								<option value={30000}>30 seconds</option>
+								<option value={120000}>2 minutes</option>
+								<option value={300000}>5 minutes</option>
+								<option value={600000}>10 minutes</option>
+								<option value={1800000}>30 minutes</option>
+								<option value={0}>Manual only</option>
+							</select>
+						</div>
+					{/if}
+
+					<div class="form-control">
+						<label class="cursor-pointer label">
+							<span class="label-text font-medium text-base">Refresh on Reconnect</span>
+							<input
+								type="checkbox"
+								bind:checked={localRefreshOnReconnect}
+								onchange={saveDataRefreshSettings}
+								class="toggle toggle-primary"
+							/>
+						</label>
+						<label class="label">
+							<span class="label-text-alt">
+								Automatically refresh when internet connection is restored
+							</span>
+						</label>
+					</div>
+
+					<div class="form-control">
+						<label class="cursor-pointer label">
+							<span class="label-text font-medium text-base">Pause When Inactive</span>
+							<input
+								type="checkbox"
+								bind:checked={localRefreshOnlyWhenVisible}
+								onchange={saveDataRefreshSettings}
+								class="toggle toggle-primary"
+							/>
+						</label>
+						<label class="label">
+							<span class="label-text-alt">
+								Pause auto-refresh when browser tab is not visible
+							</span>
+						</label>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- User Idle Monitoring Debug Section -->
+		{#if showIdleDebug}
+			<div class="card bg-base-100 shadow-xl">
+				<div class="card-body p-6">
+					<IdleMonitorDebug />
+				</div>
+			</div>
+		{/if}
+
+		<!-- Logout Section -->
+		<div class="card bg-base-100 shadow-xl">
+			<div class="card-body p-6">
+				<h2 class="card-title text-xl mb-6">Account</h2>
+
+				<button class="btn btn-error" onclick={confirmLogout}> Logout </button>
+			</div>
+		</div>
+	</div>
 </div>
 
 <!-- Logout Confirmation Modal -->
 {#if showLogoutConfirm}
-  <div class="modal modal-open">
-    <div class="modal-box">
-      <h3 class="font-bold text-lg">Confirm Logout</h3>
-      <p class="py-4">Are you sure you want to logout?</p>
-      <div class="modal-action">
-        <button class="btn btn-ghost" onclick={cancelLogout}>Cancel</button>
-        <button class="btn btn-error" onclick={logout}>Logout</button>
-      </div>
-    </div>
-  </div>
+	<div class="modal modal-open">
+		<div class="modal-box">
+			<h3 class="font-bold text-lg">Confirm Logout</h3>
+			<p class="py-4">Are you sure you want to logout?</p>
+			<div class="modal-action">
+				<button class="btn btn-ghost" onclick={cancelLogout}>Cancel</button>
+				<button class="btn btn-error" onclick={logout}>Logout</button>
+			</div>
+		</div>
+	</div>
 {/if}

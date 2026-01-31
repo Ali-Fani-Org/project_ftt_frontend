@@ -4,7 +4,14 @@
 	import { dev } from '$app/environment';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { authToken, user, theme, customThemes, backgroundAnimationEnabled, statsPanelEnabled } from '$lib/stores';
+	import {
+		authToken,
+		user,
+		theme,
+		customThemes,
+		backgroundAnimationEnabled,
+		statsPanelEnabled
+	} from '$lib/stores';
 	import { setAuthContext, getAuthContext } from '$lib/auth-context';
 	import TitleBar from '$lib/TitleBar.svelte';
 	import Sidebar from '$lib/Sidebar.svelte';
@@ -43,7 +50,11 @@
 
 			// Listen for theme change events from other windows
 			listen('theme-changed', (event) => {
-				const payload = event.payload as { theme: string; isCustom: boolean; customVars?: Record<string, string> };
+				const payload = event.payload as {
+					theme: string;
+					isCustom: boolean;
+					customVars?: Record<string, string>;
+				};
 				const { theme, isCustom, customVars } = payload;
 				if (isCustom && customVars) {
 					document.documentElement.setAttribute('data-theme', '');
@@ -60,7 +71,13 @@
 				const tauriStore = new LazyStore('auth.json');
 				const token = await tauriStore.get<string | null>('authToken');
 				if (token) authToken.set(token);
-				const userData = await tauriStore.get<{ id: number; username: string; first_name: string; last_name: string; profile_image: string | null } | null>('user');
+				const userData = await tauriStore.get<{
+					id: number;
+					username: string;
+					first_name: string;
+					last_name: string;
+					profile_image: string | null;
+				} | null>('user');
 				if (userData) user.set(userData);
 			} catch (e) {
 				logger.error('Failed to load from Tauri store', e);
@@ -78,11 +95,13 @@
 			// Preload timer page resources after initial render
 			const preloadTimer = () => {
 				import('$lib/api').then(({ projects, timeEntries }) => {
-					projects.list().catch(err => logger.warn('Failed to preload projects in layout:', err));
-					timeEntries.getCurrentActive().catch(err => logger.warn('Failed to preload active timer in layout:', err));
+					projects.list().catch((err) => logger.warn('Failed to preload projects in layout:', err));
+					timeEntries
+						.getCurrentActive()
+						.catch((err) => logger.warn('Failed to preload active timer in layout:', err));
 				});
 			};
-			
+
 			if ('requestIdleCallback' in window) {
 				requestIdleCallback(preloadTimer);
 			} else {
@@ -102,9 +121,15 @@
 
 			// Emit theme change event to other windows
 			if (isTauri) {
-				import('@tauri-apps/api/event').then(({ emit }) => {
-					emit('theme-changed', { theme: $theme, isCustom: $theme in $customThemes, customVars: $customThemes[$theme] });
-				}).catch(err => logger.error('Failed to emit theme change event:', err));
+				import('@tauri-apps/api/event')
+					.then(({ emit }) => {
+						emit('theme-changed', {
+							theme: $theme,
+							isCustom: $theme in $customThemes,
+							customVars: $customThemes[$theme]
+						});
+					})
+					.catch((err) => logger.error('Failed to emit theme change event:', err));
 			}
 		}
 	});
@@ -143,7 +168,17 @@
 
 	// Check if current page is login page
 	const isLoginPage = $derived($page.url.pathname === '/');
-	
+
+	// Helper function to format last online time
+	function formatLastOnline(date: Date | null): string {
+		if (!date) return 'never';
+		return date.toLocaleTimeString([], {
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit'
+		});
+	}
+
 	// Only show main layout for authenticated users
 	const showMainLayout = $derived($authToken && !isLoginPage);
 
@@ -228,27 +263,44 @@
 	<!-- Main authenticated layout using DaisyUI Drawer -->
 	<div class="drawer lg:drawer-open min-h-screen">
 		<!-- Drawer toggle input -->
-		<input 
-			id="app-drawer" 
-			type="checkbox" 
-			class="drawer-toggle" 
-			bind:this={drawerCheckbox}
-		/>
-		
+		<input id="app-drawer" type="checkbox" class="drawer-toggle" bind:this={drawerCheckbox} />
+
 		<!-- Drawer content (main content area with navbar) -->
 		<div class="drawer-content flex flex-col">
 			<Navbar />
-			
+
 			<!-- Offline Banner - positioned below navbar -->
 			{#if !$network.isOnline}
-				<div class="bg-error text-error-content px-4 py-2 text-center text-sm font-medium mt-16 lg:mt-0">
-					<svg class="w-4 h-4 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-					</svg>
-					No Internet Connection - Showing cached content. Some features may be unavailable.
+				<div class="alert alert-error px-4 py-3 shadow-lg sticky top-16 lg:top-0 z-40">
+					<div class="flex items-center justify-between w-full">
+						<div class="flex items-center gap-3">
+							<!-- Pulsing offline icon -->
+							<span class="relative flex h-3 w-3">
+								<span
+									class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"
+								></span>
+								<span class="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+							</span>
+
+							<div class="flex flex-col">
+								<span class="font-bold">No Internet Connection</span>
+								<span class="text-sm opacity-90">
+									Showing cached data from {formatLastOnline($network.lastOnline)}
+								</span>
+							</div>
+						</div>
+
+						<!-- Reconnection status -->
+						{#if $network.isChecking}
+							<div class="flex items-center gap-2">
+								<span class="loading loading-spinner loading-sm"></span>
+								<span class="text-sm">Reconnecting...</span>
+							</div>
+						{/if}
+					</div>
 				</div>
 			{/if}
-			
+
 			<!-- Main page content -->
 			<main class="flex-1 p-4 lg:p-6 overflow-y-auto">
 				{@render children()}
@@ -271,11 +323,11 @@
 		display: flex;
 		flex-direction: column;
 	}
-	
+
 	main {
 		flex: 1;
 	}
-	
+
 	/* Adjust for Tauri title bar */
 	:global(.with-titlebar) .drawer-content {
 		padding-top: 0;

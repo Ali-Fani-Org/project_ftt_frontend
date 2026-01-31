@@ -5,14 +5,14 @@
 	import { authToken, baseUrl } from '$lib/stores';
 	import { get } from 'svelte/store';
 	import confetti from 'canvas-confetti';
-    var scalar = 2;
+	var scalar = 2;
 
-    var clock = confetti.shapeFromText({ text: '🕰️', scalar });
-    var money = confetti.shapeFromText({ text: '💸', scalar });
-    var money2 = confetti.shapeFromText({ text: '💰', scalar });
-    var gold = confetti.shapeFromText({ text: '🪙', scalar });
-    var star = confetti.shapeFromText({ text: '🌟', scalar });
-    var fire = confetti.shapeFromText({ text: '🔥', scalar });
+	var clock = confetti.shapeFromText({ text: '🕰️', scalar });
+	var money = confetti.shapeFromText({ text: '💸', scalar });
+	var money2 = confetti.shapeFromText({ text: '💰', scalar });
+	var gold = confetti.shapeFromText({ text: '🪙', scalar });
+	var star = confetti.shapeFromText({ text: '🌟', scalar });
+	var fire = confetti.shapeFromText({ text: '🔥', scalar });
 
 	// Per-day data structure
 	interface HeatmapData {
@@ -25,7 +25,9 @@
 	let weeks = $state<(HeatmapData | null)[][]>([]);
 	let loading = $state(true);
 	let error = $state('');
-	let debugInfo = $state<{ start: string; end: string; total: number; inMonth: number } | null>(null);
+	let debugInfo = $state<{ start: string; end: string; total: number; inMonth: number } | null>(
+		null
+	);
 
 	function formatLocalDate(date: Date): string {
 		const year = date.getFullYear();
@@ -57,7 +59,8 @@
 
 			// Collect all entries across all pages using direct API calls
 			let allEntries: TimeEntry[] = [];
-			let currentPageUrl: string | null = `api/time_entries/?start_date_after_tz=${startDate}&start_date_before_tz=${endDate}&limit=200`;
+			let currentPageUrl: string | null =
+				`api/time_entries/?start_date_after_tz=${startDate}&start_date_before_tz=${endDate}&limit=200`;
 			let hasMorePages = true;
 
 			// Fetch all pages using pagination
@@ -75,11 +78,13 @@
 					fullUrl = `${baseUrlValue}${baseUrlValue.endsWith('/') ? '' : '/'}${currentPageUrl}`;
 				}
 
-				const response = await ky.get(fullUrl, {
-					headers: {
-						'Authorization': token ? `Token ${token}` : '',
-					}
-				}).json<PaginatedTimeEntries>();
+				const response = await ky
+					.get(fullUrl, {
+						headers: {
+							Authorization: token ? `Token ${token}` : ''
+						}
+					})
+					.json<PaginatedTimeEntries>();
 
 				allEntries = allEntries.concat(response.results);
 				currentPageUrl = response.next; // This will be null when no more pages are available
@@ -271,7 +276,7 @@
 	// 10-step brightness gradient anchored on the theme primary color - REVERSED for correct intensity mapping
 	const activityPalette = [
 		'bg-base-300/40', // no activity
-		'bg-primary/55',  // lowest activity
+		'bg-primary/55', // lowest activity
 		'bg-primary/60',
 		'bg-primary/65',
 		'bg-primary/70',
@@ -279,11 +284,11 @@
 		'bg-primary/80',
 		'bg-primary/85',
 		'bg-primary/90',
-		'bg-primary/95',  // highest activity
+		'bg-primary/95' // highest activity
 	];
 
 	const maxDaySeconds = $derived(
-		Math.max(0, ...days.map((d) => d.value).filter(v => !isNaN(v) && v !== null))
+		Math.max(0, ...days.map((d) => d.value).filter((v) => !isNaN(v) && v !== null))
 	);
 
 	function activityClass(seconds: number): string {
@@ -327,8 +332,8 @@
 				ticks: 30,
 				gravity: 0.9,
 				scalar: 2,
-				shapes: [clock,money,money2,gold,star,fire],
-				disableForReducedMotion: true,
+				shapes: [clock, money, money2, gold, star, fire],
+				disableForReducedMotion: true
 			});
 			confettiFiredFor.add(day.date);
 		}
@@ -359,7 +364,9 @@
 	{:else}
 		<div class="w-full flex flex-col items-center gap-4">
 			<!-- Month navigation -->
-			<div class="flex items-center justify-center gap-2 text-xs font-semibold text-base-content/80">
+			<div
+				class="flex items-center justify-center gap-2 text-xs font-semibold text-base-content/80"
+			>
 				<button
 					class="btn btn-ghost btn-xs"
 					onclick={goToPreviousMonth}
