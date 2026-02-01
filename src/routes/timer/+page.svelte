@@ -57,10 +57,16 @@
 	// Auto-refresh interval
 	let currentRefreshIntervalValue = $state<number>(30000);
 
+	// Projects refresh debounce state
+	let lastProjectsRefreshTime = $state<number>(0);
+	const PROJECTS_REFRESH_DEBOUNCE_MS = 5000; // 5 seconds minimum between refreshes
+
 	// LocalStorage key constants
 	const LAST_ACTIVE_ENTRY_KEY = 'timer_last_active_entry';
 	const LAST_TODAY_SESSIONS_KEY = 'timer_last_today_sessions';
 	const LAST_UPDATE_KEY = 'timer_last_update';
+	const LAST_PROJECTS_KEY = 'timer_last_projects';
+	const PROJECTS_CACHE_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
 
 	/**
 	 * Save data to localStorage with timestamp
@@ -124,6 +130,62 @@
 		return age <= ACTIVE_TIMER_VALIDITY_THRESHOLD;
 	}
 
+	/**
+	 * Refresh projects with smart caching and network awareness
+	 * - First: Try API request (bypassing API cache)
+	 * - On success: Update cache and show fresh data
+	 * - On error: Use cached data as fallback
+	 * - Non-blocking: Only shows loading state if no projects exist
+	 */
+	async function refreshProjects() {
+		// Only show loading state if we don't have any projects yet
+		const shouldShowLoading = projectsList.length === 0;
+		if (shouldShowLoading) {
+			loadingProjects = true;
+		}
+
+		try {
+			// First, try to fetch fresh data from API (bypassing cache)
+			const freshProjects = await projects.listFresh();
+			projectsList = freshProjects;
+			saveToLocalStorage(LAST_PROJECTS_KEY, freshProjects);
+			console.log('Projects refreshed from API at', new Date().toISOString());
+		} catch (err) {
+			console.error('Error refreshing projects from API:', err);
+			// On error, fallback to cached data
+			const cachedProjects = getLocalStorageData<Project[]>(
+				LAST_PROJECTS_KEY,
+				PROJECTS_CACHE_MAX_AGE
+			);
+			if (cachedProjects) {
+				projectsList = cachedProjects;
+				console.log('Using cached projects after API error');
+			} else if (shouldShowLoading) {
+				error = 'Failed to load projects';
+			}
+		} finally {
+			// Always reset loading state to prevent stuck spinner
+			loadingProjects = false;
+		}
+	}
+
+	/**
+	 * Handler for project dropdown open event
+	 * Triggers a refresh of projects when the dropdown is opened
+	 * Uses debouncing to prevent excessive refreshes
+	 */
+	function onProjectDropdownOpen() {
+		const now = Date.now();
+		// Only refresh if enough time has passed since last refresh
+		if (now - lastProjectsRefreshTime > PROJECTS_REFRESH_DEBOUNCE_MS) {
+			console.log('Project dropdown opened, refreshing projects...');
+			lastProjectsRefreshTime = now;
+			refreshProjects();
+		} else {
+			console.log('Skipping projects refresh - too soon since last refresh');
+		}
+	}
+
 	onMount(async () => {
 		console.log('Timer onMount started at', new Date().toISOString());
 		const token = get(authToken);
@@ -135,17 +197,18 @@
 		try {
 			// Load data based on whether we already have it from server
 			if (projectsList.length === 0) {
-				// We need to load projects
-				loadingProjects = true;
-				try {
-					projectsList = await projects.list();
-					console.log('Projects loaded at', new Date().toISOString());
-				} catch (err) {
-					console.error('Error loading projects:', err);
-					error = 'Failed to load projects';
-				} finally {
-					loadingProjects = false;
+				// Try cache first
+				const cachedProjects = getLocalStorageData<Project[]>(
+					LAST_PROJECTS_KEY,
+					PROJECTS_CACHE_MAX_AGE
+				);
+				if (cachedProjects) {
+					projectsList = cachedProjects;
+					console.log('Loaded projects from cache at', new Date().toISOString());
 				}
+
+				// Then fetch fresh data if online
+				await refreshProjects();
 			}
 
 			// Load active entry if not already loaded
@@ -366,6 +429,9 @@
 
 	async function refreshAllData() {
 		console.log('Auto-refreshing data at', new Date().toISOString());
+
+		// Refresh projects
+		await refreshProjects();
 
 		// Refresh active entry (silently uses cache on failure)
 		const activeResult = await timeEntries.getCurrentActive();
@@ -771,6 +837,7 @@
 										bind:value={selectedProject}
 										class="select select-bordered"
 										required
+										onfocus={onProjectDropdownOpen}
 									>
 										<option value={null}>Select a project</option>
 										{#each projectsList as project}

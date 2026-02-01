@@ -456,6 +456,16 @@ export const projects = {
 		const result = await api.get('api/projects/').json<Project[]>();
 		setCached(cacheKey, result, CACHE_TTL);
 		return result;
+	},
+
+	/**
+	 * Fetch projects without using cache (always makes fresh API request)
+	 */
+	listFresh: async () => {
+		const cacheKey = 'projects:all';
+		const result = await api.get('api/projects/').json<Project[]>();
+		setCached(cacheKey, result, CACHE_TTL);
+		return result;
 	}
 };
 
