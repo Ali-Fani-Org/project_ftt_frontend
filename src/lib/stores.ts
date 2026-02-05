@@ -137,6 +137,8 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 	let isInitialized = false;
 	// Keep track of subscribers while waiting for initialization
 	let pendingSubscribers: Array<(value: T) => void> = [];
+	// Track subscribers that unsubscribed before initialization completed
+	const cleanedUpBeforeInit = new WeakSet<(value: T) => void>();
 	// Promise that resolves when initialization is complete
 	let initResolve: (value: T) => void;
 	const initPromise = new Promise<T>((resolve) => {
@@ -152,8 +154,12 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 		// Resolve the initialization promise
 		initResolve(loadedValue);
 
-		// Notify any pending subscribers
-		pendingSubscribers.forEach((run) => run(loadedValue));
+		// Notify any pending subscribers (skip those that unsubscribed before init)
+		pendingSubscribers.forEach((run) => {
+			if (!cleanedUpBeforeInit.has(run)) {
+				run(loadedValue);
+			}
+		});
 		pendingSubscribers = [];
 
 		// Subscribe to changes and save to Tauri store
@@ -176,6 +182,8 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 				// Store subscriber to call once initialized
 				pendingSubscribers.push(run);
 				return () => {
+					// Mark as cleaned up to prevent calling after unsubscribe
+					cleanedUpBeforeInit.add(run);
 					// Cleanup: remove from pending subscribers
 					const index = pendingSubscribers.indexOf(run);
 					if (index > -1) {
@@ -188,26 +196,34 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 		},
 		set: (value: T) => {
 			if (!isInitialized) {
-				// Wait for initialization
-				const initInterval = setInterval(() => {
+				// Use queueMicrotask instead of polling for better performance
+				queueMicrotask(() => {
 					if (isInitialized) {
-						clearInterval(initInterval);
 						store.set(value);
+					} else {
+						// Fallback with single retry after short delay
+						setTimeout(() => {
+							if (isInitialized) store.set(value);
+						}, 100);
 					}
-				}, 10);
+				});
 				return;
 			}
 			store.set(value);
 		},
 		update: (fn: any) => {
 			if (!isInitialized) {
-				// Wait for initialization
-				const initInterval = setInterval(() => {
+				// Use queueMicrotask instead of polling for better performance
+				queueMicrotask(() => {
 					if (isInitialized) {
-						clearInterval(initInterval);
 						store.update(fn);
+					} else {
+						// Fallback with single retry after short delay
+						setTimeout(() => {
+							if (isInitialized) store.update(fn);
+						}, 100);
 					}
-				}, 10);
+				});
 				return;
 			}
 			store.update(fn);

@@ -162,49 +162,49 @@
 						})()
 					]);
 
-					if (projectsResult.status === 'fulfilled') {
-						projectsList = projectsResult.value;
-					}
-
-					if (todayEntriesResult.status === 'fulfilled') {
-						const data = todayEntriesResult.value;
-						todayEntries = Array.isArray(data) ? data : data?.results || [];
-						calculateStats(
-							todayEntries,
-							activeResult.status === 'fulfilled' ? activeResult.value : null
-						);
-					}
-
-					if (recentEntriesResult.status === 'fulfilled') {
-						const data = recentEntriesResult.value;
-						const entriesArray = Array.isArray(data) ? data : data?.results || [];
-						recentEntries = entriesArray.slice(0, 5);
-					}
-
-					if (activeResult.status === 'fulfilled') {
-						activeEntry = activeResult.value;
-					}
-				} else {
-					// Offline: try to load from cache
-					console.log('Dashboard: Offline mode, loading from cache');
-
-					// Load cached projects
-					const cachedProjects = await loadCachedProjects();
-					if (cachedProjects) {
-						projectsList = cachedProjects;
-					}
-
-					// Load cached time entries
-					const cachedEntries = await loadCachedTimeEntries(today);
-					if (cachedEntries) {
-						todayEntries = cachedEntries.todayEntries;
-						recentEntries = cachedEntries.recentEntries;
-						activeEntry = cachedEntries.activeEntry;
-						calculateStats(todayEntries, activeEntry);
-					}
+				if (projectsResult.status === 'fulfilled') {
+					projectsList = projectsResult.value;
 				}
 
-				loading = false;
+				if (todayEntriesResult.status === 'fulfilled') {
+					const data = todayEntriesResult.value;
+					todayEntries = Array.isArray(data) ? data : data?.results || [];
+					calculateStats(
+						todayEntries,
+						activeResult.status === 'fulfilled' ? activeResult.value : null
+					);
+				}
+
+				if (recentEntriesResult.status === 'fulfilled') {
+					const data = recentEntriesResult.value;
+					const entriesArray = Array.isArray(data) ? data : data?.results || [];
+					recentEntries = entriesArray.slice(0, 5);
+				}
+
+				if (activeResult.status === 'fulfilled') {
+					activeEntry = activeResult.value;
+				}
+			} else {
+				// Offline: try to load from cache
+				console.log('Dashboard: Offline mode, loading from cache');
+
+				// Load cached projects
+				const cachedProjects = await loadCachedProjects();
+				if (cachedProjects) {
+					projectsList = cachedProjects;
+				}
+
+				// Load cached time entries
+				const cachedEntries = await loadCachedTimeEntries(today);
+				if (cachedEntries) {
+					todayEntries = cachedEntries.todayEntries;
+					recentEntries = cachedEntries.recentEntries;
+					activeEntry = cachedEntries.activeEntry;
+					calculateStats(todayEntries, activeEntry);
+				}
+			}
+
+			loading = false;
 		} catch (err) {
 			console.error('Dashboard loading error:', err);
 			error = 'Failed to load dashboard data';

@@ -48,6 +48,7 @@ const createNetworkStore = () => {
 	let heartbeatIntervalId: number | null = null;
 	let checkInFlight: Promise<boolean> | null = null;
 	let cachedBaseUrl: string | null = null;
+	let isDestroyed = false;
 
 	const getConnectionInfo = () =>
 		(navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
@@ -107,37 +108,47 @@ const createNetworkStore = () => {
 		});
 	};
 
-	const runActiveCheck = async () => {
-		if (!browser) return;
+	const runActiveCheck = async (): Promise<boolean> => {
+		if (!browser || isDestroyed) return false;
 
 		update((status) => ({
 			...status,
 			isChecking: true
 		}));
 
-		if (!checkInFlight) {
-			checkInFlight = probeConnectivity().finally(() => {
-				checkInFlight = null;
-			});
-		}
+		try {
+			if (!checkInFlight) {
+				checkInFlight = probeConnectivity().finally(() => {
+					checkInFlight = null;
+				});
+			}
 
-		const ok = await checkInFlight;
-		if (ok) {
-			consecutiveFailures = 0;
-			scheduleHeartbeat(ONLINE_POLL_MS);
-			applyConnectivityResult(true);
-			return;
-		}
+			const ok = await checkInFlight;
+			
+			// Check if destroyed during async operation
+			if (isDestroyed) return false;
+			
+			if (ok) {
+				consecutiveFailures = 0;
+				scheduleHeartbeat(ONLINE_POLL_MS);
+				applyConnectivityResult(true);
+				return true;
+			}
 
-		consecutiveFailures += 1;
-		// If we were "online" but checks start failing (common when LAN is unplugged and
-		// navigator.onLine doesn't update), switch to fast polling to detect outage quickly.
-		if (consecutiveFailures === 1) {
-			scheduleHeartbeat(OFFLINE_POLL_MS);
-		}
+			consecutiveFailures += 1;
+			// If we were "online" but checks start failing (common when LAN is unplugged and
+			// navigator.onLine doesn't update), switch to fast polling to detect outage quickly.
+			if (consecutiveFailures === 1) {
+				scheduleHeartbeat(OFFLINE_POLL_MS);
+			}
 
-		if (consecutiveFailures >= FAILURES_BEFORE_OFFLINE) {
-			applyConnectivityResult(false);
+			if (consecutiveFailures >= FAILURES_BEFORE_OFFLINE) {
+				applyConnectivityResult(false);
+			}
+			return false;
+		} catch (error) {
+			console.warn('Network check failed:', error);
+			return false;
 		}
 	};
 
@@ -236,12 +247,19 @@ const createNetworkStore = () => {
 		}
 	};
 
+	// Destroy function for HMR/test scenarios
+	const destroy = () => {
+		isDestroyed = true;
+		cleanup();
+		checkInFlight = null;
+	};
+
 	// Cleanup on page unload
 	if (browser) {
 		window.addEventListener('beforeunload', cleanup);
 	}
 
-	return { subscribe, cleanup };
+	return { subscribe, cleanup, destroy };
 };
 
 // Create and export the network store

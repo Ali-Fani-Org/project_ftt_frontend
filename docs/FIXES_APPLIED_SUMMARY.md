@@ -504,7 +504,64 @@ After applying these fixes, test the following scenarios:
 
 ---
 
-**Document Version**: 1.0  
+---
+
+## 🆕 Additional Fixes (From Second Review Document)
+
+The following additional issues were identified and fixed based on a second code review document:
+
+### ✅ Issue: Session Storage Key Inconsistency
+**File**: `src/lib/auth-context.ts`  
+**Problem**: Inconsistent key names between localStorage (`authToken`, `user`) and sessionStorage (`auth_token`, `auth_user`)  
+**Fix**: Standardized all session storage keys to match localStorage naming convention
+
+### ✅ Issue: Race Condition in Network Status Check
+**File**: `src/lib/network.ts`  
+**Problem**: `runActiveCheck` had race conditions and didn't return a proper Promise  
+**Fix**: 
+- Added `isDestroyed` flag to prevent operations after cleanup
+- Made `runActiveCheck` return `Promise<boolean>`
+- Added proper error handling with try-catch
+- Added `destroy()` function for HMR/test scenarios
+
+### ✅ Issue: Memory Leak in Pending Subscribers
+**File**: `src/lib/stores.ts`  
+**Problem**: Subscribers that unsubscribed before initialization could still be called  
+**Fix**: Added `WeakSet` to track cleaned-up subscribers and skip them during notification
+
+### ✅ Issue: Polling Anti-Pattern in Store Operations
+**File**: `src/lib/stores.ts`  
+**Problem**: `set` and `update` methods used `setInterval` polling (every 10ms)  
+**Fix**: Replaced with `queueMicrotask` for better performance with single retry fallback
+
+### ✅ Issue: Unbounded Cache Growth in CalendarHeatmap
+**File**: `src/lib/CalendarHeatmap.svelte`  
+**Problem**: Heatmap cache could grow indefinitely  
+**Fix**: Added `MAX_CACHE_ENTRIES` limit (12 months) with automatic cleanup function
+
+### ✅ Issue: Dashboard Indentation/Logic Error
+**File**: `src/routes/dashboard/+page.svelte`  
+**Problem**: Incorrect indentation caused offline `else` block to be nested incorrectly  
+**Fix**: Corrected indentation so offline handling properly alternates with online handling
+
+---
+
+## 📊 Updated Summary Statistics
+
+| Category | Issues Found | Issues Fixed | Status |
+|----------|--------------|--------------|--------|
+| Original Review (Critical) | 4 | 4 | ✅ 100% |
+| Original Review (High) | 4 | 4 | ✅ 100% |
+| Original Review (Medium) | 4 | 3 | ⚠️ 75% |
+| Original Review (Low) | 3 | 1 | ⚠️ 33% |
+| Second Review (Critical) | 5 | 5 | ✅ 100% |
+| Second Review (High) | 3 | 3 | ✅ 100% |
+| Second Review (Medium) | 3 | 1 | ⚠️ 33% |
+| **Total** | **26** | **21** | **81%** |
+
+---
+
+**Document Version**: 2.0  
 **Last Updated**: January 2025  
 **Fixes Applied By**: Code Review System  
 **Status**: ✅ Ready for Testing

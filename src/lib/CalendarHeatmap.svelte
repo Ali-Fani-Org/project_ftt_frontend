@@ -31,6 +31,7 @@
 	);
 
 	const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+	const MAX_CACHE_ENTRIES = 12; // Keep only last 12 months of cache
 
 	/**
 	 * Get cache key for a specific month
@@ -40,10 +41,37 @@
 	}
 
 	/**
+	 * Cleanup old cache entries to prevent unbounded growth
+	 */
+	function cleanupOldCache(): void {
+		try {
+			const keys: string[] = [];
+			for (let i = 0; i < localStorage.length; i++) {
+				const key = localStorage.key(i);
+				if (key?.startsWith('chart_heatmap_')) {
+					keys.push(key);
+				}
+			}
+			// If we have more than MAX_CACHE_ENTRIES, remove the oldest ones
+			if (keys.length > MAX_CACHE_ENTRIES) {
+				// Sort by key (which includes year_month) to get chronological order
+				keys.sort();
+				const toRemove = keys.slice(0, keys.length - MAX_CACHE_ENTRIES);
+				toRemove.forEach((key) => localStorage.removeItem(key));
+			}
+		} catch (err) {
+			console.warn('Failed to cleanup old heatmap cache:', err);
+		}
+	}
+
+	/**
 	 * Save heatmap data to localStorage
 	 */
 	function saveToCache(year: number, month: number, data: HeatmapData[], weeks: (HeatmapData | null)[][]): void {
 		try {
+			// Cleanup old entries before saving new one
+			cleanupOldCache();
+			
 			const cacheData = {
 				data,
 				weeks,

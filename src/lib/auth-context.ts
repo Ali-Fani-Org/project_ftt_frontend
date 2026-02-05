@@ -60,7 +60,8 @@ export function createAuthStore(): AuthStore {
 						sessionStorage.setItem('session_type', 'persistent');
 					} else {
 						// For no "remember me", use sessionStorage instead
-						sessionStorage.setItem('auth_token', token);
+						// Use consistent key names across both storages
+						sessionStorage.setItem('authToken', token);
 						sessionStorage.setItem('session_type', 'session');
 
 						// Clear from localStorage but keep the token for now
@@ -75,8 +76,9 @@ export function createAuthStore(): AuthStore {
 				user.set(userData);
 
 				// Store user in sessionStorage if not remember me
+				// Use consistent key names across both storages
 				if (browser && !rememberMe) {
-					sessionStorage.setItem('auth_user', JSON.stringify(userData));
+					sessionStorage.setItem('user', JSON.stringify(userData));
 				}
 
 				update((state) => ({
@@ -240,8 +242,9 @@ export function createAuthStore(): AuthStore {
 		// Check authentication status with offline support
 		checkAuthOffline: async () => {
 			// 1. Check if we have cached auth token (both localStorage and sessionStorage)
-			const cachedToken = localStorage.getItem('authToken') || sessionStorage.getItem('auth_token');
-			const cachedUser = localStorage.getItem('user') || sessionStorage.getItem('auth_user');
+			// Use consistent key names across both storages
+			const cachedToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+			const cachedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
 
 			// 2. Check network status
 			const isOnline = get(network).isOnline;
@@ -260,8 +263,8 @@ export function createAuthStore(): AuthStore {
 						console.error('Failed to parse cached user data');
 						localStorage.removeItem('authToken');
 						localStorage.removeItem('user');
-						sessionStorage.removeItem('auth_token');
-						sessionStorage.removeItem('auth_user');
+						sessionStorage.removeItem('authToken');
+						sessionStorage.removeItem('user');
 						return false;
 					}
 
@@ -286,8 +289,8 @@ export function createAuthStore(): AuthStore {
 					// If cached data is corrupted, clear it from both storages
 					localStorage.removeItem('authToken');
 					localStorage.removeItem('user');
-					sessionStorage.removeItem('auth_token');
-					sessionStorage.removeItem('auth_user');
+					sessionStorage.removeItem('authToken');
+					sessionStorage.removeItem('user');
 					return false;
 				}
 			}
