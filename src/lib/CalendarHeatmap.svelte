@@ -277,6 +277,7 @@
 			loading = false;
 		} catch (err) {
 			console.error('Failed to load current month data:', err);
+			
 			// Try to load from cache as fallback
 			const year = baseDate.getFullYear();
 			const month = baseDate.getMonth();
@@ -289,7 +290,18 @@
 				loading = false;
 				return;
 			}
-			error = 'Failed to load activity data';
+			
+			// Provide specific error message based on error type
+			if (!$network.isOnline) {
+				error = 'No cached data available. Please connect to the internet.';
+			} else if ((err as any)?.response?.status === 401) {
+				error = 'Session expired. Please log in again.';
+			} else if ((err as any)?.response?.status >= 500) {
+				error = 'Server error. Please try again later.';
+			} else {
+				error = 'Failed to load activity data. Please try again.';
+			}
+			
 			loading = false;
 		}
 	}

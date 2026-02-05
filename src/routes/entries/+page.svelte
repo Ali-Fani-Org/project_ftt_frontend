@@ -24,8 +24,14 @@
 	let selectedSort = $state<string>('-start_time'); // default sort by start_time descending
 
 	// Cache constants
-	const CACHE_KEY = 'entries_list_cache';
 	const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+	/**
+	 * Get cache key based on current filters
+	 */
+	function getCacheKey(): string {
+		return `entries_list_cache_${selectedTimeRange}_${selectedSort}`;
+	}
 
 	/**
 	 * Save entries data to localStorage
@@ -35,9 +41,10 @@
 		try {
 			const cacheData = {
 				data: entriesData,
-				timestamp: Date.now()
+				timestamp: Date.now(),
+				filters: { timeRange: selectedTimeRange, sort: selectedSort }
 			};
-			localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+			localStorage.setItem(getCacheKey(), JSON.stringify(cacheData));
 		} catch (err) {
 			console.warn('Failed to save entries to cache:', err);
 		}
@@ -48,7 +55,7 @@
 	 */
 	function loadFromCache(): PaginatedTimeEntries | null {
 		try {
-			const cached = localStorage.getItem(CACHE_KEY);
+			const cached = localStorage.getItem(getCacheKey());
 			if (!cached) return null;
 
 			const parsed = JSON.parse(cached);
@@ -56,7 +63,7 @@
 
 			// Check if cache is still valid
 			if (age > CACHE_TTL) {
-				localStorage.removeItem(CACHE_KEY);
+				localStorage.removeItem(getCacheKey());
 				return null;
 			}
 

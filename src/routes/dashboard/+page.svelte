@@ -44,6 +44,34 @@
 		preloadingStates[path] = state;
 	}
 
+	// Clean up old dashboard caches (keep only last 7 days)
+	function cleanupOldDashboardCaches() {
+		try {
+			const today = new Date();
+			const keysToRemove: string[] = [];
+			
+			for (let i = 0; i < localStorage.length; i++) {
+				const key = localStorage.key(i);
+				if (key?.startsWith('dashboard_today_')) {
+					const dateStr = key.replace('dashboard_today_', '');
+					const cacheDate = new Date(dateStr);
+					const daysDiff = Math.floor((today.getTime() - cacheDate.getTime()) / (1000 * 60 * 60 * 24));
+					
+					if (daysDiff > 7) {
+						keysToRemove.push(key);
+					}
+				}
+			}
+			
+			keysToRemove.forEach(key => localStorage.removeItem(key));
+			if (keysToRemove.length > 0) {
+				console.log(`Cleaned up ${keysToRemove.length} old dashboard caches`);
+			}
+		} catch (err) {
+			console.warn('Failed to cleanup old dashboard caches:', err);
+		}
+	}
+
 	// Helper to load cached projects
 	async function loadCachedProjects(): Promise<Project[] | null> {
 		try {
@@ -97,6 +125,9 @@
 	// Note: Authentication is now handled globally in the layout
 	onMount(async () => {
 		try {
+			// Clean up old caches on mount
+			cleanupOldDashboardCaches();
+			
 			loading = true;
 			loadingFeatureFlags = true;
 

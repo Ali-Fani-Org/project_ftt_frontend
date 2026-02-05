@@ -248,22 +248,20 @@ export function createAuthStore(): AuthStore {
 
 			if (!isOnline && cachedToken && cachedUser) {
 				try {
-					// Parse the cached values - handle both JSON and plain string formats
-					let parsedToken: string;
+					// Parse the cached values
+					// Auth tokens are plain strings, no need to parse
+					const parsedToken = cachedToken;
+					
+					// User data is JSON, needs parsing
 					let parsedUser: any;
-					
-					try {
-						parsedToken = JSON.parse(cachedToken);
-					} catch {
-						parsedToken = cachedToken;
-					}
-					
 					try {
 						parsedUser = JSON.parse(cachedUser);
 					} catch {
 						console.error('Failed to parse cached user data');
 						localStorage.removeItem('authToken');
 						localStorage.removeItem('user');
+						sessionStorage.removeItem('auth_token');
+						sessionStorage.removeItem('auth_user');
 						return false;
 					}
 

@@ -172,11 +172,8 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 	// Return a proxy that will be properly initialized
 	return {
 		subscribe: (run: any) => {
-			// Call run immediately with initialValue to satisfy Svelte's get() function
-			run(initialValue);
-
 			if (!isInitialized) {
-				// If not initialized yet, add to pending subscribers
+				// Store subscriber to call once initialized
 				pendingSubscribers.push(run);
 				return () => {
 					// Cleanup: remove from pending subscribers
@@ -186,6 +183,7 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 					}
 				};
 			}
+			// Already initialized, subscribe normally
 			return store.subscribe(run);
 		},
 		set: (value: T) => {
@@ -308,16 +306,11 @@ export function globalLogout(autoLogout = false, customMessage?: string) {
 		for (const key of keysToPreserve) {
 			const storedValue = localStorage.getItem(key);
 			if (storedValue !== null) {
-				// Try to parse as JSON first, fallback to raw value for plain strings
-				if (storedValue.startsWith('{') || storedValue.startsWith('[') || storedValue.startsWith('"')) {
-					try {
-						preservedSettings[key] = JSON.parse(storedValue);
-					} catch (e) {
-						logger.warn(`Failed to parse setting ${key}, using raw value`);
-						preservedSettings[key] = storedValue;
-					}
-				} else {
-					// Plain string value (e.g., theme)
+				// Always try to parse as JSON first, fall back to raw value
+				try {
+					preservedSettings[key] = JSON.parse(storedValue);
+				} catch (e) {
+					// If parsing fails, it's a plain string value
 					preservedSettings[key] = storedValue;
 				}
 			}

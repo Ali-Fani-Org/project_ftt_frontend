@@ -14,6 +14,18 @@ export interface NetworkStatus {
 	retryCount: number; // NEW
 }
 
+// Shared function to create probe URL
+const createProbeUrl = (baseUrlValue: string): string | null => {
+	try {
+		const url = new URL(baseUrlValue);
+		url.searchParams.set('__ping', String(Date.now()));
+		return url.toString();
+	} catch (error) {
+		console.warn('Invalid base URL for network probe:', baseUrlValue);
+		return null;
+	}
+};
+
 // Create the network status store
 const createNetworkStore = () => {
 	const { subscribe, set, update } = writable<NetworkStatus>({
@@ -35,19 +47,17 @@ const createNetworkStore = () => {
 	let consecutiveFailures = 0;
 	let heartbeatIntervalId: number | null = null;
 	let checkInFlight: Promise<boolean> | null = null;
+	let cachedBaseUrl: string | null = null;
 
 	const getConnectionInfo = () =>
 		(navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
 
 	const getProbeUrl = () => {
-		const configuredBaseUrl = get(baseUrl);
-		try {
-			const url = new URL(configuredBaseUrl);
-			url.searchParams.set('__ping', String(Date.now()));
-			return url.toString();
-		} catch {
-			return null;
+		// Use cached value or get fresh value
+		if (!cachedBaseUrl) {
+			cachedBaseUrl = get(baseUrl);
 		}
+		return createProbeUrl(cachedBaseUrl);
 	};
 
 	const probeConnectivity = async (timeout: number = DEFAULT_TIMEOUT_MS): Promise<boolean> => {
@@ -212,9 +222,26 @@ const createNetworkStore = () => {
 
 		// Check initial status
 		checkInitialStatus();
+		
+		// Update cached value when baseUrl changes
+		baseUrl.subscribe((newUrl) => {
+			cachedBaseUrl = newUrl;
+		});
 	}
 
-	return { subscribe };
+	const cleanup = () => {
+		if (heartbeatIntervalId) {
+			clearInterval(heartbeatIntervalId);
+			heartbeatIntervalId = null;
+		}
+	};
+
+	// Cleanup on page unload
+	if (browser) {
+		window.addEventListener('beforeunload', cleanup);
+	}
+
+	return { subscribe, cleanup };
 };
 
 // Create and export the network store
@@ -228,16 +255,8 @@ export async function checkConnectivity(timeout: number = 3000): Promise<boolean
 	if (!browser) return false;
 	if (!navigator.onLine) return false;
 
-	const probeUrl = (() => {
-		const configuredBaseUrl = get(baseUrl);
-		try {
-			const url = new URL(configuredBaseUrl);
-			url.searchParams.set('__ping', String(Date.now()));
-			return url.toString();
-		} catch {
-			return null;
-		}
-	})();
+	const configuredBaseUrl = get(baseUrl);
+	const probeUrl = createProbeUrl(configuredBaseUrl);
 
 	if (!probeUrl) return navigator.onLine;
 

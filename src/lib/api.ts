@@ -524,13 +524,13 @@ export const timeEntries = {
 			const cached = getCached(cacheKey);
 			if (cached) return cached;
 			console.warn(`No cached data available for ${cacheKey} while offline`);
-			// Return empty paginated result instead of null
-			return { results: [], count: 0, next: null, previous: null };
+			// Return empty paginated result instead of null (no count field)
+			return { results: [], next: null, previous: null };
 		}
 
 		const result = await fetchWithCache(cacheKey, () => api.get(url).json<PaginatedTimeEntries>());
-		// Return cached data or empty result instead of null
-		return result.data || { results: [], count: 0, next: null, previous: null };
+		// Return cached data or empty result instead of null (no count field)
+		return result.data || { results: [], next: null, previous: null };
 	},
 	start: async (data: {
 		title: string;

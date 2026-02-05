@@ -231,14 +231,28 @@
 				// Create the API request with proper authentication
 				const token = get(authToken);
 				const baseUrlValue = String(get(baseUrl));
+				
+				// Validate baseUrl
+				if (!baseUrlValue) {
+					throw new Error('Base URL is not configured');
+				}
+				
 				// Construct full URL - if currentPageUrl is a relative path, add baseUrl with trailing slash
 				let fullUrl;
-				if (currentPageUrl.startsWith('http')) {
-					// If currentPageUrl is already a full URL (from next/previous), use as-is
-					fullUrl = currentPageUrl;
-				} else {
-					// If currentPageUrl is a relative path, prepend the base URL with trailing slash
-					fullUrl = `${baseUrlValue}${baseUrlValue.endsWith('/') ? '' : '/'}${currentPageUrl}`;
+				try {
+					if (currentPageUrl.startsWith('http')) {
+						fullUrl = currentPageUrl;
+					} else if (currentPageUrl.startsWith('/')) {
+						fullUrl = `${baseUrlValue}${currentPageUrl}`;
+					} else {
+						fullUrl = `${baseUrlValue}${baseUrlValue.endsWith('/') ? '' : '/'}${currentPageUrl}`;
+					}
+					
+					// Validate URL format
+					new URL(fullUrl);
+				} catch (err) {
+					console.error('Invalid URL construction:', { baseUrlValue, currentPageUrl });
+					throw new Error('Failed to construct valid API URL');
 				}
 
 				const response: PaginatedTimeEntries = await ky
