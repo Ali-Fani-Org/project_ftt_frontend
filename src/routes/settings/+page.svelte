@@ -22,6 +22,8 @@
 	import { refreshController } from '$lib/refreshController';
 	import { network } from '$lib/network';
 	import DataFreshnessIndicator from '$lib/DataFreshnessIndicator.svelte';
+	import { check } from '@tauri-apps/plugin-updater';
+	import { relaunch } from '@tauri-apps/plugin-process';
 
 	import { onMount } from 'svelte';
 	import { getVersion } from '@tauri-apps/api/app';
@@ -46,8 +48,15 @@
 	let appVersion = $state('');
 	let showLogoutConfirm = $state(false);
 	let showIdleDebug = $state(false);
+	let isTauriApp = $state(false);
+	let updateStatus = $state<'idle' | 'checking' | 'available' | 'up-to-date' | 'downloading' | 'installed' | 'error'>('idle');
+	let updateError = $state('');
+	let updateInfo = $state<{ version?: string; date?: string; notes?: string } | null>(null);
+	let updateProgress = $state<{ downloaded: number; total?: number } | null>(null);
+	let pendingUpdate = $state<any | null>(null);
 
 	onMount(async () => {
+		isTauriApp = typeof window !== 'undefined' && !!(window as any).__TAURI__;
 		// Try to get app version, but don't fail if offline
 		try {
 			appVersion = await getVersion();
@@ -70,6 +79,100 @@
 			showIdleDebug = false;
 		}
 	});
+
+	function updateStatusLabel() {
+		switch (updateStatus) {
+			case 'checking':
+				return 'Checking for updates…';
+			case 'available':
+				return `Update available${updateInfo?.version ? `: v${updateInfo.version}` : ''}`;
+			case 'up-to-date':
+				return 'You are up to date.';
+			case 'downloading':
+				return 'Downloading update…';
+			case 'installed':
+				return 'Update installed. Relaunching…';
+			case 'error':
+				return updateError || 'Update check failed.';
+			default:
+				return 'Check for updates.';
+		}
+	}
+
+	async function checkForUpdates() {
+		updateError = '';
+		updateInfo = null;
+		updateProgress = null;
+		pendingUpdate = null;
+
+		if (!isTauriApp) {
+			updateStatus = 'error';
+			updateError = 'Updates are only available in the desktop app.';
+			return;
+		}
+
+		if (!$network.isOnline) {
+			updateStatus = 'error';
+			updateError = 'You are offline. Connect to the internet to check for updates.';
+			return;
+		}
+
+		updateStatus = 'checking';
+		try {
+			const update = await check();
+			const available = update && 'available' in update ? update.available : !!update;
+			if (!available) {
+				updateStatus = 'up-to-date';
+				return;
+			}
+
+			pendingUpdate = update;
+			updateInfo = {
+				version: update.version,
+				date: update.date,
+				notes: update.body
+			};
+			updateStatus = 'available';
+		} catch (error) {
+			updateStatus = 'error';
+			updateError = error instanceof Error ? error.message : 'Update check failed.';
+		}
+	}
+
+	async function downloadAndInstallUpdate() {
+		if (!pendingUpdate) return;
+		updateStatus = 'downloading';
+		updateProgress = { downloaded: 0, total: undefined };
+
+		try {
+			await pendingUpdate.downloadAndInstall((event: any) => {
+				switch (event.event) {
+					case 'Started':
+						updateProgress = { downloaded: 0, total: event.data.contentLength };
+						break;
+					case 'Progress':
+						updateProgress = {
+							downloaded: (updateProgress?.downloaded ?? 0) + event.data.chunkLength,
+							total: updateProgress?.total
+						};
+						break;
+					case 'Finished':
+						updateProgress = {
+							downloaded: updateProgress?.total ?? updateProgress?.downloaded ?? 0,
+							total: updateProgress?.total
+						};
+						break;
+					default:
+						break;
+				}
+			});
+			updateStatus = 'installed';
+			await relaunch();
+		} catch (error) {
+			updateStatus = 'error';
+			updateError = error instanceof Error ? error.message : 'Update install failed.';
+		}
+	}
 
 	const builtInThemes = [
 		'light',
@@ -365,6 +468,47 @@
 					<p class="text-xs text-base-content/70 ml-1">
 						When enabled, a small FPS/MB panel appears in the top-left.
 					</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Updates -->
+		<div class="card bg-base-100 shadow-xl">
+			<div class="card-body p-6">
+				<h2 class="card-title text-xl mb-6">Updates</h2>
+				<div class="space-y-3">
+					<p class="text-sm text-base-content/70">{updateStatusLabel()}</p>
+					{#if updateInfo?.notes}
+						<div class="text-sm text-base-content/80 whitespace-pre-wrap">{updateInfo.notes}</div>
+					{/if}
+					{#if updateProgress?.total}
+						<progress
+							class="progress progress-primary w-full"
+							value={updateProgress.downloaded}
+							max={updateProgress.total}
+						></progress>
+						<p class="text-xs text-base-content/60">
+							Downloaded {Math.round(updateProgress.downloaded / 1024 / 1024)} MB of
+							{Math.round(updateProgress.total / 1024 / 1024)} MB
+						</p>
+					{/if}
+					<div class="flex flex-wrap items-center gap-2">
+						<button
+							class="btn btn-primary"
+							onclick={checkForUpdates}
+							disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+						>
+							{updateStatus === 'checking' ? 'Checking…' : 'Check for updates'}
+						</button>
+						{#if updateStatus === 'available'}
+							<button class="btn btn-accent" onclick={downloadAndInstallUpdate}>
+								Download & Install
+							</button>
+						{/if}
+					</div>
+					{#if updateStatus === 'error'}
+						<p class="text-sm text-error">{updateError}</p>
+					{/if}
 				</div>
 			</div>
 		</div>
