@@ -117,6 +117,7 @@ function scheduleLogBatch() {
 					'authToken',
 					'user',
 					'baseUrl',
+					'baseUrlHistory',
 					'theme',
 					'customThemes',
 					'minimizeToTray',
@@ -243,6 +244,15 @@ export const user = createPersistentStore<{
 } | null>('user', null);
 
 export const baseUrl = createPersistentStore<string>('baseUrl', 'https://hr.trinitycyberian.com');
+
+export type BaseUrlHistoryEntry = {
+	url: string;
+	lastPingMs: number | null;
+	lastCheckedAt: number | null;
+	ok: boolean | null;
+};
+
+export const baseUrlHistory = createPersistentStore<BaseUrlHistoryEntry[]>('baseUrlHistory', []);
 export const theme = createPersistentStore<string>('theme', 'light');
 export const customThemes = createPersistentStore<Record<string, Record<string, string>>>(
 	'customThemes',
@@ -308,6 +318,7 @@ export function globalLogout(autoLogout = false, customMessage?: string) {
 		// Get all keys before clearing to preserve settings
 		const keysToPreserve = [
 			'baseUrl',
+			'baseUrlHistory',
 			'theme',
 			'customThemes',
 			'minimizeToTray',

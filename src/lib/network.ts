@@ -26,6 +26,55 @@ const createProbeUrl = (baseUrlValue: string): string | null => {
 	}
 };
 
+export type BaseUrlPingResult = {
+	ok: boolean;
+	pingMs: number | null;
+	checkedAt: number;
+	error: string | null;
+};
+
+export async function pingBaseUrl(
+	baseUrlValue: string,
+	options?: { timeoutMs?: number }
+): Promise<BaseUrlPingResult> {
+	const checkedAt = Date.now();
+	const timeoutMs = options?.timeoutMs ?? 3000;
+
+	if (!browser) {
+		return { ok: false, pingMs: null, checkedAt, error: 'Not in browser environment' };
+	}
+
+	if (!navigator.onLine) {
+		return { ok: false, pingMs: null, checkedAt, error: 'Offline' };
+	}
+
+	const probeUrl = createProbeUrl(baseUrlValue);
+	if (!probeUrl) {
+		return { ok: false, pingMs: null, checkedAt, error: 'Invalid URL' };
+	}
+
+	const controller = new AbortController();
+	const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+	const start = performance.now();
+	try {
+		await fetch(probeUrl, {
+			method: 'GET',
+			mode: 'no-cors',
+			cache: 'no-store',
+			signal: controller.signal
+		});
+
+		const pingMs = Math.max(0, Math.round(performance.now() - start));
+		return { ok: true, pingMs, checkedAt, error: null };
+	} catch (e: any) {
+		const pingMs = Math.max(0, Math.round(performance.now() - start));
+		const error = e?.name === 'AbortError' ? 'Timeout' : (e?.message ?? 'Network error');
+		return { ok: false, pingMs: null, checkedAt, error: `${error}${Number.isFinite(pingMs) ? ` (${pingMs}ms)` : ''}` };
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 // Create the network status store
 const createNetworkStore = () => {
 	const { subscribe, set, update } = writable<NetworkStatus>({
