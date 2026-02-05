@@ -44,6 +44,56 @@
 		preloadingStates[path] = state;
 	}
 
+	// Helper to load cached projects
+	async function loadCachedProjects(): Promise<Project[] | null> {
+		try {
+			// Try localStorage as fallback (saved by refreshAllData)
+			const stored = localStorage.getItem('dashboard_projects');
+			if (stored) {
+				const parsed = JSON.parse(stored);
+				return parsed || null;
+			}
+			// Also try the timer page's projects cache
+			const timerProjects = localStorage.getItem('timer_last_projects');
+			if (timerProjects) {
+				const parsed = JSON.parse(timerProjects);
+				return parsed.data || null;
+			}
+		} catch (err) {
+			console.warn('Failed to load cached projects:', err);
+		}
+		return null;
+	}
+
+	// Helper to load cached time entries
+	async function loadCachedTimeEntries(today: string): Promise<{
+		todayEntries: TimeEntry[];
+		recentEntries: TimeEntry[];
+		activeEntry: TimeEntry | null;
+	} | null> {
+		try {
+			// Try localStorage cache
+			const todayKey = `dashboard_today_${today}`;
+			const recentKey = 'dashboard_recent_entries';
+			const activeKey = 'dashboard_active_entry';
+
+			const todayStored = localStorage.getItem(todayKey);
+			const recentStored = localStorage.getItem(recentKey);
+			const activeStored = localStorage.getItem(activeKey);
+
+			if (todayStored || recentStored) {
+				return {
+					todayEntries: todayStored ? JSON.parse(todayStored) : [],
+					recentEntries: recentStored ? JSON.parse(recentStored) : [],
+					activeEntry: activeStored ? JSON.parse(activeStored) : null
+				};
+			}
+		} catch (err) {
+			console.warn('Failed to load cached time entries:', err);
+		}
+		return null;
+	}
+
 	// Note: Authentication is now handled globally in the layout
 	onMount(async () => {
 		try {
@@ -55,50 +105,75 @@
 			showProcessMonitorButton = await featureFlagsStore.isFeatureEnabled('process-monitor-ui');
 			loadingFeatureFlags = false;
 
+			// Check if online before making API calls
+			const isOnline = $network.isOnline;
+
 			// Load projects, today's entries, and active entry in parallel
 			const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-			const [projectsResult, todayEntriesResult, recentEntriesResult, activeResult] =
-				await Promise.allSettled([
-					projects.list(),
-					timeEntries.listWithFilters({
-						start_date_after_tz: today,
-						start_date_before_tz: today,
-						limit: 50 // Reasonable limit for today's entries
-					}),
-					timeEntries.list(), // For recent entries
-					(async () => {
-						try {
-							return await timeEntries.getCurrentActive();
-						} catch {
-							return null;
-						}
-					})()
-				]);
 
-			if (projectsResult.status === 'fulfilled') {
-				projectsList = projectsResult.value;
-			}
+			if (isOnline) {
+				// Online: fetch from API
+				const [projectsResult, todayEntriesResult, recentEntriesResult, activeResult] =
+					await Promise.allSettled([
+						projects.list(),
+						timeEntries.listWithFilters({
+							start_date_after_tz: today,
+							start_date_before_tz: today,
+							limit: 50
+						}),
+						timeEntries.list(),
+						(async () => {
+							try {
+								return await timeEntries.getCurrentActive();
+							} catch {
+								return null;
+							}
+						})()
+					]);
 
-			if (todayEntriesResult.status === 'fulfilled') {
-				const data = todayEntriesResult.value;
-				todayEntries = Array.isArray(data) ? data : data?.results || []; // These are already filtered by the API to be today's entries
-				calculateStats(
-					todayEntries,
-					activeResult.status === 'fulfilled' ? activeResult.value : null
-				);
-			}
+					if (projectsResult.status === 'fulfilled') {
+						projectsList = projectsResult.value;
+					}
 
-			if (recentEntriesResult.status === 'fulfilled') {
-				const data = recentEntriesResult.value;
-				const entriesArray = Array.isArray(data) ? data : data?.results || [];
-				recentEntries = entriesArray.slice(0, 5); // Get last 5 entries
-			}
+					if (todayEntriesResult.status === 'fulfilled') {
+						const data = todayEntriesResult.value;
+						todayEntries = Array.isArray(data) ? data : data?.results || [];
+						calculateStats(
+							todayEntries,
+							activeResult.status === 'fulfilled' ? activeResult.value : null
+						);
+					}
 
-			if (activeResult.status === 'fulfilled') {
-				activeEntry = activeResult.value;
-			}
+					if (recentEntriesResult.status === 'fulfilled') {
+						const data = recentEntriesResult.value;
+						const entriesArray = Array.isArray(data) ? data : data?.results || [];
+						recentEntries = entriesArray.slice(0, 5);
+					}
 
-			loading = false;
+					if (activeResult.status === 'fulfilled') {
+						activeEntry = activeResult.value;
+					}
+				} else {
+					// Offline: try to load from cache
+					console.log('Dashboard: Offline mode, loading from cache');
+
+					// Load cached projects
+					const cachedProjects = await loadCachedProjects();
+					if (cachedProjects) {
+						projectsList = cachedProjects;
+					}
+
+					// Load cached time entries
+					const cachedEntries = await loadCachedTimeEntries(today);
+					if (cachedEntries) {
+						todayEntries = cachedEntries.todayEntries;
+						recentEntries = cachedEntries.recentEntries;
+						activeEntry = cachedEntries.activeEntry;
+						calculateStats(todayEntries, activeEntry);
+					}
+				}
+
+				loading = false;
 		} catch (err) {
 			console.error('Dashboard loading error:', err);
 			error = 'Failed to load dashboard data';
@@ -226,6 +301,12 @@
 
 	async function refreshAllData() {
 		try {
+			// Skip refresh if offline
+			if (!$network.isOnline) {
+				console.log('Dashboard: Skipping refresh while offline');
+				return;
+			}
+
 			// Load projects, today's entries, and active entry in parallel
 			const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
 			const [projectsResult, todayEntriesResult, recentEntriesResult, activeResult] =
@@ -248,31 +329,51 @@
 
 			if (projectsResult.status === 'fulfilled') {
 				projectsList = projectsResult.value;
+				// Save to localStorage for offline use
+				try {
+					localStorage.setItem('dashboard_projects', JSON.stringify(projectsResult.value));
+				} catch (e) {}
 			}
 
 			if (todayEntriesResult.status === 'fulfilled') {
 				const data = todayEntriesResult.value;
-				todayEntries = Array.isArray(data) ? data : data?.results || []; // These are already filtered by the API to be today's entries
+				todayEntries = Array.isArray(data) ? data : data?.results || [];
 				calculateStats(
 					todayEntries,
 					activeResult.status === 'fulfilled' ? activeResult.value : null
 				);
+				// Save to localStorage for offline use
+				try {
+					localStorage.setItem(`dashboard_today_${today}`, JSON.stringify(todayEntries));
+				} catch (e) {}
 			}
 
 			if (recentEntriesResult.status === 'fulfilled') {
 				const data = recentEntriesResult.value;
 				const entriesArray = Array.isArray(data) ? data : data?.results || [];
-				recentEntries = entriesArray.slice(0, 5); // Get last 5 entries
+				recentEntries = entriesArray.slice(0, 5);
+				// Save to localStorage for offline use
+				try {
+					localStorage.setItem('dashboard_recent_entries', JSON.stringify(recentEntries));
+				} catch (e) {}
 			}
 
 			if (activeResult.status === 'fulfilled') {
 				activeEntry = activeResult.value;
+				// Save to localStorage for offline use
+				try {
+					localStorage.setItem('dashboard_active_entry', JSON.stringify(activeEntry));
+				} catch (e) {}
 			}
 
-			// Update data freshness manager
-			import('$lib/dataFreshness').then(({ dataFreshnessManager }) => {
-				dataFreshnessManager.updateTimestamp('global');
-			});
+			// Update data freshness manager - only when online
+			if (typeof window !== 'undefined') {
+				import('$lib/dataFreshness').then(({ dataFreshnessManager }) => {
+					dataFreshnessManager.updateTimestamp('global');
+				}).catch(() => {
+					// Ignore import errors when offline
+				});
+			}
 		} catch (err) {
 			console.error('Dashboard refresh error:', err);
 			error = 'Failed to refresh dashboard data';

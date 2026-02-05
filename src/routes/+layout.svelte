@@ -21,6 +21,7 @@
 	import WaveBackground from '$lib/WaveBackground.svelte';
 	import logger from '$lib/logger';
 	import { network } from '$lib/network';
+	import ToastContainer from '$lib/ToastContainer.svelte';
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -65,30 +66,22 @@
 					document.documentElement.setAttribute('data-theme', theme);
 				}
 			});
-
-			try {
-				const { LazyStore } = await import('@tauri-apps/plugin-store');
-				const tauriStore = new LazyStore('auth.json');
-				const token = await tauriStore.get<string | null>('authToken');
-				if (token) authToken.set(token);
-				const userData = await tauriStore.get<{
-					id: number;
-					username: string;
-					first_name: string;
-					last_name: string;
-					profile_image: string | null;
-				} | null>('user');
-				if (userData) user.set(userData);
-			} catch (e) {
-				logger.error('Failed to load from Tauri store', e);
-			}
 		} catch {
 			isTauri = false;
 		}
 
 		// Initialize authentication state
 		authStore.initialize();
+
+		// Wait for persistent stores to finish loading before marking auth as initialized
+		const [tokenValue, userValue] = await Promise.all([
+			authToken.initialized,
+			user.initialized
+		]);
+		logger.log('[AuthInit] Stores loaded:', { token: tokenValue ? 'exists' : 'null', user: userValue ? 'exists' : 'null' });
+
 		authInitialized = true;
+		logger.log('[AuthInit] authInitialized set to true');
 
 		// Preload commonly accessed data after initial authentication is set up
 		if ($authToken) {
@@ -136,11 +129,19 @@
 
 	// Authentication guard - redirect to login if not authenticated
 	$effect(() => {
-		if (authInitialized && $authToken === null) {
+		if (!authInitialized) return;
+
+		if ($authToken === null) {
 			// Only redirect if we're not already on the login page
 			if ($page.url.pathname !== '/') {
 				goto('/');
 			}
+			return;
+		}
+
+		// If authenticated and still on login page, go to dashboard
+		if ($page.url.pathname === '/') {
+			goto('/dashboard');
 		}
 	});
 
@@ -151,7 +152,7 @@
 			document.documentElement.setAttribute('data-theme', '');
 			const vars = $customThemes[$theme];
 			for (const [key, value] of Object.entries(vars)) {
-				document.documentElement.style.setProperty(key, value);
+				document.documentElement.style.setProperty(key, String(value));
 			}
 			// Keep theme name in storage so theme-change remembers selection
 			if (typeof localStorage !== 'undefined') {
@@ -316,6 +317,9 @@
 		{@render children()}
 	</div>
 {/if}
+
+<!-- Toast notifications - visible on all pages -->
+<ToastContainer />
 
 <style>
 	/* Custom styles for better spacing */

@@ -8,7 +8,7 @@ import logger from '$lib/logger';
 export const DATA_STALE_THRESHOLD = 24 * 60 * 60 * 1000; // 1 day
 
 // Data outdated threshold (milliseconds) - shorter than stale, equals refresh interval
-export const DATA_OUTDATED_THRESHOLD = 30000; // 30 seconds (same as refreshInterval default)
+export const DATA_OUTDATED_THRESHOLD = 5 * 60 * 1000; // 5 minutes (increased from 30s to reduce toast spam)
 
 // Active timer validity threshold (milliseconds)
 // How long to show cached active timer when offline
@@ -42,7 +42,7 @@ async function getTauriSetting<T>(key: string, initialValue: T): Promise<T> {
 		const store = await initializeTauriSettingsStore();
 		if (store) {
 			const value = await store.get(key);
-			if (value !== undefined && value !== null) {
+			if (value !== null && value !== undefined) {
 				logger.debug(`✅ Loaded setting ${key} from Tauri store:`, value);
 				return value as T;
 			}
@@ -135,12 +135,26 @@ function scheduleLogBatch() {
 function createPersistentStore<T>(key: string, initialValue: T) {
 	let store: any;
 	let isInitialized = false;
+	// Keep track of subscribers while waiting for initialization
+	let pendingSubscribers: Array<(value: T) => void> = [];
+	// Promise that resolves when initialization is complete
+	let initResolve: (value: T) => void;
+	const initPromise = new Promise<T>((resolve) => {
+		initResolve = resolve;
+	});
 
 	// Create the store with proper initialization
 	const createStore = async () => {
 		const loadedValue = await getTauriSetting(key, initialValue);
 		store = writable<T>(loadedValue);
 		isInitialized = true;
+
+		// Resolve the initialization promise
+		initResolve(loadedValue);
+
+		// Notify any pending subscribers
+		pendingSubscribers.forEach((run) => run(loadedValue));
+		pendingSubscribers = [];
 
 		// Subscribe to changes and save to Tauri store
 		store.subscribe((value: T) => {
@@ -158,15 +172,19 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 	// Return a proxy that will be properly initialized
 	return {
 		subscribe: (run: any) => {
+			// Call run immediately with initialValue to satisfy Svelte's get() function
+			run(initialValue);
+
 			if (!isInitialized) {
-				// If not initialized yet, wait for it
-				const initInterval = setInterval(() => {
-					if (isInitialized) {
-						clearInterval(initInterval);
-						return store.subscribe(run);
+				// If not initialized yet, add to pending subscribers
+				pendingSubscribers.push(run);
+				return () => {
+					// Cleanup: remove from pending subscribers
+					const index = pendingSubscribers.indexOf(run);
+					if (index > -1) {
+						pendingSubscribers.splice(index, 1);
 					}
-				}, 10);
-				return () => clearInterval(initInterval);
+				};
 			}
 			return store.subscribe(run);
 		},
@@ -195,7 +213,9 @@ function createPersistentStore<T>(key: string, initialValue: T) {
 				return;
 			}
 			store.update(fn);
-		}
+		},
+		// Promise that resolves when the store is initialized with the loaded value
+		initialized: initPromise
 	};
 }
 
@@ -288,10 +308,17 @@ export function globalLogout(autoLogout = false, customMessage?: string) {
 		for (const key of keysToPreserve) {
 			const storedValue = localStorage.getItem(key);
 			if (storedValue !== null) {
-				try {
-					preservedSettings[key] = JSON.parse(storedValue);
-				} catch (e) {
-					logger.warn(`Failed to parse setting ${key}:`, e);
+				// Try to parse as JSON first, fallback to raw value for plain strings
+				if (storedValue.startsWith('{') || storedValue.startsWith('[') || storedValue.startsWith('"')) {
+					try {
+						preservedSettings[key] = JSON.parse(storedValue);
+					} catch (e) {
+						logger.warn(`Failed to parse setting ${key}, using raw value`);
+						preservedSettings[key] = storedValue;
+					}
+				} else {
+					// Plain string value (e.g., theme)
+					preservedSettings[key] = storedValue;
 				}
 			}
 		}

@@ -5,11 +5,14 @@
 	import { timeEntries, type PaginatedTimeEntries, type TimeEntry } from '$lib/api';
 	import { get } from 'svelte/store';
 	import TimeEntryDetailModal from '$lib/TimeEntryDetailModal.svelte';
+	import { network } from '$lib/network';
+	import DataFreshnessIndicator from '$lib/DataFreshnessIndicator.svelte';
 
 	let data = $state<PaginatedTimeEntries | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 	let selectedEntry = $state<TimeEntry | null>(null);
+	let isShowingCachedData = $state(false);
 
 	// Pagination state
 	let currentCursor = $state<string | null>(null);
@@ -19,6 +22,50 @@
 	// Filter and sort state
 	let selectedTimeRange = $state<string>('all'); // 'all', 'last7days', 'lastweek', 'thisweek', 'lastmonth', 'thismonth', 'thisyear', 'lastyear'
 	let selectedSort = $state<string>('-start_time'); // default sort by start_time descending
+
+	// Cache constants
+	const CACHE_KEY = 'entries_list_cache';
+	const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+	/**
+	 * Save entries data to localStorage
+	 */
+	function saveToCache(entriesData: PaginatedTimeEntries | null): void {
+		if (!entriesData) return;
+		try {
+			const cacheData = {
+				data: entriesData,
+				timestamp: Date.now()
+			};
+			localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+		} catch (err) {
+			console.warn('Failed to save entries to cache:', err);
+		}
+	}
+
+	/**
+	 * Load entries data from localStorage
+	 */
+	function loadFromCache(): PaginatedTimeEntries | null {
+		try {
+			const cached = localStorage.getItem(CACHE_KEY);
+			if (!cached) return null;
+
+			const parsed = JSON.parse(cached);
+			const age = Date.now() - parsed.timestamp;
+
+			// Check if cache is still valid
+			if (age > CACHE_TTL) {
+				localStorage.removeItem(CACHE_KEY);
+				return null;
+			}
+
+			return parsed.data || null;
+		} catch (err) {
+			console.warn('Failed to load entries from cache:', err);
+			return null;
+		}
+	}
 
 	onMount(async () => {
 		const token = get(authToken);
@@ -166,6 +213,25 @@
 		try {
 			loading = true;
 			error = '';
+			isShowingCachedData = false;
+
+			// Check if offline
+			if (!$network.isOnline) {
+				const cachedData = loadFromCache();
+				if (cachedData) {
+					data = cachedData;
+					currentCursor = cursor || null;
+					hasNext = !!cachedData.next;
+					hasPrevious = !!cachedData.previous;
+					isShowingCachedData = true;
+					loading = false;
+					return;
+				}
+				// If no cache available while offline, show error
+				error = 'No cached data available. Please connect to the internet.';
+				loading = false;
+				return;
+			}
 
 			// Get time range filter parameters
 			const timeRange = getTimeRangeDates(selectedTimeRange);
@@ -182,9 +248,24 @@
 			currentCursor = cursor || null;
 			hasNext = !!result.next;
 			hasPrevious = !!result.previous;
+
+			// Save to cache for offline use
+			saveToCache(result);
 		} catch (err) {
+			console.error('Error loading entries:', err);
+			// Try to load from cache as fallback
+			const cachedData = loadFromCache();
+			if (cachedData) {
+				data = cachedData;
+				currentCursor = cursor || null;
+				hasNext = !!cachedData.next;
+				hasPrevious = !!cachedData.previous;
+				isShowingCachedData = true;
+				error = '';
+				loading = false;
+				return;
+			}
 			error = 'Failed to load time entries';
-			console.error(err);
 		} finally {
 			loading = false;
 		}
@@ -249,9 +330,44 @@
 
 <div class="container mx-auto p-4 lg:p-8">
 	<div class="mb-8">
-		<h1 class="text-3xl font-bold text-primary">Time Entries</h1>
-		<p class="text-base-content/70">View and manage all your tracked time</p>
+		<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+			<div>
+				<h1 class="text-3xl font-bold text-primary">Time Entries</h1>
+				<p class="text-base-content/70">View and manage all your tracked time</p>
+			</div>
+			<DataFreshnessIndicator onRefresh={loadData} />
+		</div>
 	</div>
+
+	<!-- Offline Warning -->
+	{#if !$network.isOnline}
+		<div class="alert alert-warning mb-6 shadow-lg">
+			<div class="flex items-center gap-3">
+				<svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+				</svg>
+				<div>
+					<p class="font-medium">You are offline</p>
+					<p class="text-sm opacity-80">Showing cached data. Some features may be limited.</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Cached Data Indicator -->
+	{#if isShowingCachedData}
+		<div class="alert alert-info mb-6 shadow-lg">
+			<div class="flex items-center gap-3">
+				<svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+				</svg>
+				<div>
+					<p class="font-medium">Showing cached data</p>
+					<p class="text-sm opacity-80">This data may not be up to date. Reconnect to refresh.</p>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Filter Controls -->
 	<div class="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
@@ -633,5 +749,5 @@
 
 <!-- Time Entry Detail Modal -->
 {#if selectedEntry}
-	<TimeEntryDetailModal entry={selectedEntry} onclose={closeEntryModal} />
+	<TimeEntryDetailModal entry={selectedEntry} on:close={closeEntryModal} />
 {/if}

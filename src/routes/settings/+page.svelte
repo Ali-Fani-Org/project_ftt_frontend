@@ -20,6 +20,8 @@
 	import { isUserIdleMonitoringEnabled, isUserIdleMonitorDebugEnabled } from '$lib/stores';
 	import { featureFlagsStore } from '$lib/stores';
 	import { refreshController } from '$lib/refreshController';
+	import { network } from '$lib/network';
+	import DataFreshnessIndicator from '$lib/DataFreshnessIndicator.svelte';
 
 	import { onMount } from 'svelte';
 	import { getVersion } from '@tauri-apps/api/app';
@@ -46,12 +48,23 @@
 	let showIdleDebug = $state(false);
 
 	onMount(async () => {
-		appVersion = await getVersion();
-		// Load feature flags and check if debug is enabled
+		// Try to get app version, but don't fail if offline
 		try {
-			await featureFlagsStore.loadFeatures();
-			showIdleDebug = await isUserIdleMonitorDebugEnabled();
-			console.log(' Debug feature flag check result:', showIdleDebug);
+			appVersion = await getVersion();
+		} catch (err) {
+			console.log('Could not get app version:', err);
+			appVersion = 'unknown';
+		}
+		// Load feature flags and check if debug is enabled (only if online)
+		try {
+			if ($network.isOnline) {
+				await featureFlagsStore.loadFeatures();
+				showIdleDebug = await isUserIdleMonitorDebugEnabled();
+				console.log(' Debug feature flag check result:', showIdleDebug);
+			} else {
+				console.log('Offline: skipping feature flags load');
+				showIdleDebug = false;
+			}
 		} catch (error) {
 			console.error('Failed to load feature flags for debug check:', error);
 			showIdleDebug = false;
@@ -170,9 +183,29 @@
 <div class="container mx-auto p-4 lg:p-8">
 	<!-- Page Header -->
 	<div class="mb-8">
-		<h1 class="text-3xl font-bold text-primary">Settings</h1>
-		<p class="text-base-content/70">Version {appVersion}</p>
+		<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+			<div>
+				<h1 class="text-3xl font-bold text-primary">Settings</h1>
+				<p class="text-base-content/70">Version {appVersion}</p>
+			</div>
+			<DataFreshnessIndicator />
+		</div>
 	</div>
+
+	<!-- Offline Warning -->
+	{#if !$network.isOnline}
+		<div class="alert alert-warning mb-6 shadow-lg max-w-4xl mx-auto">
+			<div class="flex items-center gap-3">
+				<svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+				</svg>
+				<div>
+					<p class="font-medium">You are offline</p>
+					<p class="text-sm opacity-80">Some settings may not be available until you reconnect.</p>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<div class="max-w-4xl mx-auto space-y-8">
 		<!-- API Configuration -->

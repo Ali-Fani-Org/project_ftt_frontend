@@ -1,5 +1,6 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
+import { baseUrl } from './stores';
 
 // Network status interface
 export interface NetworkStatus {
@@ -26,51 +27,155 @@ const createNetworkStore = () => {
 		retryCount: 0 // NEW
 	});
 
+	const DEFAULT_TIMEOUT_MS = 3000;
+	const ONLINE_POLL_MS = 30000;
+	const OFFLINE_POLL_MS = 5000;
+	const FAILURES_BEFORE_OFFLINE = 2;
+
+	let consecutiveFailures = 0;
+	let heartbeatIntervalId: number | null = null;
+	let checkInFlight: Promise<boolean> | null = null;
+
+	const getConnectionInfo = () =>
+		(navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+
+	const getProbeUrl = () => {
+		const configuredBaseUrl = get(baseUrl);
+		try {
+			const url = new URL(configuredBaseUrl);
+			url.searchParams.set('__ping', String(Date.now()));
+			return url.toString();
+		} catch {
+			return null;
+		}
+	};
+
+	const probeConnectivity = async (timeout: number = DEFAULT_TIMEOUT_MS): Promise<boolean> => {
+		if (!browser) return false;
+		if (!navigator.onLine) return false;
+
+		const probeUrl = getProbeUrl();
+		if (!probeUrl) return navigator.onLine;
+
+		const controller = new AbortController();
+		const timer = window.setTimeout(() => controller.abort(), timeout);
+		try {
+			await fetch(probeUrl, {
+				method: 'GET',
+				mode: 'no-cors',
+				cache: 'no-store',
+				signal: controller.signal
+			});
+
+			return true;
+		} catch {
+			return false;
+		} finally {
+			clearTimeout(timer);
+		}
+	};
+
+	const applyConnectivityResult = (online: boolean) => {
+		const connectionInfo = getConnectionInfo();
+		const connectionQuality = getConnectionQuality(connectionInfo);
+
+		update((status) => {
+			const nextIsOnline = online;
+			const lastOnline = nextIsOnline ? new Date() : status.lastOnline;
+
+			return {
+				...status,
+				isOnline: nextIsOnline,
+				isChecking: false,
+				lastChecked: new Date(),
+				lastOnline,
+				connectionType: nextIsOnline ? 'online' : 'offline',
+				connectionQuality: nextIsOnline ? connectionQuality : 'unknown',
+				connectionInfo: nextIsOnline ? connectionInfo || null : null,
+				retryCount: nextIsOnline ? 0 : status.retryCount + 1
+			};
+		});
+	};
+
+	const runActiveCheck = async () => {
+		if (!browser) return;
+
+		update((status) => ({
+			...status,
+			isChecking: true
+		}));
+
+		if (!checkInFlight) {
+			checkInFlight = probeConnectivity().finally(() => {
+				checkInFlight = null;
+			});
+		}
+
+		const ok = await checkInFlight;
+		if (ok) {
+			consecutiveFailures = 0;
+			scheduleHeartbeat(ONLINE_POLL_MS);
+			applyConnectivityResult(true);
+			return;
+		}
+
+		consecutiveFailures += 1;
+		// If we were "online" but checks start failing (common when LAN is unplugged and
+		// navigator.onLine doesn't update), switch to fast polling to detect outage quickly.
+		if (consecutiveFailures === 1) {
+			scheduleHeartbeat(OFFLINE_POLL_MS);
+		}
+
+		if (consecutiveFailures >= FAILURES_BEFORE_OFFLINE) {
+			applyConnectivityResult(false);
+		}
+	};
+
+	const scheduleHeartbeat = (intervalMs: number) => {
+		if (!browser) return;
+
+		if (heartbeatIntervalId) {
+			clearInterval(heartbeatIntervalId);
+			heartbeatIntervalId = null;
+		}
+
+		heartbeatIntervalId = window.setInterval(() => {
+			runActiveCheck();
+		}, intervalMs);
+	};
+
 	// Initialize network detection
 	if (browser) {
 		// Check initial connection status
 		const checkInitialStatus = () => {
-			const isOnline = navigator.onLine;
-			const connectionInfo =
-				(navigator as any).connection ||
-				(navigator as any).mozConnection ||
-				(navigator as any).webkitConnection;
+			const connectionInfo = getConnectionInfo();
 			const connectionQuality = getConnectionQuality(connectionInfo);
 
 			set({
-				isOnline,
-				isChecking: false,
+				isOnline: navigator.onLine,
+				isChecking: true,
 				lastChecked: new Date(),
-				lastOnline: isOnline ? new Date() : null, // NEW
-				connectionType: isOnline ? 'online' : 'offline',
+				lastOnline: navigator.onLine ? new Date() : null,
+				connectionType: navigator.onLine ? 'online' : 'offline',
 				connectionQuality,
 				connectionInfo: connectionInfo || null,
-				retryCount: 0 // NEW
+				retryCount: 0
 			});
+
+			runActiveCheck();
+			scheduleHeartbeat(navigator.onLine ? ONLINE_POLL_MS : OFFLINE_POLL_MS);
 		};
 
 		// Event listeners for connection changes
 		const handleOnline = () => {
-			const connectionInfo =
-				(navigator as any).connection ||
-				(navigator as any).mozConnection ||
-				(navigator as any).webkitConnection;
-			const connectionQuality = getConnectionQuality(connectionInfo);
-
-			update((status) => ({
-				...status,
-				isOnline: true,
-				isChecking: false,
-				lastChecked: new Date(),
-				lastOnline: new Date(), // NEW - Update lastOnline when coming online
-				connectionType: 'online',
-				connectionQuality,
-				connectionInfo: connectionInfo || null,
-				retryCount: 0 // NEW - Reset retry count when online
-			}));
+			consecutiveFailures = 0;
+			scheduleHeartbeat(ONLINE_POLL_MS);
+			runActiveCheck();
 		};
 
 		const handleOffline = () => {
+			consecutiveFailures = FAILURES_BEFORE_OFFLINE;
+			scheduleHeartbeat(OFFLINE_POLL_MS);
 			update((status) => ({
 				...status,
 				isOnline: false,
@@ -84,10 +189,7 @@ const createNetworkStore = () => {
 		};
 
 		const handleConnectionChange = () => {
-			const connectionInfo =
-				(navigator as any).connection ||
-				(navigator as any).mozConnection ||
-				(navigator as any).webkitConnection;
+			const connectionInfo = getConnectionInfo();
 			const connectionQuality = getConnectionQuality(connectionInfo);
 			update((status) => ({
 				...status,
@@ -99,6 +201,10 @@ const createNetworkStore = () => {
 		// Add event listeners
 		window.addEventListener('online', handleOnline);
 		window.addEventListener('offline', handleOffline);
+		window.addEventListener('focus', runActiveCheck);
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden) runActiveCheck();
+		});
 
 		if ((navigator as any).connection) {
 			(navigator as any).connection.addEventListener('change', handleConnectionChange);
@@ -120,35 +226,36 @@ export const isOnline = derived(network, ($network) => $network.isOnline);
 // Utility function to check connectivity with timeout
 export async function checkConnectivity(timeout: number = 3000): Promise<boolean> {
 	if (!browser) return false;
+	if (!navigator.onLine) return false;
 
-	return new Promise((resolve) => {
-		// Check navigator.onLine first
-		if (!navigator.onLine) {
-			resolve(false);
-			return;
+	const probeUrl = (() => {
+		const configuredBaseUrl = get(baseUrl);
+		try {
+			const url = new URL(configuredBaseUrl);
+			url.searchParams.set('__ping', String(Date.now()));
+			return url.toString();
+		} catch {
+			return null;
 		}
+	})();
 
-		// Create a timeout
-		const timer = setTimeout(() => {
-			resolve(false);
-		}, timeout);
+	if (!probeUrl) return navigator.onLine;
 
-		// Try to fetch a simple resource
-		const controller = new AbortController();
-		const signal = controller.signal;
-
-		fetch('https://www.google.com', { signal })
-			.then(() => {
-				clearTimeout(timer);
-				controller.abort();
-				resolve(true);
-			})
-			.catch(() => {
-				clearTimeout(timer);
-				controller.abort();
-				resolve(false);
-			});
-	});
+	const controller = new AbortController();
+	const timer = window.setTimeout(() => controller.abort(), timeout);
+	try {
+		await fetch(probeUrl, {
+			method: 'GET',
+			mode: 'no-cors',
+			cache: 'no-store',
+			signal: controller.signal
+		});
+		return true;
+	} catch {
+		return false;
+	} finally {
+		clearTimeout(timer);
+	}
 }
 
 // Utility function to show network status in console

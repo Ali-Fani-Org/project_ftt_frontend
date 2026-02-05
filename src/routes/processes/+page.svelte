@@ -3,6 +3,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import TitleBar from '$lib/TitleBar.svelte';
 	import { featureFlagsStore } from '$lib/stores';
+	import { network } from '$lib/network';
 
 	interface ProcessInfo {
 		pid: number;
@@ -114,6 +115,21 @@
 
 <div class="container mx-auto p-4" class:with-titlebar={isTauri}>
 	<h1 class="text-2xl font-bold mb-4">System Processes</h1>
+
+	<!-- Offline Warning -->
+	{#if !$network.isOnline}
+		<div class="alert alert-warning mb-4 shadow-lg">
+			<div class="flex items-center gap-3">
+				<svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+				</svg>
+				<div>
+					<p class="font-medium">You are offline</p>
+					<p class="text-sm opacity-80">Process monitoring requires an internet connection for feature flag checks.</p>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	{#if loadingFeatureFlags}
 		<div class="flex justify-center">

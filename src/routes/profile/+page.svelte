@@ -6,6 +6,8 @@
 	import { auth } from '$lib/api';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import { network } from '$lib/network';
+	import { addToast } from '$lib/toast';
 
 	// Editable form state
 	let firstName = $state('');
@@ -68,6 +70,13 @@
 
 	async function save(event?: Event) {
 		event?.preventDefault();
+
+		// Check if online before saving
+		if (!$network.isOnline) {
+			addToast('Cannot save profile while offline. Please check your internet connection.', 'error', 4000);
+			return;
+		}
+
 		error = '';
 		success = '';
 		loading = true;
@@ -156,6 +165,21 @@
 		<h1 class="text-3xl font-bold text-primary">Profile</h1>
 		<p class="text-base-content/70">Manage your account information</p>
 	</div>
+
+	<!-- Offline Warning -->
+	{#if !$network.isOnline}
+		<div class="alert alert-warning mb-6 shadow-lg max-w-4xl mx-auto">
+			<div class="flex items-center gap-3">
+				<svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+				</svg>
+				<div>
+					<p class="font-medium">You are offline</p>
+					<p class="text-sm opacity-80">Profile cannot be saved while offline. Please reconnect to save changes.</p>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<div class="card bg-base-100 shadow-xl max-w-4xl mx-auto">
 		<div class="card-body p-8">

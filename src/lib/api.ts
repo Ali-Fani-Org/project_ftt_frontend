@@ -237,6 +237,7 @@ export async function fetchWithCache<T>(
 
 		// Update freshness tracker
 		dataFreshnessManager.updateTimestamp(key);
+		dataFreshnessManager.updateTimestamp('global'); // Update global freshness
 
 		return { data, stale: false, cached: false };
 	} catch (error) {
@@ -517,8 +518,19 @@ export const timeEntries = {
 		const url = `api/time_entries/?${params.toString()}`;
 		const cacheKey = `time_entries:filtered:${url}`;
 
+		// CRITICAL: No API calls when offline - return cache immediately
+		if (!get(network).isOnline) {
+			console.log(`Offline: returning cached data for ${cacheKey}`);
+			const cached = getCached(cacheKey);
+			if (cached) return cached;
+			console.warn(`No cached data available for ${cacheKey} while offline`);
+			// Return empty paginated result instead of null
+			return { results: [], count: 0, next: null, previous: null };
+		}
+
 		const result = await fetchWithCache(cacheKey, () => api.get(url).json<PaginatedTimeEntries>());
-		return result.data;
+		// Return cached data or empty result instead of null
+		return result.data || { results: [], count: 0, next: null, previous: null };
 	},
 	start: async (data: {
 		title: string;
@@ -549,6 +561,15 @@ export const timeEntries = {
 	},
 	getCurrentActive: async () => {
 		const cacheKey = 'time_entries:current_active';
+
+		// CRITICAL: No API calls when offline - return cache immediately
+		if (!get(network).isOnline) {
+			console.log(`Offline: returning cached data for ${cacheKey}`);
+			const cached = getCached(cacheKey);
+			if (cached) return cached;
+			console.warn(`No cached data available for ${cacheKey} while offline`);
+			return null;
+		}
 
 		try {
 			// Try to fetch from API first

@@ -4,6 +4,7 @@
 	import ky from 'ky';
 	import { authToken, baseUrl } from '$lib/stores';
 	import { get } from 'svelte/store';
+	import { network } from '$lib/network';
 	import confetti from 'canvas-confetti';
 	var scalar = 2;
 
@@ -29,6 +30,55 @@
 		null
 	);
 
+	const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+	/**
+	 * Get cache key for a specific month
+	 */
+	function getCacheKey(year: number, month: number): string {
+		return `chart_heatmap_${year}_${String(month + 1).padStart(2, '0')}`;
+	}
+
+	/**
+	 * Save heatmap data to localStorage
+	 */
+	function saveToCache(year: number, month: number, data: HeatmapData[], weeks: (HeatmapData | null)[][]): void {
+		try {
+			const cacheData = {
+				data,
+				weeks,
+				timestamp: Date.now()
+			};
+			localStorage.setItem(getCacheKey(year, month), JSON.stringify(cacheData));
+		} catch (err) {
+			console.warn('Failed to save heatmap data to cache:', err);
+		}
+	}
+
+	/**
+	 * Load heatmap data from localStorage
+	 */
+	function loadFromCache(year: number, month: number): { data: HeatmapData[]; weeks: (HeatmapData | null)[][] } | null {
+		try {
+			const cached = localStorage.getItem(getCacheKey(year, month));
+			if (!cached) return null;
+
+			const parsed = JSON.parse(cached);
+			const age = Date.now() - parsed.timestamp;
+
+			// Check if cache is still valid
+			if (age > CACHE_TTL) {
+				localStorage.removeItem(getCacheKey(year, month));
+				return null;
+			}
+
+			return { data: parsed.data || [], weeks: parsed.weeks || [] };
+		} catch (err) {
+			console.warn('Failed to load heatmap data from cache:', err);
+			return null;
+		}
+	}
+
 	function formatLocalDate(date: Date): string {
 		const year = date.getFullYear();
 		const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -49,7 +99,26 @@
 			loading = true;
 			error = '';
 
-			const anchor = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+			const year = baseDate.getFullYear();
+			const month = baseDate.getMonth();
+
+			// Check if offline - try to load from cache
+			if (!$network.isOnline) {
+				const cachedData = loadFromCache(year, month);
+				if (cachedData && cachedData.data.length > 0) {
+					days = cachedData.data;
+					weeks = cachedData.weeks;
+					monthLabel = baseDate.toLocaleString(undefined, { month: 'short', year: 'numeric' });
+					loading = false;
+					return;
+				}
+				// If no cache available while offline, show error
+				error = 'No cached data available. Please connect to the internet.';
+				loading = false;
+				return;
+			}
+
+			const anchor = new Date(year, month, 1);
 			const firstDayOfMonth = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
 			const lastDayOfMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
 			monthLabel = firstDayOfMonth.toLocaleString(undefined, { month: 'short', year: 'numeric' });
@@ -201,9 +270,25 @@
 			};
 
 			buildWeeks(firstDayOfMonth, lastDayOfMonth, dayMap);
+
+			// Save to cache for offline use
+			saveToCache(year, month, days, weeks);
+
 			loading = false;
 		} catch (err) {
 			console.error('Failed to load current month data:', err);
+			// Try to load from cache as fallback
+			const year = baseDate.getFullYear();
+			const month = baseDate.getMonth();
+			const cachedData = loadFromCache(year, month);
+			if (cachedData && cachedData.data.length > 0) {
+				days = cachedData.data;
+				weeks = cachedData.weeks;
+				monthLabel = baseDate.toLocaleString(undefined, { month: 'short', year: 'numeric' });
+				error = '';
+				loading = false;
+				return;
+			}
 			error = 'Failed to load activity data';
 			loading = false;
 		}

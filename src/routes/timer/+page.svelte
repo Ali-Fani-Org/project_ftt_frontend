@@ -51,6 +51,9 @@
 	// Feature flags state
 	let showProcessMonitorButton = $state(false);
 
+	// Stale timer warning
+	let staleTimerWarning = $state('');
+
 	// Last server update timestamp
 	let lastServerUpdate = $state<Date | null>(null);
 
@@ -215,7 +218,7 @@
 			if (activeEntry === null) {
 				loadingActiveEntry = true;
 				try {
-					activeEntry = await timeEntries.getCurrentActive();
+					activeEntry = await getActiveEntryWithOfflineSupport();
 					if (activeEntry) {
 						saveToLocalStorage(LAST_ACTIVE_ENTRY_KEY, activeEntry);
 						startTimer();
@@ -399,6 +402,33 @@
 				elapsed = Math.floor((Date.now() - startTime) / 1000);
 			}, 1000);
 		}
+	}
+
+	// Wrapper to get active entry with offline support
+	async function getActiveEntryWithOfflineSupport(): Promise<TimeEntry | null> {
+		// If offline, skip API call and use cache directly
+		if (!$network.isOnline) {
+			console.log('Offline: skipping API call for active entry, using cache');
+			const cachedEntry = getLocalStorageData<TimeEntry>(
+				LAST_ACTIVE_ENTRY_KEY,
+				24 * 60 * 60 * 1000
+			);
+			if (cachedEntry && isActiveTimerValid(cachedEntry)) {
+				console.log('Using valid cached active entry');
+				return cachedEntry;
+			} else if (cachedEntry) {
+				console.log('Cached active timer is too old');
+				const startTime = new Date(cachedEntry.start_time);
+				const hoursAgo = Math.floor((Date.now() - startTime.getTime()) / (1000 * 60 * 60));
+				staleTimerWarning = `A cached timer from ${hoursAgo} hours ago was found. This timer may need to be stopped on the server.`;
+				return null;
+			} else {
+				return null;
+			}
+		}
+		// Online: fetch from API
+		const result = await timeEntries.getCurrentActive();
+		return (result as TimeEntry | null) || null;
 	}
 
 	function formatTime(seconds: number): string {

@@ -34,10 +34,10 @@
 
 	onMount(async () => {
 		authStore.clearError();
-		const redirected = await checkExistingAuth();
-		if (!redirected) {
-			isCheckingAuth = false;
-		}
+		await checkExistingAuth();
+		// Always reset isCheckingAuth when checkExistingAuth completes
+		// The function handles all auth states internally
+		isCheckingAuth = false;
 	});
 
 	// Check for existing authentication token with offline support

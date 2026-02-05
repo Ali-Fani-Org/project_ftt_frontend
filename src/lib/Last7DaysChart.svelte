@@ -4,6 +4,7 @@
 	import ky from 'ky';
 	import { authToken, baseUrl } from '$lib/stores';
 	import { get } from 'svelte/store';
+	import { network } from '$lib/network';
 
 	// Chart data structure
 	interface DayData {
@@ -35,6 +36,49 @@
 	// Toggle this to true to preview the component with static sample data instead of
 	// hitting the API. Useful while designing styles.
 	const USE_SAMPLE_DATA = false;
+
+	// Cache key for localStorage
+	const CACHE_KEY = 'chart_last7days_cache';
+	const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+	/**
+	 * Save chart data to localStorage
+	 */
+	function saveToCache(data: DayData[]): void {
+		try {
+			const cacheData = {
+				data,
+				timestamp: Date.now()
+			};
+			localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+		} catch (err) {
+			console.warn('Failed to save chart data to cache:', err);
+		}
+	}
+
+	/**
+	 * Load chart data from localStorage
+	 */
+	function loadFromCache(): DayData[] | null {
+		try {
+			const cached = localStorage.getItem(CACHE_KEY);
+			if (!cached) return null;
+
+			const parsed = JSON.parse(cached);
+			const age = Date.now() - parsed.timestamp;
+
+			// Check if cache is still valid
+			if (age > CACHE_TTL) {
+				localStorage.removeItem(CACHE_KEY);
+				return null;
+			}
+
+			return parsed.data || null;
+		} catch (err) {
+			console.warn('Failed to load chart data from cache:', err);
+			return null;
+		}
+	}
 
 	onMount(async () => {
 		if (USE_SAMPLE_DATA) {
@@ -135,6 +179,20 @@
 			loading = true;
 			error = '';
 
+			// Check if offline - try to load from cache
+			if (!$network.isOnline) {
+				const cachedData = loadFromCache();
+				if (cachedData && cachedData.length > 0) {
+					chartData = cachedData;
+					loading = false;
+					return;
+				}
+				// If no cache available while offline, show error
+				error = 'No cached data available. Please connect to the internet.';
+				loading = false;
+				return;
+			}
+
 			// Calculate today's date string in Asia/Tehran timezone
 			const now = new Date();
 
@@ -172,7 +230,7 @@
 			while (hasMorePages && currentPageUrl) {
 				// Create the API request with proper authentication
 				const token = get(authToken);
-				const baseUrlValue = get(baseUrl);
+				const baseUrlValue = String(get(baseUrl));
 				// Construct full URL - if currentPageUrl is a relative path, add baseUrl with trailing slash
 				let fullUrl;
 				if (currentPageUrl.startsWith('http')) {
@@ -183,13 +241,13 @@
 					fullUrl = `${baseUrlValue}${baseUrlValue.endsWith('/') ? '' : '/'}${currentPageUrl}`;
 				}
 
-				const response = await ky
+				const response: PaginatedTimeEntries = await ky
 					.get(fullUrl, {
 						headers: {
 							Authorization: token ? `Token ${token}` : ''
 						}
 					})
-					.json<PaginatedTimeEntries>();
+					.json();
 
 				allEntries = allEntries.concat(response.results);
 				currentPageUrl = response.next; // This will be null when no more pages are available
@@ -379,6 +437,9 @@
 				(a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
 			);
 
+			// Save to cache for offline use
+			saveToCache(chartData);
+
 			// console.log('Final chart data (sorted):');
 			chartData.forEach((day, index) => {
 				// console.log(`Chart day ${index}: ${day.date} (${day.label}) - ${day.formattedDuration}`);
@@ -386,6 +447,15 @@
 
 			loading = false;
 		} catch (err) {
+			console.error('Error loading last 7 days data:', err);
+			// Try to load from cache as fallback
+			const cachedData = loadFromCache();
+			if (cachedData && cachedData.length > 0) {
+				chartData = cachedData;
+				error = '';
+				loading = false;
+				return;
+			}
 			error = 'Failed to load activity data';
 			loading = false;
 		}
@@ -553,7 +623,7 @@
 						<!-- Day label with date tooltip -->
 						<div
 							class="w-14 text-[0.7rem] font-medium text-base-content/90 mr-1.5 flex-shrink-0 relative"
-							on:mouseenter={() => showDateTooltip(day.date, event)}
+							on:mouseenter={(e) => showDateTooltip(day.date, e)}
 							on:mouseleave={() => hideDateTooltip()}
 						>
 							<div>{day.label}</div>

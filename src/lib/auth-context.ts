@@ -74,6 +74,11 @@ export function createAuthStore(): AuthStore {
 				const userData = await auth.getUser();
 				user.set(userData);
 
+				// Store user in sessionStorage if not remember me
+				if (browser && !rememberMe) {
+					sessionStorage.setItem('auth_user', JSON.stringify(userData));
+				}
+
 				update((state) => ({
 					...state,
 					isAuthenticated: true,
@@ -234,18 +239,37 @@ export function createAuthStore(): AuthStore {
 
 		// Check authentication status with offline support
 		checkAuthOffline: async () => {
-			// 1. Check if we have cached auth token
-			const cachedToken = localStorage.getItem('authToken');
-			const cachedUser = localStorage.getItem('user');
+			// 1. Check if we have cached auth token (both localStorage and sessionStorage)
+			const cachedToken = localStorage.getItem('authToken') || sessionStorage.getItem('auth_token');
+			const cachedUser = localStorage.getItem('user') || sessionStorage.getItem('auth_user');
 
 			// 2. Check network status
 			const isOnline = get(network).isOnline;
 
 			if (!isOnline && cachedToken && cachedUser) {
 				try {
+					// Parse the cached values - handle both JSON and plain string formats
+					let parsedToken: string;
+					let parsedUser: any;
+					
+					try {
+						parsedToken = JSON.parse(cachedToken);
+					} catch {
+						parsedToken = cachedToken;
+					}
+					
+					try {
+						parsedUser = JSON.parse(cachedUser);
+					} catch {
+						console.error('Failed to parse cached user data');
+						localStorage.removeItem('authToken');
+						localStorage.removeItem('user');
+						return false;
+					}
+
 					// 3. Load user from cache without API call
-					authToken.set(cachedToken);
-					user.set(JSON.parse(cachedUser));
+					authToken.set(parsedToken);
+					user.set(parsedUser);
 
 					// 4. Update auth state
 					update((state) => ({
@@ -253,7 +277,7 @@ export function createAuthStore(): AuthStore {
 						isAuthenticated: true,
 						isLoading: false,
 						error: null,
-						user: JSON.parse(cachedUser)
+						user: parsedUser
 					}));
 
 					// 5. Redirect to dashboard with offline flag
@@ -261,9 +285,11 @@ export function createAuthStore(): AuthStore {
 					return true;
 				} catch (error) {
 					console.error('Failed to load cached auth data:', error);
-					// If cached data is corrupted, clear it
+					// If cached data is corrupted, clear it from both storages
 					localStorage.removeItem('authToken');
 					localStorage.removeItem('user');
+					sessionStorage.removeItem('auth_token');
+					sessionStorage.removeItem('auth_user');
 					return false;
 				}
 			}
@@ -303,7 +329,11 @@ export function createAuthStore(): AuthStore {
 				}
 			}
 
-			// 6. No cached data and offline
+			// 6. No cached data and offline - reset loading state for UI
+			update((state) => ({
+				...state,
+				isLoading: false
+			}));
 			return false;
 		}
 	};
@@ -343,5 +373,6 @@ export interface AuthStore {
 	logout: () => void;
 	clearError: () => void;
 	checkAuthStatus: () => void;
+	checkAuthOffline: () => Promise<boolean>;
 	getSessionType: () => string;
 }
