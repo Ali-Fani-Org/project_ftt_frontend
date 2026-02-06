@@ -1,10 +1,10 @@
 //! Notification manager module for handling notification channels and sounds
-//! 
+//!
 //! This module provides functionality to create and manage notification channels
 //! with proper sound properties for different notification types.
 
-use tauri::{AppHandle, Emitter};
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
 
 /// Notification channel importance levels
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,12 +103,10 @@ impl NotificationManager {
 
     /// Create a single notification channel
     async fn create_channel(
-        &self, 
-        app: &AppHandle, 
-        config: &NotificationChannelConfig
+        &self,
+        app: &AppHandle,
+        config: &NotificationChannelConfig,
     ) -> Result<(), String> {
-        use tauri_plugin_notification::NotificationExt;
-
         // Map importance enum to i32 for Android
         let importance_value = match config.importance {
             NotificationImportance::Min => 1,
@@ -127,7 +125,7 @@ impl NotificationManager {
         // Note: This is a simplified version as Tauri v2's notification API
         // doesn't directly expose channel creation in Rust yet
         // In practice, channels would be created from the frontend
-        
+
         // For now, we'll just emit an event that the frontend can listen for
         // to create the channels using the JavaScript API
         let channel_data = serde_json::json!({
@@ -160,6 +158,7 @@ impl NotificationManager {
     }
 
     /// Check if channels have been initialized
+    #[allow(dead_code)]
     pub fn is_initialized(&self) -> bool {
         self.channels_created
     }

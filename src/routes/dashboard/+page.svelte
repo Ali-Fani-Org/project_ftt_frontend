@@ -623,10 +623,10 @@
 							<button
 								class="btn btn-outline btn-sm"
 								use:preloadOnHover={'/entries'}
-								on:preloadstart={() => setPreloading('/entries', true)}
-								on:preloadend={() => setPreloading('/entries', false)}
-								on:preloadcancel={() => setPreloading('/entries', false)}
-								on:click={openTimeEntries}
+								onpreloadstart={() => setPreloading('/entries', true)}
+								onpreloadend={() => setPreloading('/entries', false)}
+								onpreloadcancel={() => setPreloading('/entries', false)}
+								onclick={openTimeEntries}
 							>
 								{#if preloadingStates['/entries']}
 									<span class="loading loading-spinner loading-xs mr-2"></span>
@@ -664,10 +664,10 @@
 						<button
 							class="btn btn-primary btn-block justify-start"
 							use:preloadOnHover={'/timer'}
-							on:preloadstart={() => setPreloading('/timer', true)}
-							on:preloadend={() => setPreloading('/timer', false)}
-							on:preloadcancel={() => setPreloading('/timer', false)}
-							on:click={() => goto('/timer')}
+							onpreloadstart={() => setPreloading('/timer', true)}
+							onpreloadend={() => setPreloading('/timer', false)}
+							onpreloadcancel={() => setPreloading('/timer', false)}
+							onclick={() => goto('/timer')}
 						>
 							{#if preloadingStates['/timer']}
 								<span class="loading loading-spinner loading-xs mr-2"></span>
@@ -687,10 +687,10 @@
 						<button
 							class="btn btn-outline btn-block justify-start"
 							use:preloadOnHover={'/entries'}
-							on:preloadstart={() => setPreloading('/entries', true)}
-							on:preloadend={() => setPreloading('/entries', false)}
-							on:preloadcancel={() => setPreloading('/entries', false)}
-							on:click={openTimeEntries}
+							onpreloadstart={() => setPreloading('/entries', true)}
+							onpreloadend={() => setPreloading('/entries', false)}
+							onpreloadcancel={() => setPreloading('/entries', false)}
+							onclick={openTimeEntries}
 						>
 							{#if preloadingStates['/entries']}
 								<span class="loading loading-spinner loading-xs mr-2"></span>
@@ -710,10 +710,10 @@
 						<button
 							class="btn btn-outline btn-block justify-start"
 							use:preloadOnHover={'/settings'}
-							on:preloadstart={() => setPreloading('/settings', true)}
-							on:preloadend={() => setPreloading('/settings', false)}
-							on:preloadcancel={() => setPreloading('/settings', false)}
-							on:click={() => goto('/settings')}
+							onpreloadstart={() => setPreloading('/settings', true)}
+							onpreloadend={() => setPreloading('/settings', false)}
+							onpreloadcancel={() => setPreloading('/settings', false)}
+							onclick={() => goto('/settings')}
 						>
 							{#if preloadingStates['/settings']}
 								<span class="loading loading-spinner loading-xs mr-2"></span>
@@ -740,10 +740,10 @@
 							<button
 								class="btn btn-outline btn-block justify-start"
 								use:preloadOnHover={'/processes'}
-								on:preloadstart={() => setPreloading('/processes', true)}
-								on:preloadend={() => setPreloading('/processes', false)}
-								on:preloadcancel={() => setPreloading('/processes', false)}
-								on:click={openProcessMonitor}
+								onpreloadstart={() => setPreloading('/processes', true)}
+								onpreloadend={() => setPreloading('/processes', false)}
+								onpreloadcancel={() => setPreloading('/processes', false)}
+								onclick={openProcessMonitor}
 							>
 								{#if preloadingStates['/processes']}
 									<span class="loading loading-spinner loading-xs mr-2"></span>
@@ -776,7 +776,7 @@
 						<button
 							class="btn btn-secondary"
 							use:preloadOnHover={'/timer'}
-							on:click={() => goto('/timer')}
+							onclick={() => goto('/timer')}
 						>
 							<DebugPreloadIcon active={debugMode && preloadingStates['/timer']} />
 							View in Timer
@@ -792,14 +792,3 @@
 	{/if}
 </div>
 
-<style>
-	.dashboard-button {
-		position: relative;
-		/* ... existing styles ... */
-	}
-	.loading-indicator {
-		position: absolute;
-		top: 5px;
-		right: 5px;
-	}
-</style>

@@ -108,6 +108,9 @@
 
 <div
 	class="titlebar"
+	role="toolbar"
+	aria-label="Title Bar"
+	tabindex="-1"
 	data-tauri-drag-region
 	onmousedown={handleTitleBarMouseDown}
 	ondblclick={handleTitleBarDoubleClick}
@@ -235,12 +238,11 @@
 		background: hsl(var(--pf));
 	}
 
-	/* Toggle icon colors */
-	.toggle-icon-inactive {
+	:global(.toggle-icon-inactive) {
 		color: hsl(var(--n)); /* Neutral color for inactive state */
 	}
 
-	.toggle-icon-active {
+	:global(.toggle-icon-active) {
 		color: white;
 		background: hsl(var(--a)); /* Accent color fill for active state */
 		padding: 2px;

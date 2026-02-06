@@ -22,10 +22,12 @@
 	import { refreshController } from '$lib/refreshController';
 	import { network } from '$lib/network';
 	import DataFreshnessIndicator from '$lib/DataFreshnessIndicator.svelte';
+	import { addToast } from '$lib/toast';
 	import { check } from '@tauri-apps/plugin-updater';
 	import { relaunch } from '@tauri-apps/plugin-process';
 
 	import { onMount } from 'svelte';
+	import { isTauri } from '@tauri-apps/api/core';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { goto } from '$app/navigation';
 
@@ -54,9 +56,15 @@
 	let updateInfo = $state<{ version?: string; date?: string; notes?: string } | null>(null);
 	let updateProgress = $state<{ downloaded: number; total?: number } | null>(null);
 	let pendingUpdate = $state<any | null>(null);
+	const updateEndpointUrl = 'https://github.com/Ali-Fani/project_ftt_frontend/releases/latest/download/latest.json';
+	let updateProxyUrl = $state('');
 
 	onMount(async () => {
-		isTauriApp = typeof window !== 'undefined' && !!(window as any).__TAURI__;
+		try {
+			isTauriApp = await isTauri();
+		} catch {
+			isTauriApp = false;
+		}
 		// Try to get app version, but don't fail if offline
 		try {
 			appVersion = await getVersion();
@@ -78,7 +86,22 @@
 			console.error('Failed to load feature flags for debug check:', error);
 			showIdleDebug = false;
 		}
+		if (typeof window !== 'undefined') {
+			updateProxyUrl = localStorage.getItem('updateProxyUrl') ?? '';
+		}
 	});
+
+	function saveUpdateProxyUrl() {
+		const trimmed = updateProxyUrl.trim();
+		if (typeof window === 'undefined') return;
+		if (trimmed) {
+			localStorage.setItem('updateProxyUrl', trimmed);
+			addToast('Proxy URL saved for updates.', 'success', 2500);
+		} else {
+			localStorage.removeItem('updateProxyUrl');
+			addToast('Proxy URL cleared.', 'info', 2000);
+		}
+	}
 
 	function updateStatusLabel() {
 		switch (updateStatus) {
@@ -99,19 +122,46 @@
 		}
 	}
 
+	function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+		return new Promise<T>((resolve, reject) => {
+			const timeoutId = window.setTimeout(() => {
+				reject(new Error(`${label} timed out after ${ms}ms`));
+			}, ms);
+
+			promise
+				.then((result) => {
+					window.clearTimeout(timeoutId);
+					resolve(result);
+				})
+				.catch((error) => {
+					window.clearTimeout(timeoutId);
+					reject(error);
+				});
+		});
+	}
+
 	async function checkForUpdates() {
+		console.info('Checking for updates from settings.');
+		console.info('Updater endpoint URL:', updateEndpointUrl);
+		const proxyUrl = updateProxyUrl.trim();
+		if (proxyUrl) {
+			console.info('Using updater proxy URL:', proxyUrl);
+		}
+		const checkStartedAt = performance.now();
 		updateError = '';
 		updateInfo = null;
 		updateProgress = null;
 		pendingUpdate = null;
 
 		if (!isTauriApp) {
+			console.warn('Update check blocked: not running in Tauri.');
 			updateStatus = 'error';
 			updateError = 'Updates are only available in the desktop app.';
 			return;
 		}
 
 		if (!$network.isOnline) {
+			console.warn('Update check blocked: offline.');
 			updateStatus = 'error';
 			updateError = 'You are offline. Connect to the internet to check for updates.';
 			return;
@@ -119,8 +169,27 @@
 
 		updateStatus = 'checking';
 		try {
-			const update = await check();
+			console.debug('Calling updater check()...');
+			const update = await withTimeout(
+				check({ timeout: 30000, proxy: proxyUrl || undefined }),
+				35000,
+				'Updater check'
+			);
+			console.debug('Updater check() resolved in', Math.round(performance.now() - checkStartedAt), 'ms');
 			const available = update && 'available' in update ? update.available : !!update;
+			console.info('Current app version:', appVersion || '(unknown)');
+			console.info('Updater response payload:', update);
+			if (update) {
+				const updateSignature = (update as any).signature ?? (update as any).signatures;
+				console.info('Update metadata:', {
+					version: (update as any).version ?? (update as any).currentVersion,
+					date: (update as any).date,
+					signature: updateSignature
+				});
+			} else {
+				console.info('No update metadata returned (updater responded with null/undefined).');
+			}
+			console.info('Update check result.', { available });
 			if (!available) {
 				updateStatus = 'up-to-date';
 				return;
@@ -132,8 +201,10 @@
 				date: update.date,
 				notes: update.body
 			};
+			console.info('Update available.', updateInfo);
 			updateStatus = 'available';
 		} catch (error) {
+			console.error('Update check failed.', error);
 			updateStatus = 'error';
 			updateError = error instanceof Error ? error.message : 'Update check failed.';
 		}
@@ -141,6 +212,10 @@
 
 	async function downloadAndInstallUpdate() {
 		if (!pendingUpdate) return;
+		console.info('Starting update download/install.');
+		if (updateProxyUrl.trim()) {
+			console.info('Update download using configured proxy (if supported by updater).');
+		}
 		updateStatus = 'downloading';
 		updateProgress = { downloaded: 0, total: undefined };
 
@@ -149,26 +224,34 @@
 				switch (event.event) {
 					case 'Started':
 						updateProgress = { downloaded: 0, total: event.data.contentLength };
+						console.info('Update download started.', { total: event.data.contentLength });
 						break;
 					case 'Progress':
 						updateProgress = {
 							downloaded: (updateProgress?.downloaded ?? 0) + event.data.chunkLength,
 							total: updateProgress?.total
 						};
+						console.debug('Update download progress.', {
+							downloaded: updateProgress?.downloaded,
+							total: updateProgress?.total
+						});
 						break;
 					case 'Finished':
 						updateProgress = {
 							downloaded: updateProgress?.total ?? updateProgress?.downloaded ?? 0,
 							total: updateProgress?.total
 						};
+						console.info('Update download finished.');
 						break;
 					default:
 						break;
 				}
 			});
 			updateStatus = 'installed';
+			console.info('Update installed, relaunching.');
 			await relaunch();
 		} catch (error) {
+			console.error('Update install failed.', error);
 			updateStatus = 'error';
 			updateError = error instanceof Error ? error.message : 'Update install failed.';
 		}
@@ -477,6 +560,26 @@
 			<div class="card-body p-6">
 				<h2 class="card-title text-xl mb-6">Updates</h2>
 				<div class="space-y-3">
+					<div class="form-control">
+						<label class="label" for="updateProxyUrl">
+							<span class="label-text font-medium text-base">Proxy URL (optional)</span>
+						</label>
+						<div class="join">
+							<input
+								id="updateProxyUrl"
+								type="url"
+								bind:value={updateProxyUrl}
+								placeholder="https://proxy.yourdomain.com"
+								class="input input-bordered join-item flex-1"
+							/>
+							<button class="btn btn-primary join-item" onclick={saveUpdateProxyUrl}>
+								Save
+							</button>
+						</div>
+						<p class="text-xs text-base-content/60">
+							Use a proxy if GitHub is blocked in your region.
+						</p>
+					</div>
 					<p class="text-sm text-base-content/70">{updateStatusLabel()}</p>
 					{#if updateInfo?.notes}
 						<div class="text-sm text-base-content/80 whitespace-pre-wrap">{updateInfo.notes}</div>
@@ -529,9 +632,9 @@
 								class="toggle toggle-primary"
 							/>
 						</label>
-						<label class="label">
+						<div class="label">
 							<span class="label-text-alt"> Automatically refresh data at regular intervals </span>
-						</label>
+						</div>
 					</div>
 
 					{#if localAutoRefreshEnabled}
@@ -565,11 +668,11 @@
 								class="toggle toggle-primary"
 							/>
 						</label>
-						<label class="label">
+						<div class="label">
 							<span class="label-text-alt">
 								Automatically refresh when internet connection is restored
 							</span>
-						</label>
+						</div>
 					</div>
 
 					<div class="form-control">
@@ -582,11 +685,11 @@
 								class="toggle toggle-primary"
 							/>
 						</label>
-						<label class="label">
+						<div class="label">
 							<span class="label-text-alt">
 								Pause auto-refresh when browser tab is not visible
 							</span>
-						</label>
+						</div>
 					</div>
 				</div>
 			</div>

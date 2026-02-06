@@ -380,9 +380,9 @@
 	<div class="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
 		<!-- Time Range Filter -->
 		<div class="flex-1 min-w-0">
-			<label class="label">
+			<div class="label">
 				<span class="label-text">Time Range</span>
-			</label>
+			</div>
 			<div class="dropdown">
 				<div tabindex="0" role="button" class="btn btn-outline w-full max-w-xs">
 					{getTimeRangeDisplay(selectedTimeRange)}
@@ -396,75 +396,83 @@
 					class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52"
 				>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedTimeRange = 'all';
 								handleFilterChange();
-							}}>All Time</a
+							}}>All Time</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedTimeRange = 'last7days';
 								handleFilterChange();
-							}}>Last 7 Days</a
+							}}>Last 7 Days</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedTimeRange = 'lastweek';
 								handleFilterChange();
-							}}>Last Week</a
+							}}>Last Week</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedTimeRange = 'thisweek';
 								handleFilterChange();
-							}}>This Week</a
+							}}>This Week</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedTimeRange = 'lastmonth';
 								handleFilterChange();
-							}}>Last Month</a
+							}}>Last Month</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedTimeRange = 'thismonth';
 								handleFilterChange();
-							}}>This Month</a
+							}}>This Month</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedTimeRange = 'thisyear';
 								handleFilterChange();
-							}}>This Year</a
+							}}>This Year</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedTimeRange = 'lastyear';
 								handleFilterChange();
-							}}>Last Year</a
+							}}>Last Year</button
 						>
 					</li>
 				</ul>
@@ -473,9 +481,9 @@
 
 		<!-- Sort Filter -->
 		<div class="flex-1 min-w-0">
-			<label class="label">
+			<div class="label">
 				<span class="label-text">Sort By</span>
-			</label>
+			</div>
 			<div class="dropdown">
 				<div tabindex="0" role="button" class="btn btn-outline w-full max-w-xs">
 					{getSortDisplay(selectedSort)}
@@ -489,111 +497,123 @@
 					class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64"
 				>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = '-start_time';
 								handleFilterChange();
-							}}>Start Time (Newest First)</a
+							}}>Start Time (Newest First)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = 'start_time';
 								handleFilterChange();
-							}}>Start Time (Oldest First)</a
+							}}>Start Time (Oldest First)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = '-end_time';
 								handleFilterChange();
-							}}>End Time (Newest First)</a
+							}}>End Time (Newest First)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = 'end_time';
 								handleFilterChange();
-							}}>End Time (Oldest First)</a
+							}}>End Time (Oldest First)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = '-duration';
 								handleFilterChange();
-							}}>Duration (Longest First)</a
+							}}>Duration (Longest First)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = 'duration';
 								handleFilterChange();
-							}}>Duration (Shortest First)</a
+							}}>Duration (Shortest First)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = 'title';
 								handleFilterChange();
-							}}>Title (A-Z)</a
+							}}>Title (A-Z)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = '-title';
 								handleFilterChange();
-							}}>Title (Z-A)</a
+							}}>Title (Z-A)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = 'project_name';
 								handleFilterChange();
-							}}>Project (A-Z)</a
+							}}>Project (A-Z)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = '-project_name';
 								handleFilterChange();
-							}}>Project (Z-A)</a
+							}}>Project (Z-A)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = '-is_active';
 								handleFilterChange();
-							}}>Status (Active First)</a
+							}}>Status (Active First)</button
 						>
 					</li>
 					<li>
-						<a
-							class="dropdown-close"
+						<button
+							type="button"
+							class="dropdown-close text-left"
 							onclick={() => {
 								selectedSort = 'is_active';
 								handleFilterChange();
-							}}>Status (Completed First)</a
+							}}>Status (Completed First)</button
 						>
 					</li>
 				</ul>
@@ -673,8 +693,11 @@
 			{#each data.results as entry (entry.id)}
 				{@const status = getStatusBadge(entry)}
 				<div
+					role="button"
+					tabindex="0"
 					class="card bg-base-100 shadow-lg cursor-pointer transition-all duration-200 hover:shadow-xl"
 					onclick={() => openEntryModal(entry)}
+					onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openEntryModal(entry)}
 				>
 					<div class="card-body">
 						<div class="flex items-start justify-between mb-3">

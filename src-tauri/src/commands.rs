@@ -1,6 +1,6 @@
 use crate::constants::*;
-use crate::sound_manager::SoundManager;
 use crate::notification_manager::NotificationManager;
+use crate::sound_manager::SoundManager;
 
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
@@ -70,33 +70,43 @@ pub fn stop_timer() -> Result<(), String> {
 
 #[tauri::command]
 pub fn show_notification_with_channel(
-    app: tauri::AppHandle, 
-    title: String, 
-    body: String, 
-    channel_id: String, 
-    notification_type: String
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+    channel_id: String,
+    _notification_type: String,
 ) -> Result<(), String> {
     // Show native notification using Tauri's notification API with channel support
     use tauri_plugin_notification::NotificationExt;
-    
-    println!("🔧 Showing channel notification: {} - {} (channel: {})", title, body, channel_id);
-    
+
+    println!(
+        "🔧 Showing channel notification: {} - {} (channel: {})",
+        title, body, channel_id
+    );
+
     // Try to show notification using the notification plugin
-    if let Err(e) = app.notification()
+    if let Err(e) = app
+        .notification()
         .builder()
         .title(&title)
         .body(&body)
-        .show() {
+        .show()
+    {
         println!("❌ Channel notification failed: {}", e);
         return Err(format!("Failed to show channel notification: {}", e));
     }
-    
+
     println!("✅ Channel notification shown successfully: {}", channel_id);
     Ok(())
 }
 
 #[tauri::command]
-pub fn show_notification(app: tauri::AppHandle, title: String, body: String, notification_type: String) -> Result<(), String> {
+pub fn show_notification(
+    app: tauri::AppHandle,
+    _title: String,
+    body: String,
+    notification_type: String,
+) -> Result<(), String> {
     // Show native notification using Tauri's notification API with channel support
     use tauri_plugin_notification::NotificationExt;
 
@@ -126,7 +136,10 @@ pub fn show_notification(app: tauri::AppHandle, title: String, body: String, not
     app.emit("show-notification-with-channel", notification_payload)
         .map_err(|e| format!("Failed to emit notification event: {}", e))?;
 
-    println!("Notification event emitted: {} - {} (channel: {})", full_title, body, channel_id);
+    println!(
+        "Notification event emitted: {} - {} (channel: {})",
+        full_title, body, channel_id
+    );
 
     // Play notification sound
     if let Err(e) = play_notification_sound(&app, &notification_type) {
@@ -135,11 +148,13 @@ pub fn show_notification(app: tauri::AppHandle, title: String, body: String, not
 
     // Also try the old method as fallback for immediate display
     // This will work on systems that don't require channels
-    if let Err(e) = app.notification()
+    if let Err(e) = app
+        .notification()
         .builder()
         .title(&full_title)
         .body(&body)
-        .show() {
+        .show()
+    {
         println!("Fallback notification failed: {}", e);
     } else {
         println!("✅ Fallback notification shown successfully");
@@ -173,7 +188,7 @@ pub fn get_idle_status() -> Result<IdleStatus, String> {
         Ok(idle_time) => {
             let idle_seconds = idle_time.as_seconds();
             let is_idle = idle_seconds >= IDLE_THRESHOLD_SECONDS; // Using constant
-            
+
             Ok(IdleStatus {
                 is_idle,
                 idle_time_seconds: idle_seconds,
@@ -208,7 +223,11 @@ pub fn create_activity_log(idle_time_seconds: u64, is_idle: bool) -> Result<Acti
         idle_time_seconds,
         is_idle,
         session_duration_seconds: idle_time_seconds, // Simplified for now
-        activity_state: if is_idle { "idle".to_string() } else { "active".to_string() },
+        activity_state: if is_idle {
+            "idle".to_string()
+        } else {
+            "active".to_string()
+        },
     })
 }
 
@@ -229,7 +248,11 @@ pub fn get_processes() -> Result<Vec<ProcessInfo>, String> {
     }
 
     // Sort by CPU usage descending
-    processes.sort_by(|a, b| b.cpu_usage.partial_cmp(&a.cpu_usage).unwrap_or(std::cmp::Ordering::Equal));
+    processes.sort_by(|a, b| {
+        b.cpu_usage
+            .partial_cmp(&a.cpu_usage)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(processes)
 }
@@ -245,7 +268,10 @@ pub fn toggle_devtools(window: tauri::Window) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn test_notification_sound(app: tauri::AppHandle, notification_type: String) -> Result<(), String> {
+pub fn test_notification_sound(
+    app: tauri::AppHandle,
+    notification_type: String,
+) -> Result<(), String> {
     println!("Testing notification sound for type: {}", notification_type);
 
     // Play the notification sound using the main function
@@ -253,50 +279,59 @@ pub fn test_notification_sound(app: tauri::AppHandle, notification_type: String)
         println!("Warning: Failed to play notification sound: {}", e);
     }
 
-    println!("Test completed for notification type: {}", notification_type);
+    println!(
+        "Test completed for notification type: {}",
+        notification_type
+    );
     Ok(())
 }
 
 #[tauri::command]
 pub fn debug_sound_system(app: tauri::AppHandle) -> Result<String, String> {
     println!("=== SOUND SYSTEM DEBUG ===");
-    
+
     let mut sound_manager = SoundManager::new(&app);
     match sound_manager.initialize() {
         Ok(_) => println!("✅ SoundManager initialized"),
         Err(e) => println!("❌ SoundManager init failed: {}", e),
     }
-    
+
     // Test each notification type
     let test_types = ["INFO", "WARNING", "ERROR", "SUCCESS", "CRITICAL", "OTHER"];
     let mut results = Vec::new();
-    
+
     for notification_type in &test_types {
         println!("Testing sound for: {}", notification_type);
         sound_manager.play_notification_sound(notification_type);
         results.push(format!("Tested {}", notification_type));
     }
-    
-    Ok(format!("Debug completed. Tested types: {}", results.join(", ")))
+
+    Ok(format!(
+        "Debug completed. Tested types: {}",
+        results.join(", ")
+    ))
 }
 
 #[tauri::command]
 pub fn debug_notification_system(app: tauri::AppHandle) -> Result<String, String> {
     println!("=== 🔍 NOTIFICATION SYSTEM DEBUG ===");
-    
+
     let notification_manager = NotificationManager::new();
     println!("📝 NotificationManager created");
-    
+
     // Test channel ID mapping
     let test_types = ["INFO", "WARNING", "ERROR", "SUCCESS", "CRITICAL", "OTHER"];
     let mut results = Vec::new();
-    
+
     for notification_type in &test_types {
         let channel_id = notification_manager.get_channel_id(notification_type);
-        println!("🔍 Type '{}' maps to channel: {}", notification_type, channel_id);
+        println!(
+            "🔍 Type '{}' maps to channel: {}",
+            notification_type, channel_id
+        );
         results.push(format!("{} -> {}", notification_type, channel_id));
     }
-    
+
     // Test notification emission
     println!("🧪 Testing notification emission...");
     let test_payload = serde_json::json!({
@@ -305,13 +340,16 @@ pub fn debug_notification_system(app: tauri::AppHandle) -> Result<String, String
         "channelId": "time_tracker_info",
         "notificationType": "INFO"
     });
-    
+
     if let Err(e) = app.emit("show-notification-with-channel", test_payload) {
         println!("❌ Failed to emit test notification: {}", e);
         return Err(format!("Failed to emit test notification: {}", e));
     } else {
         println!("✅ Test notification event emitted successfully");
     }
-    
-    Ok(format!("Debug completed. Channel mappings: {}", results.join(", ")))
+
+    Ok(format!(
+        "Debug completed. Channel mappings: {}",
+        results.join(", ")
+    ))
 }

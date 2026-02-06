@@ -1,15 +1,15 @@
 //! Sound management module for notification audio playback
-//! 
+//!
 //! This module provides functionality to play notification sounds based on
 //! notification types, with support for configuration via TOML files.
 
+use rodio::{source::Source, Decoder, OutputStream, OutputStreamHandle};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 use toml;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, source::Source};
-use serde::{Deserialize, Serialize};
 
 /// Configuration structure for sound settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,7 +83,10 @@ impl SoundManager {
         // Try multiple paths to find the sounds directory
         let sounds_dir = Self::find_sounds_directory(app_handle);
 
-        println!("SoundManager initialized with sounds directory: {:?}", sounds_dir);
+        println!(
+            "SoundManager initialized with sounds directory: {:?}",
+            sounds_dir
+        );
 
         Self {
             config: None,
@@ -113,17 +116,20 @@ impl SoundManager {
         }
 
         // Last resort - use the dev path even if it doesn't exist
-        println!("Warning: No sounds directory found, using development path as fallback: {:?}", dev_path);
+        println!(
+            "Warning: No sounds directory found, using development path as fallback: {:?}",
+            dev_path
+        );
         dev_path
     }
-    
+
     /// Initialize the sound manager by loading configuration and setting up audio output
     pub fn initialize(&mut self) -> Result<(), String> {
         println!("Initializing SoundManager...");
-        
+
         // Load configuration
         self.load_config()?;
-        
+
         // Initialize audio output stream
         match OutputStream::try_default() {
             Ok((stream, stream_handle)) => {
@@ -136,31 +142,34 @@ impl SoundManager {
                 return Err(format!("Failed to initialize audio output: {}", e));
             }
         }
-        
+
         println!("SoundManager initialized successfully");
         Ok(())
     }
-    
+
     /// Load sound configuration from TOML file
     fn load_config(&mut self) -> Result<(), String> {
         let config_path = self.sounds_dir.join("config.toml");
-        
+
         if !config_path.exists() {
-            println!("Warning: Sound configuration file not found at: {:?}", config_path);
+            println!(
+                "Warning: Sound configuration file not found at: {:?}",
+                config_path
+            );
             return Ok(()); // Continue without config, use defaults
         }
-        
+
         let config_content = fs::read_to_string(&config_path)
             .map_err(|e| format!("Failed to read sound config: {}", e))?;
-            
+
         let config: SoundConfig = toml::from_str(&config_content)
             .map_err(|e| format!("Failed to parse sound config: {}", e))?;
-            
+
         println!("Loaded sound configuration: {:?}", config.settings);
         self.config = Some(config);
         Ok(())
     }
-    
+
     /// Play a sound for the given notification type
     pub fn play_notification_sound(&self, notification_type: &str) {
         if !self.is_enabled() {
@@ -174,19 +183,25 @@ impl SoundManager {
         match sound_file {
             Some(path) => {
                 if self.play_sound_file(&path) {
-                    println!("Played notification sound for type {}: {:?}", sound_type, path);
+                    println!(
+                        "Played notification sound for type {}: {:?}",
+                        sound_type, path
+                    );
                 } else {
                     println!("Failed to play notification sound for type {}, falling back to generated beep", sound_type);
                     self.generate_beep_sound();
                 }
             }
             None => {
-                println!("No sound file found for notification type {}, generating beep sound", notification_type);
+                println!(
+                    "No sound file found for notification type {}, generating beep sound",
+                    notification_type
+                );
                 self.generate_beep_sound();
             }
         }
     }
-    
+
     /// Check if sound playback is enabled
     fn is_enabled(&self) -> bool {
         self.config
@@ -194,7 +209,7 @@ impl SoundManager {
             .map(|config| config.settings.enabled)
             .unwrap_or(true) // Default to enabled if no config
     }
-    
+
     /// Get the sound file path for a given notification type
     fn get_sound_file_path(&self, sound_type: &NotificationSoundType) -> Option<PathBuf> {
         let config = self.config.as_ref()?;
@@ -224,7 +239,7 @@ impl SoundManager {
             }
         }
     }
-    
+
     /// Generate and play a beep sound as fallback
     fn generate_beep_sound(&self) -> bool {
         let Some(ref stream_handle) = self.output_stream_handle else {
@@ -243,8 +258,12 @@ impl SoundManager {
 
         match stream_handle.play_raw(source.convert_samples()) {
             Ok(_) => {
-                println!("Generated beep sound played successfully ({}Hz, {}ms, {}% volume)",
-                        beep_freq, beep_duration.as_millis(), 80);
+                println!(
+                    "Generated beep sound played successfully ({}Hz, {}ms, {}% volume)",
+                    beep_freq,
+                    beep_duration.as_millis(),
+                    80
+                );
                 true
             }
             Err(e) => {
@@ -266,7 +285,8 @@ impl SoundManager {
                 match Decoder::new(file) {
                     Ok(source) => {
                         // Get volume from config or use default
-                        let volume = self.config
+                        let volume = self
+                            .config
                             .as_ref()
                             .map(|config| config.settings.default_volume)
                             .unwrap_or(0.5);
@@ -296,20 +316,25 @@ impl SoundManager {
             }
         }
     }
-    
+
     /// Update sound configuration and reinitialize if needed
+    #[allow(dead_code)]
     pub fn update_config(&mut self, config: SoundConfig) -> Result<(), String> {
         self.config = Some(config);
         println!("Sound configuration updated");
         Ok(())
     }
-    
+
     /// Enable or disable sound playback
+    #[allow(dead_code)]
     pub fn set_enabled(&mut self, enabled: bool) {
         if let Some(ref mut config) = self.config {
             config.settings.enabled = enabled;
         }
-        println!("Sound playback {}", if enabled { "enabled" } else { "disabled" });
+        println!(
+            "Sound playback {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
     }
 }
 

@@ -1,17 +1,17 @@
 mod commands;
 mod constants;
-mod sound_manager;
 mod notification_manager;
+mod sound_manager;
 use commands::*;
 use constants::*;
 
+use notification_manager::NotificationManager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::Manager;
 use tauri::Emitter;
-use user_idle::UserIdle;
+use tauri::Manager;
 use tokio::time::{interval, Duration};
-use notification_manager::NotificationManager;
+use user_idle::UserIdle;
 
 fn create_tray(app: &tauri::AppHandle) {
     // Create menu
@@ -23,24 +23,22 @@ fn create_tray(app: &tauri::AppHandle) {
     let tray = TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
-        .on_menu_event(|app, event| {
-             match event.id.as_ref() {
-                 "show" => {
-                     if let Some(window) = app.get_webview_window("main") {
-                         let _ = window.unminimize();
-                         let _ = window.show();
-                         let _ = window.set_focus();
-                     } else {
-                     }
-                 }
-                 "quit" => {
-                     app.exit(0);
-                 }
-                 _ => {
-                 }
-             }
-         })
-        .build(app).unwrap();
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                } else {
+                }
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .build(app)
+        .unwrap();
 
     // Store tray
     app.manage(tray);
@@ -86,25 +84,29 @@ impl NotificationManagerState {
 async fn start_idle_monitor(app: tauri::AppHandle) {
     let mut interval = interval(Duration::from_secs(IDLE_MONITOR_INTERVAL_SECONDS)); // Check every 5 seconds
     let mut idle_state = IdleMonitorState::new();
-    
+
     println!("Starting idle monitor background task...");
-    
+
     loop {
         interval.tick().await;
-        
+
         // Check if feature flag is enabled
         // For now, we'll assume it's enabled by default
         // TODO: Implement proper feature flag checking
-        
+
         match UserIdle::get_time() {
             Ok(idle_time) => {
                 let idle_seconds = idle_time.as_seconds();
                 let is_idle = idle_seconds >= IDLE_THRESHOLD_SECONDS; // Configurable threshold
-                
+
                 // Only emit event if state changed
                 if is_idle != idle_state.last_idle_state {
-                    let activity_state = if is_idle { "became_idle" } else { "became_active" };
-                    
+                    let activity_state = if is_idle {
+                        "became_idle"
+                    } else {
+                        "became_active"
+                    };
+
                     let payload = serde_json::json!({
                         "is_idle": is_idle,
                         "idle_time_seconds": idle_seconds,
@@ -112,18 +114,21 @@ async fn start_idle_monitor(app: tauri::AppHandle) {
                         "timestamp": chrono::Utc::now().to_rfc3339(),
                         "session_duration_seconds": idle_state.session_start.elapsed().as_secs()
                     });
-                    
+
                     let _ = app.emit("idle-status-changed", payload);
-                    println!("Idle state changed: {} at {} seconds idle", activity_state, idle_seconds);
-                    
+                    println!(
+                        "Idle state changed: {} at {} seconds idle",
+                        activity_state, idle_seconds
+                    );
+
                     idle_state.last_idle_state = is_idle;
-                    
+
                     // Reset session start when becoming active again
                     if !is_idle {
                         idle_state.session_start = std::time::Instant::now();
                     }
                 }
-                
+
                 // Always emit periodic status updates for debugging
                 let debug_payload = serde_json::json!({
                     "is_idle": is_idle,
@@ -131,7 +136,7 @@ async fn start_idle_monitor(app: tauri::AppHandle) {
                     "last_update": chrono::Utc::now().to_rfc3339(),
                     "session_duration_seconds": idle_state.session_start.elapsed().as_secs()
                 });
-                
+
                 let _ = app.emit("idle-status-update", debug_payload);
             }
             Err(e) => {
@@ -151,7 +156,8 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
-            app.emit("single-instance", Payload { args: argv, cwd }).unwrap();
+            app.emit("single-instance", Payload { args: argv, cwd })
+                .unwrap();
         }))
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_os::init())
@@ -160,42 +166,62 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-             if cfg!(debug_assertions) {
-                 app.handle().plugin(
-                     tauri_plugin_log::Builder::default()
-                         .level(log::LevelFilter::Info)
-                         .build(),
-                 )?;
-             }
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .targets([
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+                    ])
+                    .build(),
+            )?;
 
-             // Create tray
-             create_tray(&app.handle());
-             
-             // Initialize notification manager
-             let notification_manager_state = NotificationManagerState::new();
-             app.manage(notification_manager_state.clone());
-             
-             // Initialize notification channels
-             let app_handle = app.handle().clone();
-             let mut notification_manager = notification_manager_state.manager;
-             tauri::async_runtime::spawn(async move {
-                 println!("🚀 Starting notification channel initialization...");
-                 if let Err(e) = notification_manager.initialize_channels(&app_handle).await {
-                     println!("❌ Warning: Failed to initialize notification channels: {}", e);
-                 } else {
-                     println!("✅ Notification channel initialization completed");
-                 }
-             });
-             
-             // Start background idle monitor
-             let app_handle = app.handle().clone();
-             tauri::async_runtime::spawn(async move {
-                 start_idle_monitor(app_handle).await;
-             });
+            // Create tray
+            create_tray(&app.handle());
 
-             Ok(())
-         })
-        .invoke_handler(tauri::generate_handler![greet, get_timer_state, stop_timer, get_processes, toggle_devtools, get_idle_status, get_idle_time, is_user_idle, create_activity_log, show_notification, show_notification_with_channel, test_notification_sound, debug_sound_system, debug_notification_system])
+            // Initialize notification manager
+            let notification_manager_state = NotificationManagerState::new();
+            app.manage(notification_manager_state.clone());
+
+            // Initialize notification channels
+            let app_handle = app.handle().clone();
+            let mut notification_manager = notification_manager_state.manager;
+            tauri::async_runtime::spawn(async move {
+                println!("🚀 Starting notification channel initialization...");
+                if let Err(e) = notification_manager.initialize_channels(&app_handle).await {
+                    println!(
+                        "❌ Warning: Failed to initialize notification channels: {}",
+                        e
+                    );
+                } else {
+                    println!("✅ Notification channel initialization completed");
+                }
+            });
+
+            // Start background idle monitor
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                start_idle_monitor(app_handle).await;
+            });
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            get_timer_state,
+            stop_timer,
+            get_processes,
+            toggle_devtools,
+            get_idle_status,
+            get_idle_time,
+            is_user_idle,
+            create_activity_log,
+            show_notification,
+            show_notification_with_channel,
+            test_notification_sound,
+            debug_sound_system,
+            debug_notification_system
+        ])
         .on_window_event(|_window, _event| {
             // Close is handled in frontend
         })

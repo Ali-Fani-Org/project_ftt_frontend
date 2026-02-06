@@ -636,9 +636,11 @@
 					<div class="flex items-center">
 						<!-- Day label with date tooltip -->
 						<div
+							role="button"
+							tabindex="0"
 							class="w-14 text-[0.7rem] font-medium text-base-content/90 mr-1.5 flex-shrink-0 relative"
-							on:mouseenter={(e) => showDateTooltip(day.date, e)}
-							on:mouseleave={() => hideDateTooltip()}
+							onmouseenter={(e) => showDateTooltip(day.date, e)}
+							onmouseleave={() => hideDateTooltip()}
 						>
 							<div>{day.label}</div>
 						</div>
@@ -699,10 +701,6 @@
 		}
 	}
 
-	.animate-slide-in {
-		animation: slideInFromBottom 0.5s ease-out forwards;
-		transform-origin: bottom;
-	}
 
 	.glass-card {
 		background-color: color-mix(in oklch, oklch(var(--b1)) 85%, transparent);

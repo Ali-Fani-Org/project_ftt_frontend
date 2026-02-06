@@ -1,24 +1,29 @@
 {
-	"$schema": "../gen/schemas/desktop-schema.json",
-	"identifier": "default",
-	"description": "enables the default permissions",
-	"windows": ["main", "time-entries", "process-monitor"],
-	"permissions": [
-		"core:default",
-		"store:default",
-		"core:window:default",
-		"core:webview:allow-create-webview-window",
-		"core:window:allow-start-dragging",
-		"core:window:allow-minimize",
-		"core:window:allow-close",
-		"core:window:allow-toggle-maximize",
-		"core:window:allow-internal-toggle-maximize",
-		"core:window:allow-hide",
-		"core:window:allow-set-always-on-top",
-		"core:window:allow-is-always-on-top",
-		"autostart:default",
-		"notification:default",
-		"process:default",
-		"updater:default"
-	]
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main",
+    "time-entries",
+    "process-monitor"
+  ],
+  "permissions": [
+    "core:default",
+    "store:default",
+    "core:window:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-close",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-hide",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-is-always-on-top",
+    "autostart:default",
+    "notification:default",
+    "process:default",
+    "updater:default",
+    "log:default"
+  ]
 }

@@ -539,6 +539,9 @@
 										: ''}
 								>
 									<div
+										role="gridcell"
+										tabindex="0"
+										aria-label={day ? `${day.date}: ${secondsToHHMMSS(day.value)}` : 'Empty cell'}
 										class={cellClasses(day)}
 										onmouseenter={(e) => handleDayHover(e, day)}
 										onmouseleave={() => day && resetConfettiForDay(day.date)}

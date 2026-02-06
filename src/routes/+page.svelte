@@ -338,7 +338,7 @@
 			<div class="card bg-base-100 w-full max-w-md shadow-2xl relative">
 				<!-- Settings Gear Icon -->
 				<div class="absolute top-4 right-4">
-					<button class="btn btn-ghost btn-sm" onclick={openSettingsModal} title="Settings">
+					<button class="btn btn-ghost btn-sm" onclick={openSettingsModal} title="Settings" aria-label="Settings">
 						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path
 								stroke-linecap="round"
@@ -423,9 +423,9 @@
 								required
 							/>
 							{#if validationErrors.username}
-								<label class="label">
+								<div class="label">
 									<span class="label-text-alt text-error">{validationErrors.username}</span>
-								</label>
+								</div>
 							{/if}
 						</div>
 
@@ -446,9 +446,9 @@
 										required
 									/>
 									{#if validationErrors.firstName}
-										<label class="label">
+										<div class="label">
 											<span class="label-text-alt text-error">{validationErrors.firstName}</span>
-										</label>
+										</div>
 									{/if}
 								</div>
 
@@ -466,9 +466,9 @@
 										required
 									/>
 									{#if validationErrors.lastName}
-										<label class="label">
+										<div class="label">
 											<span class="label-text-alt text-error">{validationErrors.lastName}</span>
-										</label>
+										</div>
 									{/if}
 								</div>
 							</div>
@@ -524,9 +524,9 @@
 								</button>
 							</div>
 							{#if validationErrors.password}
-								<label class="label">
+								<div class="label">
 									<span class="label-text-alt text-error">{validationErrors.password}</span>
-								</label>
+								</div>
 							{/if}
 						</div>
 
@@ -548,10 +548,10 @@
 									required
 								/>
 								{#if validationErrors.confirmPassword}
-									<label class="label">
+									<div class="label">
 										<span class="label-text-alt text-error">{validationErrors.confirmPassword}</span
 										>
-									</label>
+									</div>
 								{/if}
 							</div>
 						{/if}

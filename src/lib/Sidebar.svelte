@@ -443,11 +443,6 @@
 	}
 
 	/* Easter egg styling - bigger scale with much more dramatic movement */
-	.scale-\[2\.5\] {
-		transform: scale(2.5);
-		z-index: 50;
-	}
-
 	.scale-\[3\] {
 		transform: scale(3);
 		z-index: 50;

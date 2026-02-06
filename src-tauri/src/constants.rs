@@ -9,4 +9,5 @@ pub const IDLE_THRESHOLD_SECONDS: u64 = 3; // 2 minutes
 pub const IDLE_MONITOR_INTERVAL_SECONDS: u64 = 10;
 
 /// Maximum number of activity logs to keep in memory
+#[allow(dead_code)]
 pub const MAX_ACTIVITY_LOGS: usize = 100;
