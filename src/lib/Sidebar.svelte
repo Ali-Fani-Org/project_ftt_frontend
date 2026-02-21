@@ -219,8 +219,8 @@
 
 	// Generate Dicebear avatar SVG for user with theme-aware background
 	function getUserAvatar() {
-		const currentUser = get(user) as User | null;
-		const currentTheme = get(theme);
+		const currentUser = $user as User | null;
+		const currentTheme = $theme;
 		if (currentUser?.username) {
 			return generateDicebearAvatar(currentUser.username, currentTheme);
 		}
@@ -240,18 +240,18 @@
 
 	// Get separate first and last names for line-by-line display
 	function getFirstName(): string {
-		const currentUser = get(user) as User | null;
+		const currentUser = $user as User | null;
 		return currentUser?.first_name || '';
 	}
 
 	function getLastName(): string {
-		const currentUser = get(user) as User | null;
+		const currentUser = $user as User | null;
 		return currentUser?.last_name || '';
 	}
 
 	// Get username for bottom section (always show username)
 	function getUsername(): string {
-		const currentUser = get(user) as User | null;
+		const currentUser = $user as User | null;
 		return currentUser?.username || '';
 	}
 
