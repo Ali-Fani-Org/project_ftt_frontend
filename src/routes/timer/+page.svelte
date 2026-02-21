@@ -962,7 +962,7 @@
 											</div>
 											<div class="text-right ml-4">
 												<div class="text-sm text-base-content/90 font-mono">
-													{session.duration || '00:00:00'}
+													{session.duration ? formatTime(parseFloat(session.duration)) : '00:00:00'}
 												</div>
 												<div class="text-xs text-base-content/60 mt-1">
 													{new Date(session.start_time).toLocaleTimeString([], {
