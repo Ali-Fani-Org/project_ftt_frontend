@@ -243,7 +243,7 @@ export const user = createPersistentStore<{
 	profile_image: string | null;
 } | null>('user', null);
 
-export const baseUrl = createPersistentStore<string>('baseUrl', 'https://hr.trinitycyberian.com');
+export const baseUrl = createPersistentStore<string>('baseUrl', 'https://hr.alpharency.com');
 
 export type BaseUrlHistoryEntry = {
 	url: string;
