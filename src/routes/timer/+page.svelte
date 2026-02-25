@@ -12,7 +12,7 @@
 		refreshOnlyWhenVisible,
 		refreshOnReconnect
 	} from '$lib/stores';
-	import { projects, timeEntries, type Project, type TimeEntry } from '$lib/api';
+	import { projects, timeEntries, type Project, type TimeEntry, parseErrorResponse } from '$lib/api';
 	import { preventDefault } from '$lib/commands.svelte';
 	import TasksModal from '$lib/TasksModal.svelte';
 	import type { PageData } from './$types';
@@ -20,6 +20,7 @@
 	import DataFreshnessIndicator from '$lib/DataFreshnessIndicator.svelte';
 	import { ACTIVE_TIMER_VALIDITY_THRESHOLD } from '$lib/stores';
 	import { refreshController } from '$lib/refreshController';
+	import { createEditableEntryHandlers, type EditableEntryStateUpdate } from '$lib/editableEntry';
 
 	// Get any data loaded on server (may be empty)
 	const { data } = $props<{ data: PageData }>();
@@ -41,9 +42,49 @@
 	let showAdvancedOptions = $state(false);
 	let isStartingTimer = $state(false);
 
+	// Custom start time state (60-minute buffer feature)
+	let useCustomStartTime = $state(false);
+	let customStartTime = $state<Date | null>(null);
+	let startTimeValidationError = $state<string | null>(null);
+	let sliderMinutesAgo = $state(0); // Track slider position separately for consistent UI
+	const MAX_START_TIME_PAST_MINUTES = 60; // Maximum minutes in the past for start time
+	
+	// Feature hint dismissal state
+	const BUFFER_FEATURE_HINT_KEY = 'timer_buffer_feature_hint_dismissed';
+	let showBufferFeatureHint = $state(true);
+
+	// Edit mode state for active entry
+	let isEditingTitle = $state(false);
+	let isEditingDescription = $state(false);
+	let editedTitle = $state('');
+	let editedDescription = $state('');
+	let isSavingEdit = $state(false);
+	let editError = $state('');
+
+	// Create edit handlers using the reusable utility
+	const editHandlers = createEditableEntryHandlers({
+		getState: () => ({ isEditingTitle, isEditingDescription, editedTitle, editedDescription, isSaving: isSavingEdit, editError }),
+		setState: (updates: EditableEntryStateUpdate) => {
+			if ('isEditingTitle' in updates && updates.isEditingTitle !== undefined) isEditingTitle = updates.isEditingTitle;
+			if ('isEditingDescription' in updates && updates.isEditingDescription !== undefined) isEditingDescription = updates.isEditingDescription;
+			if ('editedTitle' in updates && updates.editedTitle !== undefined) editedTitle = updates.editedTitle;
+			if ('editedDescription' in updates && updates.editedDescription !== undefined) editedDescription = updates.editedDescription;
+			if ('isSaving' in updates && updates.isSaving !== undefined) isSavingEdit = updates.isSaving;
+			if ('editError' in updates && updates.editError !== undefined) editError = updates.editError;
+		},
+		getEntry: () => activeEntry,
+		setEntry: (updatedEntry) => { activeEntry = updatedEntry; },
+		onUpdate: timeEntries.update,
+		onUpdateSuccess: (updatedEntry) => {
+			// Update localStorage cache
+			saveToLocalStorage(LAST_ACTIVE_ENTRY_KEY, updatedEntry);
+		},
+		isOnline: () => $network.isOnline
+	});
+
 	// Timer
 	let elapsed = $state(0);
-	let timerInterval = $state<any>(null);
+	let timerInterval = $state<ReturnType<typeof setInterval> | null>(null);
 
 	// Tasks modal
 	let showTasksModal = $state(false);
@@ -197,6 +238,16 @@
 			return;
 		}
 
+		// Check if the buffer feature hint was already dismissed
+		try {
+			const hintDismissed = localStorage.getItem(BUFFER_FEATURE_HINT_KEY);
+			if (hintDismissed === 'true') {
+				showBufferFeatureHint = false;
+			}
+		} catch (err) {
+			console.error('Error reading hint dismissal from localStorage:', err);
+		}
+
 		try {
 			// Load data based on whether we already have it from server
 			if (projectsList.length === 0) {
@@ -334,6 +385,11 @@
 		return () => {
 			// Unregister from refresh controller
 			refreshController.unregister('timer-page');
+			// Clean up timer interval to prevent memory leak
+			if (timerInterval) {
+				clearInterval(timerInterval);
+				timerInterval = null;
+			}
 		};
 
 		// Listen for events from Tauri
@@ -395,6 +451,11 @@
 	});
 
 	function startTimer() {
+		// Clear any existing interval first to prevent multiple concurrent intervals
+		if (timerInterval) {
+			clearInterval(timerInterval);
+			timerInterval = null;
+		}
 		if (activeEntry) {
 			const startTime = new Date(activeEntry.start_time).getTime();
 			elapsed = Math.floor((Date.now() - startTime) / 1000);
@@ -436,6 +497,79 @@
 		const minutes = Math.floor((seconds % 3600) / 60);
 		const secs = seconds % 60;
 		return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+	}
+
+	/**
+	 * Validate the selected start time
+	 * @returns Object with valid flag and optional error message
+	 */
+	function validateStartTime(selectedTime: Date): { valid: boolean; error?: string } {
+		const now = new Date();
+		const diffMs = now.getTime() - selectedTime.getTime();
+		const diffMinutes = diffMs / (1000 * 60);
+
+		// Check if in the future
+		if (diffMs < 0) {
+			return { valid: false, error: 'Start time cannot be in the future.' };
+		}
+
+		// Check if more than 60 minutes in the past
+		if (diffMinutes > MAX_START_TIME_PAST_MINUTES) {
+			return { valid: false, error: `Start time cannot be more than ${MAX_START_TIME_PAST_MINUTES} minutes in the past.` };
+		}
+
+		return { valid: true };
+	}
+
+	/**
+	 * Set custom start time to a specific number of minutes ago
+	 */
+	function setStartTimeMinutesAgo(minutes: number) {
+		const now = new Date();
+		customStartTime = new Date(now.getTime() - minutes * 60 * 1000);
+		sliderMinutesAgo = minutes; // Update slider position to match
+		// Validate and update error state
+		const validation = validateStartTime(customStartTime);
+		startTimeValidationError = validation.valid ? null : validation.error || null;
+	}
+
+	/**
+	 * Handle slider change for minutes ago
+	 */
+	function onSliderChange(event: Event) {
+		const target = event.target;
+		if (target instanceof HTMLInputElement) {
+			const minutes = parseInt(target.value, 10);
+			if (!isNaN(minutes)) {
+				setStartTimeMinutesAgo(minutes);
+			}
+		}
+	}
+
+	/**
+	 * Toggle custom start time and initialize to current time
+	 */
+	function toggleCustomStartTime() {
+		useCustomStartTime = !useCustomStartTime;
+		if (useCustomStartTime) {
+			// Always re-initialize to current time when enabling
+			// This prevents stale time values from previous toggles
+			customStartTime = new Date();
+			sliderMinutesAgo = 0; // Reset slider to "now"
+			startTimeValidationError = null;
+		}
+	}
+
+	/**
+	 * Dismiss the buffer feature hint
+	 */
+	function dismissBufferFeatureHint() {
+		showBufferFeatureHint = false;
+		try {
+			localStorage.setItem(BUFFER_FEATURE_HINT_KEY, 'true');
+		} catch (err) {
+			console.error('Error saving hint dismissal to localStorage:', err);
+		}
 	}
 
 	function updateLastServerUpdate() {
@@ -593,13 +727,36 @@
 			return;
 		}
 
+		// Validate custom start time if enabled
+		if (useCustomStartTime && customStartTime) {
+			const validation = validateStartTime(customStartTime);
+			if (!validation.valid) {
+				startTimeValidationError = validation.error || 'Invalid start time';
+				return;
+			}
+		}
+
 		try {
 			isStartingTimer = true;
-			activeEntry = await timeEntries.start({
+			
+			// Build the payload
+			const payload: {
+				title: string;
+				description: string;
+				project: number;
+				start_time?: string;
+			} = {
 				title,
 				description,
 				project: selectedProject
-			});
+			};
+
+			// Add custom start time if enabled
+			if (useCustomStartTime && customStartTime) {
+				payload.start_time = customStartTime.toISOString();
+			}
+
+			activeEntry = await timeEntries.start(payload);
 			startTimer();
 
 			// Emit event to Tauri
@@ -618,8 +775,41 @@
 			selectedProject = null;
 			showAdvancedOptions = false;
 			isStartingTimer = false;
-		} catch (err) {
-			error = 'Failed to start timer';
+			// Reset custom start time state
+			useCustomStartTime = false;
+			customStartTime = null;
+			startTimeValidationError = null;
+		} catch (err: any) {
+			// Handle API validation errors (400 Bad Request)
+			if (err?.response?.status === 400) {
+				try {
+					// Use the reusable error parsing utility
+					const errorData = await parseErrorResponse(err.response);
+
+					// Extract specific error messages from the API response
+					// API returns errors in Django REST framework format:
+					// - Field-specific errors: { "start_time": ["error message"] }
+					// - Non-field errors: { "non_field_errors": ["error message"] }
+					if (errorData?.start_time) {
+						startTimeValidationError = Array.isArray(errorData.start_time)
+							? errorData.start_time[0]
+							: errorData.start_time;
+					} else if (errorData?.non_field_errors) {
+						error = Array.isArray(errorData.non_field_errors)
+							? errorData.non_field_errors[0]
+							: errorData.non_field_errors;
+					} else {
+						error = 'Failed to start timer';
+					}
+				} catch (parseError) {
+					// If we can't parse the error response, log and show a generic message
+					console.error('Could not parse error response:', parseError, err);
+					error = 'Failed to start timer';
+				}
+			} else {
+				console.error('Failed to start timer:', err);
+				error = 'Failed to start timer';
+			}
 			isStartingTimer = false;
 		}
 	});
@@ -652,6 +842,9 @@
 			error = 'Failed to stop timer';
 		}
 	};
+
+	// Destructure edit handlers for use in template
+	const { startEditingTitle, startEditingDescription, cancelEditing, saveTitle, saveDescription } = editHandlers;
 
 	const openTimeEntries = async () => {
 		console.log('openTimeEntries called, mode:', get(timeEntriesDisplayMode));
@@ -783,8 +976,137 @@
 							</p>
 
 							{#if activeEntry}
-								<!-- Task Title -->
-								<h2 class="text-xl font-bold text-base-content">{activeEntry.title}</h2>
+								<!-- Task Title (Editable) -->
+								<div class="w-full max-w-md">
+									{#if isEditingTitle}
+										<div class="flex items-center gap-2">
+											<input
+												type="text"
+												bind:value={editedTitle}
+												class="input input-bordered input-lg text-center text-xl font-bold flex-1 {isSavingEdit ? 'opacity-50 cursor-wait' : ''}"
+												placeholder="Task title"
+												disabled={isSavingEdit}
+												onkeydown={(e) => {
+													if (e.key === 'Enter') saveTitle();
+													if (e.key === 'Escape') cancelEditing();
+												}}
+											/>
+											<button
+												class="btn btn-primary btn-circle"
+												onclick={saveTitle}
+												disabled={isSavingEdit || !editedTitle.trim()}
+											>
+												{#if isSavingEdit}
+													<span class="loading loading-spinner loading-sm"></span>
+												{:else}
+													<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+													</svg>
+												{/if}
+											</button>
+											<button
+												class="btn btn-ghost btn-circle"
+												onclick={cancelEditing}
+												disabled={isSavingEdit}
+												aria-label="Cancel editing"
+											>
+												<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+												</svg>
+											</button>
+										</div>
+									{:else}
+										<div class="flex items-center justify-center gap-2">
+											<h2 class="text-xl font-bold text-base-content">{activeEntry.title}</h2>
+											{#if $network.isOnline}
+												<button
+													class="btn btn-ghost btn-sm btn-circle"
+													onclick={startEditingTitle}
+													title="Edit title"
+													aria-label="Edit title"
+												>
+													<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+													</svg>
+												</button>
+											{/if}
+										</div>
+									{/if}
+								</div>
+
+								<!-- Description (Editable) -->
+								<div class="w-full max-w-md mt-2">
+									{#if isEditingDescription}
+										<div class="flex flex-col gap-2">
+											<textarea
+												bind:value={editedDescription}
+												class="textarea textarea-bordered text-center {isSavingEdit ? 'opacity-50 cursor-wait' : ''}"
+												placeholder="Add a description..."
+												rows="2"
+												disabled={isSavingEdit}
+												onkeydown={(e) => {
+													if (e.key === 'Enter' && e.ctrlKey) saveDescription();
+													if (e.key === 'Escape') cancelEditing();
+												}}
+											></textarea>
+											<div class="flex justify-center gap-2">
+												<button
+													class="btn btn-primary btn-sm"
+													onclick={saveDescription}
+													disabled={isSavingEdit}
+												>
+													{#if isSavingEdit}
+														<span class="loading loading-spinner loading-sm"></span>
+													{:else}
+														<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+														</svg>
+														Save
+													{/if}
+												</button>
+												<button
+													class="btn btn-ghost btn-sm"
+													onclick={cancelEditing}
+													disabled={isSavingEdit}
+												>
+													Cancel
+												</button>
+											</div>
+										</div>
+									{:else}
+										<div class="flex items-center justify-center gap-2">
+											{#if activeEntry.description}
+												<p class="text-sm text-base-content/60">{activeEntry.description}</p>
+											{:else}
+												<p class="text-sm text-base-content/40 italic">No description</p>
+											{/if}
+											{#if $network.isOnline}
+												<button
+													class="btn btn-ghost btn-xs btn-circle"
+													onclick={startEditingDescription}
+													title="Edit description"
+													aria-label="Edit description"
+												>
+													<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+													</svg>
+												</button>
+											{/if}
+										</div>
+									{/if}
+								</div>
+
+								<!-- Edit Error Message -->
+								{#if editError}
+									<div class="w-full max-w-md">
+										<div class="alert alert-error">
+											<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+											</svg>
+											<span>{editError}</span>
+										</div>
+									</div>
+								{/if}
 
 								<!-- Big Timer Display in the center -->
 								<div class="py-4">
@@ -892,6 +1214,9 @@
 											></path>
 										</svg>
 										Advanced Options
+										{#if showBufferFeatureHint}
+											<span class="badge badge-success badge-xs ml-2">New</span>
+										{/if}
 									</button>
 								</div>
 
@@ -908,6 +1233,133 @@
 											class="textarea textarea-bordered"
 											rows="3"
 										></textarea>
+									</div>
+
+									<!-- Feature Hint for Buffer Feature -->
+									{#if showBufferFeatureHint}
+										<div class="relative">
+											<div class="alert alert-success alert-sm py-2 pr-8">
+												<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+												</svg>
+												<span class="text-xs font-medium">✨ New! Start timers up to 60 minutes in the past</span>
+												<button
+													type="button"
+													class="btn btn-ghost btn-xs p-0 h-auto min-h-0 absolute right-2 top-1/2 -translate-y-1/2"
+													onclick={dismissBufferFeatureHint}
+													aria-label="Dismiss hint"
+												>
+													<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+													</svg>
+												</button>
+											</div>
+											<!-- Arrow pointing down -->
+											<div class="absolute left-6 -bottom-2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-success"></div>
+										</div>
+									{/if}
+
+									<!-- Custom Start Time Section -->
+									<div class="form-control">
+										<span class="label-text text-base-content/70 label">Start Time</span>
+										
+										<!-- Toggle Switch -->
+										<div class="flex items-center gap-3 mb-3">
+											<span class="text-sm {!useCustomStartTime ? 'font-medium' : 'text-base-content/60'}">Start from now</span>
+											<input 
+												type="checkbox" 
+												class="toggle toggle-primary" 
+												id="customStartTimeToggle"
+												checked={useCustomStartTime}
+												onchange={toggleCustomStartTime}
+												aria-label="Toggle between start from now and custom start time"
+											/>
+											<label for="customStartTimeToggle" class="text-sm {useCustomStartTime ? 'font-medium' : 'text-base-content/60'}">Custom time</label>
+										</div>
+
+										{#if useCustomStartTime}
+											<div class="space-y-4 p-4 bg-base-200 rounded-lg">
+												<!-- Minutes Slider -->
+												<div class="form-control">
+													<div class="flex justify-between items-center mb-2">
+														<span class="label-text text-sm font-medium">Start timer</span>
+														<span class="text-lg font-bold text-primary">{sliderMinutesAgo} min ago</span>
+													</div>
+													<input
+														type="range"
+														min="0"
+														max={MAX_START_TIME_PAST_MINUTES}
+														value={sliderMinutesAgo}
+														oninput={onSliderChange}
+														class="range range-primary"
+														step="1"
+													/>
+													<div class="flex justify-between text-xs text-base-content/50 mt-1">
+														<span>Now</span>
+														<span>{MAX_START_TIME_PAST_MINUTES} min ago</span>
+													</div>
+												</div>
+
+												<!-- Quick Select Buttons -->
+												<div class="form-control">
+													<span class="label-text text-xs label mb-2">Quick select</span>
+													<div class="flex flex-wrap gap-2">
+														<button
+															type="button"
+															class="btn btn-xs btn-outline"
+															onclick={() => setStartTimeMinutesAgo(0)}
+														>
+															Now
+														</button>
+														<button
+															type="button"
+															class="btn btn-xs btn-outline"
+															onclick={() => setStartTimeMinutesAgo(15)}
+														>
+															15 min
+														</button>
+														<button
+															type="button"
+															class="btn btn-xs btn-outline"
+															onclick={() => setStartTimeMinutesAgo(30)}
+														>
+															30 min
+														</button>
+														<button
+															type="button"
+															class="btn btn-xs btn-outline"
+															onclick={() => setStartTimeMinutesAgo(45)}
+														>
+															45 min
+														</button>
+														<button
+															type="button"
+															class="btn btn-xs btn-outline"
+															onclick={() => setStartTimeMinutesAgo(60)}
+														>
+															60 min
+														</button>
+													</div>
+												</div>
+
+												<!-- Selected Time Display -->
+												{#if customStartTime}
+													<div class="text-center text-sm text-base-content/70">
+														Timer will start from <span class="font-semibold text-base-content">{customStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+													</div>
+												{/if}
+
+												<!-- Validation Feedback -->
+												{#if startTimeValidationError}
+													<div class="alert alert-error py-2">
+														<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+														</svg>
+														<span class="text-sm">{startTimeValidationError}</span>
+													</div>
+												{/if}
+											</div>
+										{/if}
 									</div>
 								{/if}
 

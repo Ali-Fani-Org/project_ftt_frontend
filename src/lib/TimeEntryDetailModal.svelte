@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { type TimeEntry } from './api';
+	import { type TimeEntry, timeEntries } from './api';
 	import { createEventDispatcher } from 'svelte';
+	import { network } from './network';
+	import { createEditableEntryHandlers, type EditableEntryStateUpdate } from './editableEntry';
 
 	const dispatch = createEventDispatcher();
 
@@ -9,6 +11,34 @@
 	}
 
 	let { entry = $bindable(null) }: Props = $props();
+
+	// Edit mode state
+	let isEditingTitle = $state(false);
+	let isEditingDescription = $state(false);
+	let editedTitle = $state('');
+	let editedDescription = $state('');
+	let isSavingEdit = $state(false);
+	let editError = $state('');
+
+	// Create handlers using the reusable utility
+	const editHandlers = createEditableEntryHandlers({
+		getState: () => ({ isEditingTitle, isEditingDescription, editedTitle, editedDescription, isSaving: isSavingEdit, editError }),
+		setState: (updates: EditableEntryStateUpdate) => {
+			if ('isEditingTitle' in updates && updates.isEditingTitle !== undefined) isEditingTitle = updates.isEditingTitle;
+			if ('isEditingDescription' in updates && updates.isEditingDescription !== undefined) isEditingDescription = updates.isEditingDescription;
+			if ('editedTitle' in updates && updates.editedTitle !== undefined) editedTitle = updates.editedTitle;
+			if ('editedDescription' in updates && updates.editedDescription !== undefined) editedDescription = updates.editedDescription;
+			if ('isSaving' in updates && updates.isSaving !== undefined) isSavingEdit = updates.isSaving;
+			if ('editError' in updates && updates.editError !== undefined) editError = updates.editError;
+		},
+		getEntry: () => entry,
+		setEntry: (updatedEntry) => { entry = updatedEntry; },
+		onUpdate: timeEntries.update,
+		onUpdateSuccess: (updatedEntry) => {
+			dispatch('updated', { entry: updatedEntry });
+		},
+		isOnline: () => $network.isOnline
+	});
 
 	function formatDate(dateStr: string): string {
 		const date = new Date(dateStr);
@@ -64,8 +94,13 @@
 	}
 
 	function close() {
+		// Reset edit state on close
+		editHandlers.cancelEditing();
 		dispatch('close');
 	}
+
+	// Destructure handlers for use in template
+	const { startEditingTitle, startEditingDescription, cancelEditing, saveTitle, saveDescription } = editHandlers;
 </script>
 
 {#if entry}
@@ -73,8 +108,61 @@
 		<div class="modal-box max-w-5xl w-11/12">
 			<!-- Header -->
 			<div class="flex items-start justify-between mb-6">
-				<div>
-					<h3 class="font-bold text-3xl text-primary">{entry.title}</h3>
+				<div class="flex-1 mr-4">
+					<!-- Editable Title -->
+					{#if isEditingTitle}
+						<div class="flex items-center gap-2">
+							<input
+								type="text"
+								bind:value={editedTitle}
+								class="input input-bordered input-lg text-2xl font-bold flex-1 {isSavingEdit ? 'opacity-50 cursor-wait' : ''}"
+								placeholder="Task title"
+								disabled={isSavingEdit}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') saveTitle();
+									if (e.key === 'Escape') cancelEditing();
+								}}
+							/>
+							<button
+								class="btn btn-primary btn-circle"
+								onclick={saveTitle}
+								disabled={isSavingEdit || !editedTitle.trim()}
+							>
+								{#if isSavingEdit}
+									<span class="loading loading-spinner loading-sm"></span>
+								{:else}
+									<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+									</svg>
+								{/if}
+							</button>
+							<button
+								class="btn btn-ghost btn-circle"
+								onclick={cancelEditing}
+								disabled={isSavingEdit}
+							>
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+								</svg>
+							</button>
+						</div>
+					{:else}
+						<div class="flex items-center gap-2">
+							<h3 class="font-bold text-3xl text-primary">{entry.title}</h3>
+							{#if $network.isOnline}
+								<button
+									class="btn btn-ghost btn-sm btn-circle"
+									onclick={startEditingTitle}
+									title="Edit title"
+									aria-label="Edit title"
+								>
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+									</svg>
+								</button>
+							{/if}
+						</div>
+					{/if}
 					<div class="flex items-center gap-4 mt-2">
 						{#if entry}
 							{@const status = getStatusBadge(entry)}
@@ -87,31 +175,94 @@
 				<button class="btn btn-sm btn-circle btn-ghost" onclick={close}> ✕ </button>
 			</div>
 
+			<!-- Error Message -->
+			{#if editError}
+				<div class="alert alert-error mb-4">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+					</svg>
+					<span>{editError}</span>
+				</div>
+			{/if}
+
 			<!-- Main Content with Sidebar -->
 			<div class="flex gap-8">
 				<!-- Left Column - Description and Additional Info -->
 				<div class="flex-1 space-y-6">
-					<!-- Description Section -->
-					{#if entry.description}
-						<div class="card bg-base-200">
-							<div class="card-body">
-								<h4 class="font-semibold text-xl mb-4 flex items-center gap-2">
-									<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-										></path>
-									</svg>
-									Description
-								</h4>
-								<div class="prose prose-base max-w-none">
-									<p class="text-base-content/80 leading-relaxed text-lg">{entry.description}</p>
+					<!-- Description Section (Editable) -->
+					<div class="card bg-base-200">
+						<div class="card-body">
+							<h4 class="font-semibold text-xl mb-4 flex items-center gap-2">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+									></path>
+								</svg>
+								Description
+								{#if !isEditingDescription && $network.isOnline}
+									<button
+										class="btn btn-ghost btn-xs btn-circle ml-auto"
+										onclick={startEditingDescription}
+										title="Edit description"
+										aria-label="Edit description"
+									>
+										<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+										</svg>
+									</button>
+								{/if}
+							</h4>
+							{#if isEditingDescription}
+								<div class="space-y-3">
+									<textarea
+										bind:value={editedDescription}
+										class="textarea textarea-bordered w-full {isSavingEdit ? 'opacity-50 cursor-wait' : ''}"
+										placeholder="Add a description..."
+										rows="4"
+										disabled={isSavingEdit}
+										onkeydown={(e) => {
+											if (e.key === 'Enter' && e.ctrlKey) saveDescription();
+											if (e.key === 'Escape') cancelEditing();
+										}}
+									></textarea>
+									<div class="flex gap-2">
+										<button
+											class="btn btn-primary btn-sm"
+											onclick={saveDescription}
+											disabled={isSavingEdit}
+										>
+											{#if isSavingEdit}
+												<span class="loading loading-spinner loading-sm"></span>
+											{:else}
+												<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+												</svg>
+												Save
+											{/if}
+										</button>
+										<button
+											class="btn btn-ghost btn-sm"
+											onclick={cancelEditing}
+											disabled={isSavingEdit}
+										>
+											Cancel
+										</button>
+									</div>
 								</div>
-							</div>
+							{:else}
+								{#if entry.description}
+									<div class="prose prose-base max-w-none">
+										<p class="text-base-content/80 leading-relaxed text-lg">{entry.description}</p>
+									</div>
+								{:else}
+									<p class="text-base-content/50 italic">No description added</p>
+								{/if}
+							{/if}
 						</div>
-					{/if}
+					</div>
 
 					<!-- Tags Section -->
 					{#if entry.tags && entry.tags.length > 0}
@@ -265,6 +416,18 @@
 							></path>
 						</svg>
 						<span>This time entry is currently active</span>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Offline Warning -->
+			{#if !$network.isOnline}
+				<div class="mt-4">
+					<div class="alert alert-warning">
+						<svg class="w-6 h-6 stroke-current shrink-0 stroke-2" fill="none" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+						</svg>
+						<span>You are offline. Editing is disabled.</span>
 					</div>
 				</div>
 			{/if}

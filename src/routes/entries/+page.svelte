@@ -333,6 +333,21 @@
 	function closeEntryModal() {
 		selectedEntry = null;
 	}
+
+	function handleEntryUpdated(event: CustomEvent<{ entry: TimeEntry }>) {
+		const updatedEntry = event.detail.entry;
+
+		// Update the entry in the local data array to avoid full reload
+		if (data?.results) {
+			const index = data.results.findIndex((e) => e.id === updatedEntry.id);
+			if (index !== -1) {
+				data.results[index] = updatedEntry;
+			}
+		}
+
+		// Update the selected entry for the modal
+		selectedEntry = updatedEntry;
+	}
 </script>
 
 <div class="container mx-auto p-4 lg:p-8">
@@ -779,5 +794,9 @@
 
 <!-- Time Entry Detail Modal -->
 {#if selectedEntry}
-	<TimeEntryDetailModal entry={selectedEntry} on:close={closeEntryModal} />
+	<TimeEntryDetailModal 
+		entry={selectedEntry} 
+		on:close={closeEntryModal}
+		on:updated={handleEntryUpdated}
+	/>
 {/if}

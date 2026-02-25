@@ -364,6 +364,47 @@ function setCached(key: string, data: any, ttl: number = CACHE_TTL) {
 	saveToLocalStorage(key, data, ttl);
 }
 
+/**
+ * Type for error response objects that can come from different HTTP clients
+ * Supports standard Response objects and Ky-specific response objects
+ */
+export type ErrorResponse = Response | { _data?: Record<string, any>; clone?: () => Response; json?: () => Promise<any> };
+
+/**
+ * Parse error response from API calls
+ * Handles different response formats from various HTTP clients
+ * @param response - The error response object (can be Response or Ky-specific)
+ * @returns Parsed error data as JSON object
+ */
+export async function parseErrorResponse(response: ErrorResponse): Promise<Record<string, any>> {
+	try {
+		// Method 1: Clone + parse (standard Response objects)
+		// This avoids "body already read" errors
+		if (response.clone && typeof response.clone === 'function') {
+			const clonedResponse = response.clone();
+			return await clonedResponse.json();
+		}
+
+		// Method 2: Ky-specific _data property
+		// Some HTTP clients (e.g., Ky) cache parsed response data here
+		if ('_data' in response && response._data) {
+			return response._data;
+		}
+
+		// Method 3: Direct parse (last resort)
+		if ('json' in response && typeof response.json === 'function') {
+			return await response.json();
+		}
+
+		// No parseable format found
+		console.warn('Could not parse error response: unknown format');
+		return {};
+	} catch (parseError) {
+		console.warn('Could not parse error response:', parseError);
+		return {};
+	}
+}
+
 export const auth = {
 	login: async (username: string, password: string) => {
 		const response = await ky
@@ -537,6 +578,7 @@ export const timeEntries = {
 		description?: string;
 		project: number;
 		tags?: number[];
+		start_time?: string; // Optional - ISO 8601 datetime string for custom start time (up to 60 min in the past)
 	}) => {
 		// Clear related caches when starting a new timer
 		apiCache.delete('time_entries:all');
@@ -575,7 +617,7 @@ export const timeEntries = {
 			// Try to fetch from API first
 			const data = await api.get('api/time_entries/current_active/').json<TimeEntry>();
 			// Cache the successful response
-			setCached(cacheKey, data, 7 * 24 * 60 * 60 * 1000);
+			setCached(cacheKey, data, CACHE_TTL);
 			return data;
 		} catch (error: any) {
 			// 404 means no active timer - this is expected, clear cache and return null
@@ -601,6 +643,72 @@ export const timeEntries = {
 			// No cached data available - rethrow the error
 			throw error;
 		}
+	},
+	/**
+	 * Update a time entry's title, description, and/or tags
+	 * @param id - The ID of the time entry to update
+	 * @param data - Object containing fields to update (title, description, tags)
+	 * @returns The updated TimeEntry object
+	 */
+	update: async (id: number, data: { title?: string; description?: string | null; tags?: number[] }) => {
+		// Clear all time_entries related caches when updating
+		// Use known cache keys instead of iterating all localStorage keys
+		const knownCacheKeys = [
+			'time_entries:all',
+			'time_entries:current_active',
+			'time_entries:list',
+			'time_entries:filtered'
+		];
+		
+		// Clear from in-memory cache
+		for (const key of knownCacheKeys) {
+			apiCache.delete(key);
+		}
+		
+		// Also clear any dynamic filtered keys from in-memory cache
+		const dynamicKeys = Array.from(apiCache.keys()).filter((key) =>
+			key.startsWith('time_entries:filtered:')
+		);
+		for (const key of dynamicKeys) {
+			apiCache.delete(key);
+		}
+		
+		// Clear from localStorage using known keys
+		for (const key of knownCacheKeys) {
+			try {
+				localStorage.removeItem(LOCALSTORAGE_PREFIX + key);
+			} catch (err) {
+				console.warn(`Failed to remove cache key ${key}:`, err);
+			}
+		}
+		
+		// Clear dynamic filtered keys from localStorage
+		// Note: We iterate localStorage here because filtered keys are dynamic
+		// but we limit the iteration to only keys matching our prefix pattern
+		try {
+			const storageKeys = Object.keys(localStorage);
+			for (const key of storageKeys) {
+				if (key.startsWith(LOCALSTORAGE_PREFIX + 'time_entries:')) {
+					try {
+						localStorage.removeItem(key);
+					} catch (removeErr) {
+						console.warn(`Failed to remove cache key ${key}:`, removeErr);
+					}
+				}
+			}
+		} catch (err) {
+			// Ignore localStorage errors - this is non-critical
+			console.warn('Error accessing localStorage for cache clearing:', err);
+		}
+
+		const result = await api.patch(`api/time_entries/${id}/`, { json: data }).json<TimeEntry>();
+
+		// Update the current_active cache if this is the active entry
+		if (result.is_active) {
+			setCached('time_entries:current_active', result, CACHE_TTL);
+		}
+
+		return result;
 	}
 };
 
