@@ -501,11 +501,12 @@
 
 	/**
 	 * Validate the selected start time
+	 * @param selectedTime - The selected start time to validate
+	 * @param referenceTime - Optional reference time (defaults to now). Must be the same time used for calculation to avoid timing issues.
 	 * @returns Object with valid flag and optional error message
 	 */
-	function validateStartTime(selectedTime: Date): { valid: boolean; error?: string } {
-		const now = new Date();
-		const diffMs = now.getTime() - selectedTime.getTime();
+	function validateStartTime(selectedTime: Date, referenceTime: Date = new Date()): { valid: boolean; error?: string } {
+		const diffMs = referenceTime.getTime() - selectedTime.getTime();
 		const diffMinutes = diffMs / (1000 * 60);
 
 		// Check if in the future
@@ -528,8 +529,8 @@
 		const now = new Date();
 		customStartTime = new Date(now.getTime() - minutes * 60 * 1000);
 		sliderMinutesAgo = minutes; // Update slider position to match
-		// Validate and update error state
-		const validation = validateStartTime(customStartTime);
+		// Validate and update error state - pass 'now' to avoid timing issues
+		const validation = validateStartTime(customStartTime, now);
 		startTimeValidationError = validation.valid ? null : validation.error || null;
 	}
 
@@ -729,7 +730,7 @@
 
 		// Validate custom start time if enabled
 		if (useCustomStartTime && customStartTime) {
-			const validation = validateStartTime(customStartTime);
+			const validation = validateStartTime(customStartTime, new Date());
 			if (!validation.valid) {
 				startTimeValidationError = validation.error || 'Invalid start time';
 				return;
