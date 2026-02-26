@@ -1,6 +1,17 @@
 # Changelog
 
-## 1.4.0 (2026-02-25)
+## 1.4.2 (2025-02-26)
+
+- Feat: Add Sentry/GlitchTip error tracking integration with environment-based DSN configuration
+- Feat: Collect platform metadata (OS type, version, architecture) for Tauri desktop apps in Sentry
+- Feat: Fetch and report user public IP for desktop apps via ipify.org
+- Fix: Resolve oklch color format parsing error in chart gradients (TopTasksChart, TagDistributionChart, TimeTrendChart)
+- Fix: Convert theme colors to RGB format using canvas for Chart.js compatibility
+- Chore: Add PUBLIC_SENTRY_DSN environment variable support in GitHub Actions workflows
+- Chore: Update sync-version.js to also update Cargo.lock file
+- Chore: Add .env and .env.example for Sentry configuration
+
+## 1.4.0 (2025-02-25)
 
 - Feat: Add inline editing for time entry title and description on timer page
 - Feat: Add inline editing for time entry title and description in detail modal

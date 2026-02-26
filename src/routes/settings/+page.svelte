@@ -15,7 +15,6 @@
 		refreshOnlyWhenVisible
 	} from '$lib/stores';
 
-	import { enable, disable } from '@tauri-apps/plugin-autostart';
 	import IdleMonitorDebug from '$lib/IdleMonitorDebug.svelte';
 	import { isUserIdleMonitoringEnabled, isUserIdleMonitorDebugEnabled } from '$lib/stores';
 	import { featureFlagsStore } from '$lib/stores';
@@ -23,12 +22,8 @@
 	import { network } from '$lib/network';
 	import DataFreshnessIndicator from '$lib/DataFreshnessIndicator.svelte';
 	import { addToast } from '$lib/toast';
-	import { check } from '@tauri-apps/plugin-updater';
-	import { relaunch } from '@tauri-apps/plugin-process';
 
 	import { onMount } from 'svelte';
-	import { isTauri } from '@tauri-apps/api/core';
-	import { getVersion } from '@tauri-apps/api/app';
 	import { goto } from '$app/navigation';
 
 	let localBaseUrl = $state($baseUrl);
@@ -60,14 +55,26 @@
 	let updateProxyUrl = $state('');
 
 	onMount(async () => {
+		// Lazy load Tauri modules
+		let isTauriFn: any;
+		let getVersionFn: any;
 		try {
-			isTauriApp = await isTauri();
+			const tauriModule = await import('@tauri-apps/api/core');
+			isTauriFn = tauriModule.isTauri;
+			const appModule = await import('@tauri-apps/api/app');
+			getVersionFn = appModule.getVersion;
+		} catch (e) {
+			console.log('Not running in Tauri environment');
+		}
+
+		try {
+			if (isTauriFn) isTauriApp = await isTauriFn();
 		} catch {
 			isTauriApp = false;
 		}
 		// Try to get app version, but don't fail if offline
 		try {
-			appVersion = await getVersion();
+			if (getVersionFn) appVersion = await getVersionFn();
 		} catch (err) {
 			console.log('Could not get app version:', err);
 			appVersion = 'unknown';
@@ -170,6 +177,7 @@
 		updateStatus = 'checking';
 		try {
 			console.debug('Calling updater check()...');
+			const { check } = await import('@tauri-apps/plugin-updater');
 			const update = await withTimeout(
 				check({ timeout: 30000, proxy: proxyUrl || undefined }),
 				35000,
@@ -249,6 +257,7 @@
 			});
 			updateStatus = 'installed';
 			console.info('Update installed, relaunching.');
+			const { relaunch } = await import('@tauri-apps/plugin-process');
 			await relaunch();
 		} catch (error) {
 			console.error('Update install failed.', error);
@@ -321,10 +330,15 @@
 
 	async function saveAutostart() {
 		autostart.set(localAutostart);
-		if (localAutostart) {
-			await enable();
-		} else {
-			await disable();
+		try {
+			const { enable, disable } = await import('@tauri-apps/plugin-autostart');
+			if (localAutostart) {
+				await enable();
+			} else {
+				await disable();
+			}
+		} catch (err) {
+			console.warn('Autostart not available:', err);
 		}
 	}
 

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
+	import logger from '$lib/logger';
 	import {
 		authToken,
 		user,
@@ -44,14 +45,55 @@
 
 	// Custom start time state (60-minute buffer feature)
 	let useCustomStartTime = $state(false);
-	let customStartTime = $state<Date | null>(null);
-	let startTimeValidationError = $state<string | null>(null);
+	let now = $state(new Date());
 	let sliderMinutesAgo = $state(0); // Track slider position separately for consistent UI
+	let lastCustomStartTickLogMs = $state(0);
+	let customStartTime = $derived(
+		useCustomStartTime ? new Date(now.getTime() - sliderMinutesAgo * 60 * 1000) : null
+	);
+	let startTimeValidationError = $state<string | null>(null);
 	const MAX_START_TIME_PAST_MINUTES = 60; // Maximum minutes in the past for start time
 	
 	// Feature hint dismissal state
 	const BUFFER_FEATURE_HINT_KEY = 'timer_buffer_feature_hint_dismissed';
 	let showBufferFeatureHint = $state(true);
+
+	$effect(() => {
+		if (!useCustomStartTime) return;
+		const intervalId = setInterval(() => {
+			now = new Date();
+			const nowMs = now.getTime();
+			if (nowMs - lastCustomStartTickLogMs >= 10_000) {
+				lastCustomStartTickLogMs = nowMs;
+				logger.debug('[timer] custom start time tick', {
+					now: now.toISOString(),
+					sliderMinutesAgo,
+					customStartTime: customStartTime?.toISOString() ?? null
+				});
+			}
+		}, 1000);
+		return () => clearInterval(intervalId);
+	});
+
+	$effect(() => {
+		if (!useCustomStartTime) {
+			startTimeValidationError = null;
+			return;
+		}
+		if (!customStartTime) {
+			startTimeValidationError = null;
+			return;
+		}
+		const validation = validateStartTime(customStartTime, now);
+		startTimeValidationError = validation.valid ? null : validation.error || null;
+		logger.debug('[timer] custom start time validation', {
+			now: now.toISOString(),
+			sliderMinutesAgo,
+			customStartTime: customStartTime.toISOString(),
+			valid: validation.valid,
+			error: validation.error ?? null
+		});
+	});
 
 	// Edit mode state for active entry
 	let isEditingTitle = $state(false);
@@ -526,12 +568,7 @@
 	 * Set custom start time to a specific number of minutes ago
 	 */
 	function setStartTimeMinutesAgo(minutes: number) {
-		const now = new Date();
-		customStartTime = new Date(now.getTime() - minutes * 60 * 1000);
 		sliderMinutesAgo = minutes; // Update slider position to match
-		// Validate and update error state - pass 'now' to avoid timing issues
-		const validation = validateStartTime(customStartTime, now);
-		startTimeValidationError = validation.valid ? null : validation.error || null;
 	}
 
 	/**
@@ -555,7 +592,7 @@
 		if (useCustomStartTime) {
 			// Always re-initialize to current time when enabling
 			// This prevents stale time values from previous toggles
-			customStartTime = new Date();
+			now = new Date();
 			sliderMinutesAgo = 0; // Reset slider to "now"
 			startTimeValidationError = null;
 		}
@@ -730,7 +767,15 @@
 
 		// Validate custom start time if enabled
 		if (useCustomStartTime && customStartTime) {
-			const validation = validateStartTime(customStartTime, new Date());
+			now = new Date();
+			const validation = validateStartTime(customStartTime, now);
+			logger.debug('[timer] submit validation', {
+				now: now.toISOString(),
+				sliderMinutesAgo,
+				customStartTime: customStartTime.toISOString(),
+				valid: validation.valid,
+				error: validation.error ?? null
+			});
 			if (!validation.valid) {
 				startTimeValidationError = validation.error || 'Invalid start time';
 				return;
@@ -755,6 +800,9 @@
 			// Add custom start time if enabled
 			if (useCustomStartTime && customStartTime) {
 				payload.start_time = customStartTime.toISOString();
+				logger.debug('[timer] starting timer with custom start time', {
+					start_time: payload.start_time
+				});
 			}
 
 			activeEntry = await timeEntries.start(payload);
@@ -778,7 +826,8 @@
 			isStartingTimer = false;
 			// Reset custom start time state
 			useCustomStartTime = false;
-			customStartTime = null;
+			sliderMinutesAgo = 0;
+			now = new Date();
 			startTimeValidationError = null;
 		} catch (err: any) {
 			// Handle API validation errors (400 Bad Request)
@@ -1346,7 +1395,7 @@
 												<!-- Selected Time Display -->
 												{#if customStartTime}
 													<div class="text-center text-sm text-base-content/70">
-														Timer will start from <span class="font-semibold text-base-content">{customStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+														Timer will start from <span class="font-semibold text-base-content">{customStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
 													</div>
 												{/if}
 

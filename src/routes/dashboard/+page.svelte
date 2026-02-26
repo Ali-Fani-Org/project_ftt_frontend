@@ -7,6 +7,7 @@
 	import TasksModal from '$lib/TasksModal.svelte';
 	import Last7DaysChart from '$lib/Last7DaysChart.svelte';
 	import CalendarHeatmap from '$lib/CalendarHeatmap.svelte';
+	import ProjectsBarChart from '$lib/ProjectsBarChart.svelte';
 	import { preloadOnHover } from '$lib/preloadOnHover';
 	import DebugPreloadIcon from '$lib/DebugPreloadIcon.svelte';
 	import { debugPreloadActive } from '$lib/preloadOnHover';
@@ -15,17 +16,15 @@
 	import { network } from '$lib/network';
 
 	let recentEntries = $state<TimeEntry[]>([]);
-	let lastMonthEntries = $state<TimeEntry[]>([]);
-	let thisMonthEntries = $state<TimeEntry[]>([]);
+	let todayEntries = $state<TimeEntry[]>([]);
 	let activeEntry = $state<TimeEntry | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 	let showTasksModal = $state(false);
 
-	// Stats
-	let lastMonthTotalHours = $state(0);
-	let thisMonthTotalSeconds = $state(0);
-	let thisMonthCompletedTasks = $state(0);
+	// Stats for today
+	let todayTotalSeconds = $state(0);
+	let todayCompletedTasks = $state(0);
 
 	// Feature flags
 	let showProcessMonitorButton = $state(false);
@@ -41,52 +40,14 @@
 
 	// Helper functions to get date ranges
 	/**
-	 * Calculates the date range for the previous month (last month).
-	 * 
-	 * Logic:
-	 * - Uses JavaScript Date's month indexing (0-11) where month -1 wraps to previous year if needed
-	 * - firstDayLastMonth: Created by setting day=1 of the previous month (now.getMonth() - 1, 1)
-	 *   Example: If today is February 21, 2026:
-	 *     - now.getMonth() returns 1 (February)
-	 *     - now.getMonth() - 1 = 0 (January)
-	 *     - firstDayLastMonth = January 1, 2026
-	 * - lastDayLastMonth: Created by setting day=0 of the current month, which gives the last day of previous month
-	 *   Example: If today is February 21, 2026:
-	 *     - now.getMonth() = 1 (February), day=0 gives January 31
-	 *     - lastDayLastMonth = January 31, 2026
-	 * 
-	 * @returns Object with 'start' (first day) and 'end' (last day) in YYYY-MM-DD format
+	 * Gets today's date in YYYY-MM-DD format.
+	 * @returns Today's date string
 	 */
-	function getLastMonthRange(): { start: string; end: string } {
+	function getTodayRange(): { start: string; end: string } {
 		const now = new Date();
-		const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-		const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-		return {
-			start: firstDayLastMonth.toISOString().split('T')[0],
-			end: lastDayLastMonth.toISOString().split('T')[0]
-		};
-	}
-
-	/**
-	 * Calculates the date range for the current month up to today.
-	 * 
-	 * Logic:
-	 * - firstDayThisMonth: Created by setting day=1 of the current month
-	 *   Example: If today is February 21, 2026:
-	 *     - now.getMonth() returns 1 (February)
-	 *     - firstDayThisMonth = February 1, 2026
-	 * - end: Today's date, as we only want entries up to the current moment
-	 *   Example: If today is February 21, 2026:
-	 *     - end = 2026-02-21
-	 * 
-	 * @returns Object with 'start' (first day of month) and 'end' (today) in YYYY-MM-DD format
-	 */
-	function getThisMonthRange(): { start: string; end: string } {
-		const now = new Date();
-		const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 		const today = now.toISOString().split('T')[0];
 		return {
-			start: firstDayThisMonth.toISOString().split('T')[0],
+			start: today,
 			end: today
 		};
 	}
@@ -126,27 +87,23 @@
 
 	// Helper to load cached time entries
 	async function loadCachedTimeEntries(): Promise<{
-		lastMonthEntries: TimeEntry[];
-		thisMonthEntries: TimeEntry[];
+		todayEntries: TimeEntry[];
 		recentEntries: TimeEntry[];
 		activeEntry: TimeEntry | null;
 	} | null> {
 		try {
 			// Try localStorage cache
-			const lastMonthKey = 'dashboard_last_month';
-			const thisMonthKey = 'dashboard_this_month';
+			const todayKey = 'dashboard_today_entries';
 			const recentKey = 'dashboard_recent_entries';
 			const activeKey = 'dashboard_active_entry';
 
-			const lastMonthStored = localStorage.getItem(lastMonthKey);
-			const thisMonthStored = localStorage.getItem(thisMonthKey);
+			const todayStored = localStorage.getItem(todayKey);
 			const recentStored = localStorage.getItem(recentKey);
 			const activeStored = localStorage.getItem(activeKey);
 
-			if (lastMonthStored || thisMonthStored || recentStored) {
+			if (todayStored || recentStored) {
 				return {
-					lastMonthEntries: lastMonthStored ? JSON.parse(lastMonthStored) : [],
-					thisMonthEntries: thisMonthStored ? JSON.parse(thisMonthStored) : [],
+					todayEntries: todayStored ? JSON.parse(todayStored) : [],
 					recentEntries: recentStored ? JSON.parse(recentStored) : [],
 					activeEntry: activeStored ? JSON.parse(activeStored) : null
 				};
@@ -174,22 +131,16 @@
 			// Check if online before making API calls
 			const isOnline = $network.isOnline;
 
-			// Get date ranges for last month and this month
-			const lastMonthRange = getLastMonthRange();
-			const thisMonthRange = getThisMonthRange();
+			// Get today's date range
+			const todayRange = getTodayRange();
 
 			if (isOnline) {
 				// Online: fetch from API
-				const [lastMonthResult, thisMonthResult, recentEntriesResult, activeResult] =
+				const [todayResult, recentEntriesResult, activeResult] =
 					await Promise.allSettled([
 						timeEntries.listWithFilters({
-							start_date_after_tz: lastMonthRange.start,
-							start_date_before_tz: lastMonthRange.end,
-							limit: 100
-						}),
-						timeEntries.listWithFilters({
-							start_date_after_tz: thisMonthRange.start,
-							start_date_before_tz: thisMonthRange.end,
+							start_date_after_tz: todayRange.start,
+							start_date_before_tz: todayRange.end,
 							limit: 100
 						}),
 						timeEntries.list(),
@@ -202,16 +153,11 @@
 						})()
 					]);
 
-				if (lastMonthResult.status === 'fulfilled') {
-					const data = lastMonthResult.value;
-					lastMonthEntries = Array.isArray(data) ? data : data?.results || [];
-				}
-
-				if (thisMonthResult.status === 'fulfilled') {
-					const data = thisMonthResult.value;
-					thisMonthEntries = Array.isArray(data) ? data : data?.results || [];
+				if (todayResult.status === 'fulfilled') {
+					const data = todayResult.value;
+					todayEntries = Array.isArray(data) ? data : data?.results || [];
 					calculateStats(
-						thisMonthEntries,
+						todayEntries,
 						activeResult.status === 'fulfilled' ? activeResult.value : null
 					);
 				}
@@ -232,11 +178,10 @@
 				// Load cached time entries
 				const cachedEntries = await loadCachedTimeEntries();
 				if (cachedEntries) {
-					lastMonthEntries = cachedEntries.lastMonthEntries;
-					thisMonthEntries = cachedEntries.thisMonthEntries;
+					todayEntries = cachedEntries.todayEntries;
 					recentEntries = cachedEntries.recentEntries;
 					activeEntry = cachedEntries.activeEntry;
-					calculateStats(thisMonthEntries, activeEntry);
+					calculateStats(todayEntries, activeEntry);
 				}
 			}
 
@@ -258,32 +203,22 @@
 		refreshController.unregister('dashboard-page');
 	});
 
-	function calculateStats(thisMonthEntries: TimeEntry[], active: TimeEntry | null) {
-		// Calculate completed tasks this month
-		thisMonthCompletedTasks = thisMonthEntries.filter((entry) => !entry.is_active).length;
+	function calculateStats(entries: TimeEntry[], active: TimeEntry | null) {
+		// Calculate completed tasks today
+		todayCompletedTasks = entries.filter((entry) => !entry.is_active).length;
 
-		// Calculate total seconds this month
-		thisMonthTotalSeconds = 0;
-		for (const entry of thisMonthEntries) {
+		// Calculate total seconds today
+		todayTotalSeconds = 0;
+		for (const entry of entries) {
 			if (entry.duration) {
 				const duration = parseInt(entry.duration, 10) || 0; // Duration is now in seconds as string
-				thisMonthTotalSeconds += duration;
+				todayTotalSeconds += duration;
 			} else if (entry.is_active && active?.id === entry.id) {
 				// For active entry, calculate from start time to now
 				const startTime = new Date(entry.start_time).getTime();
-				thisMonthTotalSeconds += Math.floor((Date.now() - startTime) / 1000);
+				todayTotalSeconds += Math.floor((Date.now() - startTime) / 1000);
 			}
 		}
-
-		// Calculate total hours last month
-		let lastMonthSeconds = 0;
-		for (const entry of lastMonthEntries) {
-			if (entry.duration) {
-				const duration = parseInt(entry.duration, 10) || 0;
-				lastMonthSeconds += duration;
-			}
-		}
-		lastMonthTotalHours = Math.floor((lastMonthSeconds / 3600) * 10) / 10; // Round to 1 decimal
 	}
 
 	/**
@@ -369,20 +304,14 @@
 				return;
 			}
 
-			// Get date ranges for last month and this month
-			const lastMonthRange = getLastMonthRange();
-			const thisMonthRange = getThisMonthRange();
+			// Get today's date range
+			const todayRange = getTodayRange();
 
-			const [lastMonthResult, thisMonthResult, recentEntriesResult, activeResult] =
+			const [todayResult, recentEntriesResult, activeResult] =
 				await Promise.allSettled([
 					timeEntries.listWithFilters({
-						start_date_after_tz: lastMonthRange.start,
-						start_date_before_tz: lastMonthRange.end,
-						limit: 100
-					}),
-					timeEntries.listWithFilters({
-						start_date_after_tz: thisMonthRange.start,
-						start_date_before_tz: thisMonthRange.end,
+						start_date_after_tz: todayRange.start,
+						start_date_before_tz: todayRange.end,
 						limit: 100
 					}),
 					timeEntries.list(), // For recent entries
@@ -395,25 +324,16 @@
 					})()
 				]);
 
-			if (lastMonthResult.status === 'fulfilled') {
-				const data = lastMonthResult.value;
-				lastMonthEntries = Array.isArray(data) ? data : data?.results || [];
-				// Save to localStorage for offline use
-				try {
-					localStorage.setItem('dashboard_last_month', JSON.stringify(lastMonthEntries));
-				} catch (e) {}
-			}
-
-			if (thisMonthResult.status === 'fulfilled') {
-				const data = thisMonthResult.value;
-				thisMonthEntries = Array.isArray(data) ? data : data?.results || [];
+			if (todayResult.status === 'fulfilled') {
+				const data = todayResult.value;
+				todayEntries = Array.isArray(data) ? data : data?.results || [];
 				calculateStats(
-					thisMonthEntries,
+					todayEntries,
 					activeResult.status === 'fulfilled' ? activeResult.value : null
 				);
 				// Save to localStorage for offline use
 				try {
-					localStorage.setItem('dashboard_this_month', JSON.stringify(thisMonthEntries));
+					localStorage.setItem('dashboard_today_entries', JSON.stringify(todayEntries));
 				} catch (e) {}
 			}
 
@@ -540,45 +460,18 @@
 		</div>
 	{:else}
 		<!-- Quick Stats -->
-		<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
-			<!-- This Month Total Hours - First position with HH:MM:SS format -->
-			<div class="card bg-base-100 shadow-lg">
-				<div class="card-body">
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4 items-stretch">
+			<!-- Hours Today -->
+			<div class="card bg-base-100 shadow-lg h-full">
+				<div class="card-body flex flex-col justify-center">
 					<div class="flex items-center justify-between">
 						<div>
-							<h3 class="card-title text-sm font-normal text-base-content/70">This Month Total Hours</h3>
-							<p class="text-3xl font-bold text-secondary font-mono">{formatTimeHHMMSS(thisMonthTotalSeconds)}</p>
+							<h3 class="card-title text-sm font-normal text-base-content/70">Hours Today</h3>
+							<p class="text-3xl font-bold text-secondary font-mono">{formatTimeHHMMSS(todayTotalSeconds)}</p>
 						</div>
 						<div class="avatar placeholder bg-secondary/10 rounded-full p-4">
 							<svg
 								class="w-8 h-8 text-secondary"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M13 10V3L4 14h7v7l9-11h-7z"
-								></path>
-							</svg>
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- Last Month Total Hours -->
-			<div class="card bg-base-100 shadow-lg">
-				<div class="card-body">
-					<div class="flex items-center justify-between">
-						<div>
-							<h3 class="card-title text-sm font-normal text-base-content/70">Last Month Total Hours</h3>
-							<p class="text-3xl font-bold text-primary">{lastMonthTotalHours}h</p>
-						</div>
-						<div class="avatar placeholder bg-primary/10 rounded-full p-4">
-							<svg
-								class="w-8 h-8 text-primary"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -595,13 +488,13 @@
 				</div>
 			</div>
 
-			<!-- This Month Tasks Done -->
-			<div class="card bg-base-100 shadow-lg">
-				<div class="card-body">
+			<!-- Tasks Completed Today -->
+			<div class="card bg-base-100 shadow-lg h-full">
+				<div class="card-body flex flex-col justify-center">
 					<div class="flex items-center justify-between">
 						<div>
-							<h3 class="card-title text-sm font-normal text-base-content/70">This Month Tasks Done</h3>
-							<p class="text-3xl font-bold text-accent">{thisMonthCompletedTasks}</p>
+							<h3 class="card-title text-sm font-normal text-base-content/70">Tasks Completed Today</h3>
+							<p class="text-3xl font-bold text-accent">{todayCompletedTasks}</p>
 						</div>
 						<div class="avatar placeholder bg-accent/10 rounded-full p-4">
 							<svg
@@ -621,6 +514,9 @@
 					</div>
 				</div>
 			</div>
+
+			<!-- Projects Today Bar Chart -->
+			<ProjectsBarChart entries={todayEntries} />
 		</div>
 
 		<!-- Charts Section -->

@@ -1,6 +1,6 @@
 {
 	"name": "time-tracker",
-	"version": "1.4.1",
+	"version": "1.4.2",
 	"type": "module",
 	"license": "MIT",
 	"scripts": {
@@ -39,6 +39,8 @@
 		"@dicebear/collection": "^9.2.4",
 		"@dicebear/core": "^9.2.4",
 		"@lucide/svelte": "^0.553.0",
+		"@sentry/sveltekit": "^10.40.0",
+		"@sentry/vite-plugin": "^5.1.0",
 		"@sveltejs/adapter-static": "^3.0.5",
 		"@tauri-apps/api": "^2.9.0",
 		"@tauri-apps/cli": "^2.0.4",

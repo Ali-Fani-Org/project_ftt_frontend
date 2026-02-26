@@ -9,7 +9,8 @@
 		LogOut,
 		ChevronLeft,
 		ChevronRight,
-		Menu
+		Menu,
+		TrendingUp
 	} from '@lucide/svelte';
 	import { user, logout, theme, sidebarCollapsed } from '$lib/stores';
 	import { getAuthContext, createAuthStore } from './auth-context';
@@ -181,6 +182,11 @@
 			name: 'Entries',
 			href: '/entries',
 			icon: FileText
+		},
+		{
+			name: 'Reports',
+			href: '/reports',
+			icon: TrendingUp
 		},
 		{
 			name: 'Settings',

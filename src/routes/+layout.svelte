@@ -1,9 +1,11 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount, onDestroy } from 'svelte';
-	import { dev } from '$app/environment';
+	import { dev, version } from '$app/environment';
+	import { env } from '$env/dynamic/public';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import * as Sentry from '@sentry/sveltekit';
 	import {
 		authToken,
 		user,
@@ -22,6 +24,26 @@
 	import logger from '$lib/logger';
 	import { network } from '$lib/network';
 	import ToastContainer from '$lib/ToastContainer.svelte';
+	import { getVersion } from '@tauri-apps/api/app';
+	import { type, version as osVersion, platform, arch } from '@tauri-apps/plugin-os';
+
+	// App version from package.json (injected at build time via vite.config.ts)
+	// @ts-ignore - __APP_VERSION__ is defined in vite.config.ts
+	const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.4.1';
+
+	// Initialize Sentry (only once, without replay to avoid multiple instances)
+	if (env.PUBLIC_SENTRY_DSN) {
+		Sentry.init({
+			dsn: env.PUBLIC_SENTRY_DSN,
+			integrations: [
+				Sentry.browserTracingIntegration()
+			],
+			tracesSampleRate: 1.0,
+			release: `time-tracker@${APP_VERSION}`,
+			environment: dev ? 'development' : 'production',
+			sendDefaultPii: true // Enable sending user IP and other PII
+		});
+	}
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -40,6 +62,43 @@
 			const currentWindow = getCurrentWindow();
 			currentWindow; // Test if it works
 			isTauri = true;
+
+			// Add Tauri environment data to Sentry
+			try {
+				const appVersion = await getVersion();
+				const osType = await type();
+				const osVer = await osVersion();
+				const osPlatform = await platform();
+				const osArch = await arch();
+				
+				Sentry.setTags({
+					environment: 'tauri',
+					os_type: osType,
+					os_version: osVer,
+					os_platform: osPlatform,
+					os_arch: osArch
+				});
+				
+				Sentry.setContext('os', {
+					name: osType,
+					version: osVer
+				});
+				
+				Sentry.setRelease(`time-tracker@${appVersion}`);
+
+				// Fetch public IP for desktop app (since there's no server to capture it)
+				try {
+					const ipResponse = await fetch('https://api.ipify.org?format=json');
+					const ipData = await ipResponse.json();
+					if (ipData.ip) {
+						Sentry.setUser({ ip_address: ipData.ip });
+					}
+				} catch {
+					// IP fetch failed, continue without it
+				}
+			} catch (e) {
+				logger.warn("Failed to gather Tauri context for Sentry", e);
+			}
 
 			// Listen for single instance event
 			const { listen } = await import('@tauri-apps/api/event');
