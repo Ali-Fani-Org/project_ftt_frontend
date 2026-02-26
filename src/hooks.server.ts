@@ -32,11 +32,19 @@ const preloadHandle: Handle = async ({ event, resolve }) => {
 
 // Add extra context to Sentry events
 const sentryContextHandle: Handle = async ({ event, resolve }) => {
+	let clientAddress = '{{auto}}';
+
+	try {
+		clientAddress = event.getClientAddress();
+	} catch {
+		// getClientAddress is unavailable during prerender.
+	}
+
 	// Set user IP from request
 	Sentry.setUser({
 		ip_address: event.request.headers.get('x-forwarded-for') || 
 					event.request.headers.get('x-real-ip') || 
-					event.getClientAddress() ||
+					clientAddress ||
 					'{{auto}}'
 	});
 
