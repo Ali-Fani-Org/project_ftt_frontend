@@ -28,6 +28,19 @@ const createApiClient = () => {
 						throw new Error('Authentication failed');
 					}
 				}
+			],
+			beforeError: [
+				async (error: any) => {
+					const { response } = error;
+					if (response && response.body) {
+						try {
+							error.response._data = await response.clone().json();
+						} catch {
+							// Non-JSON error body — leave _data unset
+						}
+					}
+					return error;
+				}
 			]
 		}
 	});
@@ -60,6 +73,19 @@ baseUrl.subscribe((url: string) => {
 							// Throw an error to prevent further processing
 							throw new Error('Authentication failed');
 						}
+					}
+				],
+				beforeError: [
+					async (error: any) => {
+						const { response } = error;
+						if (response && response.body) {
+							try {
+								error.response._data = await response.clone().json();
+							} catch {
+								// Non-JSON error body — leave _data unset
+							}
+						}
+						return error;
 					}
 				]
 			}

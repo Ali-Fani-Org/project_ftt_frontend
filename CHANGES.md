@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.3 (2026-02-27)
+
+- Fix: Use timezone-aware report filters (`start_date_after_tz` / `start_date_before_tz`) when loading report entries.
+- Fix: Format report date range params in local date format to prevent UTC off-by-one day filtering issues.
+- Fix: Align calendar heatmap monthly total hours with reports by summing raw entry durations.
+- Chore: Capture JSON error payloads in Ky `beforeError` hooks for better downstream API error parsing.
+
 ## 1.4.2 (2025-02-26)
 
 - Feat: Add Sentry/GlitchTip error tracking integration with environment-based DSN configuration

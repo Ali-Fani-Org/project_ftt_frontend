@@ -164,7 +164,7 @@
 			while (hasMorePages && currentPageUrl) {
 				// Create the API request with proper authentication
 				const token = get(authToken);
-				const baseUrlValue = get(baseUrl);
+				const baseUrlValue = get(baseUrl) as string;
 				// Construct full URL - if currentPageUrl is a relative path, add baseUrl with trailing slash
 				let fullUrl;
 				if (currentPageUrl.startsWith('http')) {
@@ -175,7 +175,7 @@
 					fullUrl = `${baseUrlValue}${baseUrlValue.endsWith('/') ? '' : '/'}${currentPageUrl}`;
 				}
 
-				const response = await ky
+				const response: PaginatedTimeEntries = await ky
 					.get(fullUrl, {
 						headers: {
 							Authorization: token ? `Token ${token}` : ''
@@ -288,6 +288,16 @@
 			days = Array.from(dayMap.values()).sort(
 				(a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
 			);
+
+			// Compute total from raw entry durations (not day-split values) so it matches reports
+			totalMonthSeconds = allEntries.reduce((sum, entry) => {
+				if (entry.duration) {
+					return sum + (parseInt(entry.duration, 10) || 0);
+				} else if (entry.is_active) {
+					return sum + Math.floor((Date.now() - new Date(entry.start_time).getTime()) / 1000);
+				}
+				return sum;
+			}, 0);
 
 			const inMonthEntries = days.reduce((sum, d) => sum + d.entries.length, 0);
 			debugInfo = {
@@ -434,9 +444,7 @@
 		return `aspect-square rounded-md border border-base-300 ${activityClass(day.value)}`;
 	}
 
-	const totalHours = $derived(
-		Math.round((days.reduce((sum, d) => (d.value || 0) + sum, 0) / 3600) * 10) / 10
-	);
+	let totalMonthSeconds = $state(0);
 
 	// Easter egg: confetti for days with ≥8 hours
 	let confettiFiredFor = $state<Set<string>>(new Set());
@@ -553,7 +561,7 @@
 				{/if}
 			</div>
 			<div class="mt-2 text-center">
-				<p class="text-xs text-base-content/60">Total hours tracked: {totalHours}h</p>
+				<p class="text-xs text-base-content/60">Total hours tracked: {Math.round((totalMonthSeconds / 3600) * 10) / 10}h</p>
 			</div>
 		</div>
 	{/if}

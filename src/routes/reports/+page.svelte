@@ -80,6 +80,13 @@
 		await loadData();
 	});
 
+	function formatLocalDate(date: Date): string {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
 	function getTimeRangeDates(range: string): { start: string | null; end: string | null } {
 		const now = new Date();
 		let start: Date | null = null;
@@ -131,8 +138,8 @@
 		}
 
 		return {
-			start: start ? start.toISOString().split('T')[0] : null,
-			end: end ? end.toISOString().split('T')[0] : null
+			start: start ? formatLocalDate(start) : null,
+			end: end ? formatLocalDate(end) : null
 		};
 	}
 
@@ -171,8 +178,8 @@
 			const timeRange = getTimeRangeDates(selectedTimeRange);
 
 			const result = await timeEntries.listWithFilters({
-				start_date_after: timeRange.start || undefined,
-				start_date_before: timeRange.end || undefined,
+				start_date_after_tz: timeRange.start || undefined,
+				start_date_before_tz: timeRange.end || undefined,
 				limit: 500
 			}) as any;
 
