@@ -148,7 +148,16 @@ async fn start_idle_monitor(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default();
+
+    // Serve app on localhost:8080 for WebAuthn compatibility (production builds only)
+    #[cfg(not(dev))]
+    {
+        builder = builder.plugin(tauri_plugin_localhost::Builder::new(8080).build());
+    }
+
+    builder
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             // Focus the existing window when another instance is launched
             if let Some(window) = app.get_webview_window("main") {

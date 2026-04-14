@@ -28,6 +28,7 @@
 	let lastName = $state('');
 	let confirmPassword = $state('');
 	let email = $state(''); // Added for email validation support
+	let passkeyLoading = $state(false);
 
 	// Validation state
 	let validationErrors = $state<{ [key: string]: string }>({});
@@ -172,6 +173,31 @@
 	// Close settings modal
 	function closeSettingsModal() {
 		showSettingsModal = false;
+	}
+
+	// Handle passkey login
+	async function handlePasskeyLogin() {
+		if (!username.trim()) {
+			error = 'Please enter your username to sign in with a passkey';
+			return;
+		}
+
+		passkeyLoading = true;
+		error = '';
+
+		try {
+			const result = await authStore.loginWithPasskey(username, rememberMe);
+			if (result.success) {
+				goto('/dashboard');
+			} else if (!result.success) {
+				error = result.error || 'Passkey login failed';
+			}
+		} catch (err: any) {
+			error = 'Passkey authentication failed. Please try again.';
+			console.error('Passkey auth error:', err);
+		} finally {
+			passkeyLoading = false;
+		}
 	}
 </script>
 
@@ -583,6 +609,28 @@
 								{/if}
 							</button>
 						</div>
+
+						<!-- Passkey Login (Login only) -->
+						{#if isLogin}
+							<div class="form-control mt-2">
+								<button
+									type="button"
+									class="btn btn-outline btn-primary w-full"
+									disabled={passkeyLoading || loading}
+									onclick={handlePasskeyLogin}
+								>
+									{#if passkeyLoading}
+										<span class="loading loading-spinner"></span>
+										Authenticating...
+									{:else}
+										<svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+										</svg>
+										Sign in with passkey
+									{/if}
+								</button>
+							</div>
+						{/if}
 					</form>
 
 					<!-- Toggle Mode -->

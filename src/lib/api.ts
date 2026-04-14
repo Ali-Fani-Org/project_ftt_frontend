@@ -780,3 +780,62 @@ export const notifications = {
 			.json<{ message: string }>();
 	}
 };
+
+export interface PasskeyCredential {
+	id: number;
+	device_name: string;
+	created_at: string;
+	last_used_at: string;
+}
+
+export const passkeys = {
+	list: async (): Promise<PasskeyCredential[]> => {
+		return await api.get('api/passkeys/credentials/').json<PasskeyCredential[]>();
+	},
+	delete: async (id: number): Promise<void> => {
+		await api.delete('api/passkeys/credentials/', { json: { id } });
+	},
+	registerBegin: async (deviceName?: string): Promise<{ options: string }> => {
+		return await api
+			.post('api/passkeys/register/begin/', { json: { device_name: deviceName || '' } })
+			.json<{ options: string }>();
+	},
+	registerComplete: async (credential: any): Promise<{ detail: string; credential: PasskeyCredential }> => {
+		return await api
+			.post('api/passkeys/register/complete/', { json: { credential } })
+			.json<{ detail: string; credential: PasskeyCredential }>();
+	},
+	authenticateBegin: async (username: string): Promise<{ options: string }> => {
+		// Use ky directly (no auth token needed) for unauthenticated endpoints
+		return await ky
+			.post(`${get(baseUrl)}/api/passkeys/authenticate/begin/`, {
+				json: { username }
+			})
+			.json<{ options: string }>();
+	},
+	authenticateComplete: async (
+		username: string,
+		credential: any
+	): Promise<{
+		detail: string;
+		token: string;
+		user: { id: number; username: string; first_name: string; last_name: string; profile_image: string | null };
+	}> => {
+		// Use ky directly (no auth token needed) for unauthenticated endpoints
+		return await ky
+			.post(`${get(baseUrl)}/api/passkeys/authenticate/complete/`, {
+				json: { username, credential }
+			})
+			.json<{
+				detail: string;
+				token: string;
+				user: {
+					id: number;
+					username: string;
+					first_name: string;
+					last_name: string;
+					profile_image: string | null;
+				};
+			}>();
+	}
+};

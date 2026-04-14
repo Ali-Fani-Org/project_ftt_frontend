@@ -1,7 +1,11 @@
 import { setContext, getContext } from 'svelte';
 import { writable, get } from 'svelte/store';
 import { authToken, user, globalLogout } from './stores';
-import { auth } from './api';
+import { auth, passkeys } from './api';
+import {
+	startRegistration,
+	startAuthentication
+} from '@simplewebauthn/browser';
 import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
 import { network } from './network';
@@ -239,6 +243,112 @@ export function createAuthStore(): AuthStore {
 			return 'persistent';
 		},
 
+		// Login with passkey (WebAuthn)
+		loginWithPasskey: async (username: string, rememberMe = false) => {
+			update((state) => ({ ...state, isLoading: true, error: null }));
+
+			try {
+				// Step 1: Get authentication options from server
+				const { options: optionsJson } = await passkeys.authenticateBegin(username);
+				const options = JSON.parse(optionsJson);
+
+				// Step 2: Browser prompts user for passkey
+				const credential = await startAuthentication({ optionsJSON: options });
+
+				// Step 3: Verify with server
+				const result = await passkeys.authenticateComplete(username, credential);
+
+				// Step 4: Set auth state (same as password login)
+				if (browser) {
+					if (rememberMe) {
+						sessionStorage.setItem('session_type', 'persistent');
+					} else {
+						sessionStorage.setItem('authToken', result.token);
+						sessionStorage.setItem('session_type', 'session');
+						localStorage.removeItem('authToken');
+					}
+				}
+
+				authToken.set(result.token);
+
+				const userData = {
+					id: result.user.id,
+					username: result.user.username,
+					first_name: result.user.first_name,
+					last_name: result.user.last_name,
+					profile_image: result.user.profile_image
+				};
+				user.set(userData);
+
+				if (browser && !rememberMe) {
+					sessionStorage.setItem('user', JSON.stringify(userData));
+				}
+
+				update((state) => ({
+					...state,
+					isAuthenticated: true,
+					isLoading: false,
+					error: null,
+					user: userData
+				}));
+
+				return { success: true };
+			} catch (error: any) {
+				const errorMessage =
+					error?.response?.status === 404
+						? 'User not found or no passkeys registered'
+						: error?.message || 'Passkey login failed. Please try again.';
+
+				update((state) => ({
+					...state,
+					isLoading: false,
+					error: errorMessage
+				}));
+
+				return { success: false, error: errorMessage };
+			}
+		},
+
+		// Register a new passkey (requires authenticated user)
+		registerPasskey: async (deviceName?: string) => {
+			try {
+				// Step 1: Get registration options from server
+				const { options: optionsJson } = await passkeys.registerBegin(deviceName);
+				const options = JSON.parse(optionsJson);
+
+				// Step 2: Browser prompts user to create passkey
+				const credential = await startRegistration({ optionsJSON: options });
+
+				// Step 3: Verify and save on server
+				const result = await passkeys.registerComplete(credential);
+
+				return { success: true, credential: result.credential };
+			} catch (error: any) {
+				const errorMessage =
+					error?.message || 'Passkey registration failed. Please try again.';
+				return { success: false, error: errorMessage };
+			}
+		},
+
+		// Delete a registered passkey
+		deletePasskey: async (id: number) => {
+			try {
+				await passkeys.delete(id);
+				return { success: true };
+			} catch (error: any) {
+				return { success: false, error: error?.message || 'Failed to delete passkey' };
+			}
+		},
+
+		// List registered passkeys
+		listPasskeys: async () => {
+			try {
+				return await passkeys.list();
+			} catch {
+				return [];
+			}
+		},
+
 		// Check authentication status with offline support
 		checkAuthOffline: async () => {
 			// 1. Check if we have cached auth token (both localStorage and sessionStorage)
@@ -376,4 +486,13 @@ export interface AuthStore {
 	checkAuthStatus: () => void;
 	checkAuthOffline: () => Promise<boolean>;
 	getSessionType: () => string;
+	loginWithPasskey: (
+		username: string,
+		rememberMe?: boolean
+	) => Promise<{ success: boolean } | { success: false; error: string }>;
+	registerPasskey: (
+		deviceName?: string
+	) => Promise<{ success: true; credential: any } | { success: false; error: string }>;
+	deletePasskey: (id: number) => Promise<{ success: boolean } | { success: false; error: string }>;
+	listPasskeys: () => Promise<any[]>;
 }

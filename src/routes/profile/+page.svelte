@@ -8,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import { network } from '$lib/network';
 	import { addToast } from '$lib/toast';
+	import PasskeyManager from '$lib/PasskeyManager.svelte';
 
 	// Editable form state
 	let firstName = $state('');
@@ -293,6 +294,11 @@
 					<button class="btn btn-error" onclick={confirmLogout} type="button"> Logout </button>
 				</div>
 			</form>
+
+			<div class="divider"></div>
+
+			<!-- Passkey Management -->
+			<PasskeyManager />
 		</div>
 	</div>
 </div>
