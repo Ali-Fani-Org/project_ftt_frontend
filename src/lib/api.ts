@@ -2,10 +2,11 @@ import ky from 'ky';
 import { authToken, baseUrl, globalLogout, DATA_STALE_THRESHOLD } from './stores';
 import { get, writable } from 'svelte/store';
 
-// Create API client with 401 handling
+// Create API client with 401 handling and timeout
 const createApiClient = () => {
 	return ky.create({
 		prefixUrl: get(baseUrl),
+		timeout: 15000, // 15 second timeout to prevent hanging requests
 		hooks: {
 			beforeRequest: [
 				(request: any) => {
@@ -52,6 +53,7 @@ baseUrl.subscribe((url: string) => {
 	apiStore.set(
 		ky.create({
 			prefixUrl: url,
+			timeout: 15000, // 15 second timeout to prevent hanging requests
 			hooks: {
 				beforeRequest: [
 					(request: any) => {
@@ -293,6 +295,11 @@ export async function fetchWithRetry<T>(
 	maxRetries: number = 3,
 	backoff: number = 1000
 ): Promise<T> {
+	// Check network before first attempt
+	if (!get(network).isOnline) {
+		throw new Error('Device is offline - cannot make request');
+	}
+
 	let lastError: Error;
 
 	for (let i = 0; i < maxRetries; i++) {

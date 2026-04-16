@@ -93,8 +93,17 @@ const createNetworkStore = () => {
 	const OFFLINE_POLL_MS = 5000;
 	const FAILURES_BEFORE_OFFLINE = 2;
 
+	// Retry configuration for probe
+	const PROBE_RETRIES = 3;
+	const PROBE_BASE_DELAY_MS = 500;
+	const PROBE_MAX_DELAY_MS = 3000;
+
+	// Debounce configuration for heartbeat
+	const HEARTBEAT_DEBOUNCE_MS = 1000;
+
 	let consecutiveFailures = 0;
 	let heartbeatIntervalId: number | null = null;
+	let heartbeatDebounceTimer: number | null = null;
 	let checkInFlight: Promise<boolean> | null = null;
 	let cachedBaseUrl: string | null = null;
 	let isDestroyed = false;
@@ -110,7 +119,8 @@ const createNetworkStore = () => {
 		return createProbeUrl(cachedBaseUrl);
 	};
 
-	const probeConnectivity = async (timeout: number = DEFAULT_TIMEOUT_MS): Promise<boolean> => {
+	// Single probe attempt (no retry)
+	const probeOnce = async (timeout: number = DEFAULT_TIMEOUT_MS): Promise<boolean> => {
 		if (!browser) return false;
 		if (!navigator.onLine) return false;
 
@@ -133,6 +143,36 @@ const createNetworkStore = () => {
 		} finally {
 			clearTimeout(timer);
 		}
+	};
+
+	// Probe with retry logic and exponential backoff + jitter
+	const probeConnectivity = async (timeout: number = DEFAULT_TIMEOUT_MS): Promise<boolean> => {
+		let lastError: Error | null = null;
+
+		for (let attempt = 0; attempt < PROBE_RETRIES; attempt++) {
+			try {
+				const result = await probeOnce(timeout);
+				return result;
+			} catch (error) {
+				lastError = error as Error;
+
+				// Don't retry if explicitly offline
+				if (!navigator.onLine) return false;
+
+				if (attempt < PROBE_RETRIES - 1) {
+					// Exponential backoff with jitter to avoid thundering herd
+					const baseDelay = Math.min(
+						PROBE_BASE_DELAY_MS * Math.pow(2, attempt),
+						PROBE_MAX_DELAY_MS
+					);
+					const jitteredDelay = baseDelay * (0.5 + Math.random());
+					await new Promise(resolve => setTimeout(resolve, jitteredDelay));
+				}
+			}
+		}
+
+		console.warn(`Probe failed after ${PROBE_RETRIES} attempts`, lastError);
+		return false;
 	};
 
 	const applyConnectivityResult = (online: boolean) => {
@@ -185,15 +225,16 @@ const createNetworkStore = () => {
 			}
 
 			consecutiveFailures += 1;
-			// If we were "online" but checks start failing (common when LAN is unplugged and
-			// navigator.onLine doesn't update), switch to fast polling to detect outage quickly.
-			if (consecutiveFailures === 1) {
-				scheduleHeartbeat(OFFLINE_POLL_MS);
-			}
-
+			
+			// Only switch to fast polling and mark offline after reaching threshold
 			if (consecutiveFailures >= FAILURES_BEFORE_OFFLINE) {
+				scheduleHeartbeat(OFFLINE_POLL_MS);
 				applyConnectivityResult(false);
+			} else {
+				// Still online, keep normal polling
+				scheduleHeartbeat(ONLINE_POLL_MS);
 			}
+			
 			return false;
 		} catch (error) {
 			console.warn('Network check failed:', error);
@@ -204,14 +245,25 @@ const createNetworkStore = () => {
 	const scheduleHeartbeat = (intervalMs: number) => {
 		if (!browser) return;
 
-		if (heartbeatIntervalId) {
-			clearInterval(heartbeatIntervalId);
-			heartbeatIntervalId = null;
+		// Clear previous debounce timer
+		if (heartbeatDebounceTimer) {
+			clearTimeout(heartbeatDebounceTimer);
+			heartbeatDebounceTimer = null;
 		}
 
-		heartbeatIntervalId = window.setInterval(() => {
-			runActiveCheck();
-		}, intervalMs);
+		// Debounce the scheduling to prevent rapid conflicting intervals
+		heartbeatDebounceTimer = window.setTimeout(() => {
+			if (heartbeatIntervalId) {
+				clearInterval(heartbeatIntervalId);
+				heartbeatIntervalId = null;
+			}
+
+			heartbeatIntervalId = window.setInterval(() => {
+				runActiveCheck();
+			}, intervalMs);
+			
+			heartbeatDebounceTimer = null;
+		}, HEARTBEAT_DEBOUNCE_MS);
 	};
 
 	// Initialize network detection
@@ -294,6 +346,10 @@ const createNetworkStore = () => {
 			clearInterval(heartbeatIntervalId);
 			heartbeatIntervalId = null;
 		}
+		if (heartbeatDebounceTimer) {
+			clearTimeout(heartbeatDebounceTimer);
+			heartbeatDebounceTimer = null;
+		}
 	};
 
 	// Destroy function for HMR/test scenarios
@@ -301,6 +357,10 @@ const createNetworkStore = () => {
 		isDestroyed = true;
 		cleanup();
 		checkInFlight = null;
+		if (heartbeatDebounceTimer) {
+			clearTimeout(heartbeatDebounceTimer);
+			heartbeatDebounceTimer = null;
+		}
 	};
 
 	// Cleanup on page unload

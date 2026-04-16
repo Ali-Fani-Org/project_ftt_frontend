@@ -19,6 +19,7 @@ class RefreshController {
 	private visibilityListener: (() => void) | null = null;
 	private connectionRestoredDebounce: number | null = null;
 	private connectionLostDebounce: number | null = null;
+	private CONNECTION_STABILIZATION_MS = 5000; // Wait 5s before refresh to ensure connection is stable
 
 	constructor(config: RefreshConfig) {
 		this.config = config;
@@ -27,25 +28,40 @@ class RefreshController {
 
 		network.subscribe((status) => {
 			if (status.isOnline && !this.wasOnline && this.config.refreshOnReconnect) {
-				console.log('Connection restored, triggering refresh');
+				console.log('Connection restored, waiting for stabilization...');
 
 				if (this.connectionRestoredDebounce) {
 					clearTimeout(this.connectionRestoredDebounce);
 				}
 
-				addToast('Connection restored! Refreshing data...', 'success', 3000);
+				addToast('Connection restored! Stabilizing before refresh...', 'success', 3000);
 
-				this.refreshAll()
-					.then(() => {
-						addToast('Data refreshed successfully', 'success', 2000);
-					})
-					.catch((err) => {
-						addToast('Failed to refresh some data', 'error', 3000);
-					});
+				// Wait for connection to stabilize before triggering refresh
+				this.connectionRestoredDebounce = window.setTimeout(async () => {
+					// Verify connection is still stable with quick connectivity check
+					const { checkConnectivity } = await import('./network');
+					const isStable = await checkConnectivity(2000);
 
-				this.connectionRestoredDebounce = window.setTimeout(() => {
+					if (isStable) {
+						console.log('Connection stable, triggering refresh');
+						this.refreshAll()
+							.then(() => {
+								addToast('Data refreshed successfully', 'success', 2000);
+							})
+							.catch((err) => {
+								console.warn('Refresh failed:', err);
+								addToast('Failed to refresh some data', 'error', 3000);
+							});
+					} else {
+						console.warn('Connection not stable yet, delaying refresh');
+						// Reschedule after another stabilization period
+						this.connectionRestoredDebounce = window.setTimeout(() => {
+							this.refreshAll().catch(() => {});
+						}, this.CONNECTION_STABILIZATION_MS);
+					}
+
 					this.connectionRestoredDebounce = null;
-				}, 5000);
+				}, this.CONNECTION_STABILIZATION_MS);
 			} else if (!status.isOnline && this.wasOnline) {
 				if (this.connectionLostDebounce) {
 					clearTimeout(this.connectionLostDebounce);

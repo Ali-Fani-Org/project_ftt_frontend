@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import { authToken, baseUrl } from './stores';
 import { get } from 'svelte/store';
 import logger from '$lib/logger';
+import { network } from './network';
 
 export interface NotificationData {
 	id: string;
@@ -53,6 +54,18 @@ class TauriNotificationService implements NotificationService {
 			);
 			throw new Error('NotificationService can only be used in browser environment');
 		}
+
+		// Subscribe to network status changes to resume reconnection when network comes online
+		network.subscribe((status) => {
+			if (status.isOnline && !this.connected && this.reconnectAttempts > 0) {
+				logger.debug(
+					`[NotificationService ${this.serviceId}] 🌐 Network restored, resuming connection (was at attempt ${this.reconnectAttempts})`
+				);
+				this.reconnectAttempts = 0; // Reset attempts on network restore
+				this.lastError = null;
+				this.connect().catch(logger.error);
+			}
+		});
 	}
 
 	async connect(): Promise<void> {
@@ -358,11 +371,23 @@ class TauriNotificationService implements NotificationService {
 			return;
 		}
 
+		// Pause reconnection when offline to avoid unnecessary errors
+		if (!get(network).isOnline) {
+			logger.debug(
+				`[NotificationService ${this.serviceId}] ⏸️ Pausing reconnection - device is offline`
+			);
+			this.lastError = 'Waiting for network connection...';
+			return;
+		}
+
 		if (this.reconnectAttempts < this.maxReconnectAttempts) {
 			this.reconnectAttempts++;
 
-			// Exponential backoff for reconnection attempts
-			const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000); // Max 30 seconds
+			// Exponential backoff with max cap (60 seconds)
+			const delay = Math.min(
+				1000 * Math.pow(2, this.reconnectAttempts - 1),
+				60000
+			);
 
 			logger.debug(
 				`[NotificationService ${this.serviceId}] ⏰ Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
