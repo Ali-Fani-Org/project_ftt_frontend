@@ -815,8 +815,11 @@ export const passkeys = {
 		await api.delete('api/passkeys/credentials/', { json: { id } });
 	},
 	registerBegin: async (deviceName?: string): Promise<{ options: string }> => {
+		const trimmedDeviceName = deviceName?.trim();
 		return await api
-			.post('api/passkeys/register/begin/', { json: { device_name: deviceName || '' } })
+			.post('api/passkeys/register/begin/', {
+				json: trimmedDeviceName ? { device_name: trimmedDeviceName } : {}
+			})
 			.json<{ options: string }>();
 	},
 	registerComplete: async (credential: any): Promise<{ detail: string; credential: PasskeyCredential }> => {
