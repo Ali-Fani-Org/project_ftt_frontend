@@ -770,6 +770,18 @@ export const featureFlags = {
 		return result;
 	},
 
+	checkPublicFeature: async (featureKey: string): Promise<FeatureFlagCheck> => {
+		const cacheKey = `feature-flags:public-check:${featureKey}`;
+		const cached = getCached<FeatureFlagCheck>(cacheKey);
+		if (cached) return cached;
+
+		const result = await ky
+			.get(`${get(baseUrl)}/api/feature-flags/public-check/${featureKey}/`)
+			.json<FeatureFlagCheck>();
+		setCached(cacheKey, result, CACHE_TTL);
+		return result;
+	},
+
 	logAccess: async (
 		featureKey: string
 	): Promise<{ message: string; feature_key: string; feature_name: string }> => {

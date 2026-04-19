@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { getAuthContext } from '$lib/auth-context';
-	import { auth } from '$lib/api';
+	import { auth, featureFlags } from '$lib/api';
 	import { logoutAlert } from '$lib/stores';
 	import LoginSettingsModal from '$lib/LoginSettingsModal.svelte';
 	import { network } from '$lib/network';
@@ -20,6 +20,8 @@
 	let isCheckingAuth = $state(true);
 	let authStatus = $state('Checking saved session...');
 	let hasStoredToken = $state(false);
+	let registrationEnabled = $state(true);
+	let registrationStatusLoaded = $state(false);
 
 	// Form fields
 	let username = $state('');
@@ -35,11 +37,27 @@
 
 	onMount(async () => {
 		authStore.clearError();
-		await checkExistingAuth();
+		await Promise.all([checkExistingAuth(), loadRegistrationAvailability()]);
 		// Always reset isCheckingAuth when checkExistingAuth completes
 		// The function handles all auth states internally
 		isCheckingAuth = false;
 	});
+
+	async function loadRegistrationAvailability() {
+		try {
+			const result = await featureFlags.checkPublicFeature('public-user-registration');
+			registrationEnabled = result.is_enabled;
+		} catch (err: any) {
+			// Keep signup available if the flag can't be loaded; backend still enforces the true source of truth.
+			console.warn('Failed to load public registration flag:', err);
+			registrationEnabled = true;
+		} finally {
+			registrationStatusLoaded = true;
+			if (!registrationEnabled) {
+				isLogin = true;
+			}
+		}
+	}
 
 	// Check for existing authentication token with offline support
 	async function checkExistingAuth(): Promise<boolean> {
@@ -152,6 +170,9 @@
 
 	// Toggle between login and register
 	function toggleMode() {
+		if (isLogin && !registrationEnabled) {
+			return;
+		}
 		isLogin = !isLogin;
 		error = '';
 		validationErrors = {};
@@ -415,6 +436,11 @@
 								Create a new account to get started
 							{/if}
 						</p>
+						{#if registrationStatusLoaded && !registrationEnabled}
+							<p class="mt-2 text-sm text-base-content/60">
+								New user registration is currently disabled by an administrator.
+							</p>
+						{/if}
 					</div>
 
 					<!-- Error Alert -->
@@ -598,7 +624,11 @@
 
 						<!-- Submit Button -->
 						<div class="form-control mt-6">
-							<button type="submit" class="btn btn-primary" disabled={loading}>
+							<button
+								type="submit"
+								class="btn btn-primary"
+								disabled={loading || (!isLogin && !registrationEnabled)}
+							>
 								{#if loading}
 									<span class="loading loading-spinner"></span>
 									Processing...
@@ -646,12 +676,18 @@
 						</p>
 						<button
 							type="button"
-							class="btn btn-ghost btn-sm mt-2"
+							class="btn btn-ghost btn-sm mt-2 {isLogin && !registrationEnabled
+								? 'btn-disabled opacity-60'
+								: ''}"
 							onclick={toggleMode}
-							disabled={loading}
+							disabled={loading || (isLogin && !registrationEnabled)}
 						>
 							{#if isLogin}
-								Create new account
+								{#if registrationEnabled}
+									Create new account
+								{:else}
+									Registration disabled
+								{/if}
 							{:else}
 								Sign in instead
 							{/if}
