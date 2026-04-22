@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.6 (2026-04-22)
+
+- Feat: Add `StartupWMClass=Time Tracker` to Linux `.desktop` file via custom Handlebars template, fixing taskbar icon grouping on GNOME/KDE/Wayland compositors
+- Feat: Implement public feature registration check and update UI accordingly
+- Feat: Trim device name in passkey registration request
+- Chore: Add comprehensive tests for `RefreshController`
+
 ## 1.4.3 (2026-02-27)
 
 - Fix: Use timezone-aware report filters (`start_date_after_tz` / `start_date_before_tz`) when loading report entries.
