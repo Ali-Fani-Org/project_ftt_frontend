@@ -21,12 +21,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun i
-
       - name: Create GitHub release (draft)
         id: create-release
         uses: tauri-apps/tauri-action@v0
@@ -49,6 +43,7 @@ jobs:
             See [CHANGES.md](https://github.com/Ali-Fani/project_ftt_frontend/blob/main/CHANGES.md) for a complete list of changes.
           releaseDraft: true
           prerelease: false
+          skipBuild: true
 
   publish-tauri:
     needs: create-release
