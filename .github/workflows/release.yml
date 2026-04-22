@@ -11,7 +11,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create-release.outputs.releaseId }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun i
+
+      - name: Create GitHub release (draft)
+        id: create-release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'v__VERSION__'
+          releaseBody: |
+            ## What's Changed
+
+            ### Features
+            - Add `StartupWMClass=Time Tracker` to Linux desktop template for correct taskbar icon grouping
+            - Implement public feature registration check and update UI accordingly
+            - Trim device name in passkey registration request
+
+            ### Technical
+            - Add comprehensive tests for `RefreshController`
+
+            See [CHANGES.md](https://github.com/Ali-Fani/project_ftt_frontend/blob/main/CHANGES.md) for a complete list of changes.
+          releaseDraft: true
+          prerelease: false
+
   publish-tauri:
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -56,7 +96,7 @@ jobs:
             patchelf \
             libasound2-dev
 
-      - name: Build Tauri
+      - name: Build and upload Tauri artifacts
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -65,22 +105,5 @@ jobs:
           PUBLIC_SENTRY_DSN: ${{ secrets.PUBLIC_SENTRY_DSN }}
           WEBAUTHN_ORIGIN: http://localhost:8080
         with:
-          tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: 'v__VERSION__'
-          releaseBody: |
-            ## What's Changed
-
-            ### Features
-            - WebAuthn passkey authentication and recovery
-            - Add passkey login button to login page
-            - Passkey management in profile page
-
-            ### Technical
-            - Add `@simplewebauthn/browser` dependency
-            - Configure `tauri-plugin-localhost` for production WebAuthn compatibility
-            - Update CI with `WEBAUTHN_ORIGIN` environment variable
-
-            See [CHANGES.md](https://github.com/Ali-Fani/project_ftt_frontend/blob/main/CHANGES.md) for a complete list of changes.
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
