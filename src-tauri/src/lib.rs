@@ -1,17 +1,13 @@
 mod commands;
-mod constants;
 mod notification_manager;
 mod sound_manager;
 use commands::*;
-use constants::*;
 
 use notification_manager::NotificationManager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::Emitter;
 use tauri::Manager;
-use tokio::time::{interval, Duration};
-use user_idle::UserIdle;
 
 fn create_tray(app: &tauri::AppHandle) {
     // Create menu
@@ -50,22 +46,6 @@ struct Payload {
     cwd: String,
 }
 
-// Idle monitoring state
-#[derive(Clone)]
-struct IdleMonitorState {
-    last_idle_state: bool,
-    session_start: std::time::Instant,
-}
-
-impl IdleMonitorState {
-    fn new() -> Self {
-        Self {
-            last_idle_state: false,
-            session_start: std::time::Instant::now(),
-        }
-    }
-}
-
 // Notification manager state
 #[derive(Clone)]
 struct NotificationManagerState {
@@ -76,72 +56,6 @@ impl NotificationManagerState {
     fn new() -> Self {
         Self {
             manager: NotificationManager::new(),
-        }
-    }
-}
-
-// Background idle monitoring task
-async fn start_idle_monitor(app: tauri::AppHandle) {
-    let mut interval = interval(Duration::from_secs(IDLE_MONITOR_INTERVAL_SECONDS)); // Check every 5 seconds
-    let mut idle_state = IdleMonitorState::new();
-
-    println!("Starting idle monitor background task...");
-
-    loop {
-        interval.tick().await;
-
-        // Check if feature flag is enabled
-        // For now, we'll assume it's enabled by default
-        // TODO: Implement proper feature flag checking
-
-        match UserIdle::get_time() {
-            Ok(idle_time) => {
-                let idle_seconds = idle_time.as_seconds();
-                let is_idle = idle_seconds >= IDLE_THRESHOLD_SECONDS; // Configurable threshold
-
-                // Only emit event if state changed
-                if is_idle != idle_state.last_idle_state {
-                    let activity_state = if is_idle {
-                        "became_idle"
-                    } else {
-                        "became_active"
-                    };
-
-                    let payload = serde_json::json!({
-                        "is_idle": is_idle,
-                        "idle_time_seconds": idle_seconds,
-                        "activity_state": activity_state,
-                        "timestamp": chrono::Utc::now().to_rfc3339(),
-                        "session_duration_seconds": idle_state.session_start.elapsed().as_secs()
-                    });
-
-                    let _ = app.emit("idle-status-changed", payload);
-                    println!(
-                        "Idle state changed: {} at {} seconds idle",
-                        activity_state, idle_seconds
-                    );
-
-                    idle_state.last_idle_state = is_idle;
-
-                    // Reset session start when becoming active again
-                    if !is_idle {
-                        idle_state.session_start = std::time::Instant::now();
-                    }
-                }
-
-                // Always emit periodic status updates for debugging
-                let debug_payload = serde_json::json!({
-                    "is_idle": is_idle,
-                    "idle_time_seconds": idle_seconds,
-                    "last_update": chrono::Utc::now().to_rfc3339(),
-                    "session_duration_seconds": idle_state.session_start.elapsed().as_secs()
-                });
-
-                let _ = app.emit("idle-status-update", debug_payload);
-            }
-            Err(e) => {
-                println!("Error getting idle time: {}", e);
-            }
         }
     }
 }
@@ -185,6 +99,7 @@ pub fn run() {
                     .build(),
             )?;
 
+
             // Create tray
             create_tray(&app.handle());
 
@@ -207,24 +122,12 @@ pub fn run() {
                 }
             });
 
-            // Start background idle monitor
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                start_idle_monitor(app_handle).await;
-            });
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_timer_state,
             stop_timer,
-            get_processes,
-            toggle_devtools,
-            get_idle_status,
-            get_idle_time,
-            is_user_idle,
-            create_activity_log,
             show_notification,
             show_notification_with_channel,
             test_notification_sound,

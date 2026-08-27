@@ -19,7 +19,7 @@
 		tagsData: { name: string; totalSeconds: number; count: number }[];
 	}>();
 
-	let canvas: HTMLCanvasElement;
+	let canvas = $state<HTMLCanvasElement>();
 	let chart: Chart | null = null;
 
 	// Get theme colors from CSS

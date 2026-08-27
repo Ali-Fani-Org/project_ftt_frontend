@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { RefreshCw } from '@jis3r/icons';
+	import { Pause } from '@lucide/svelte';
 	import { dataFreshness } from '$lib/dataFreshness';
 	import { network } from '$lib/network';
 	import { autoRefreshEnabled, refreshInterval } from '$lib/stores';
@@ -7,6 +9,7 @@
 
 	let refreshing = $state(false);
 	let countdown = $state(0);
+
 	async function handleRefresh() {
 		if (refreshing || !$network.isOnline) return;
 
@@ -91,54 +94,149 @@
 		const hours = Math.floor(minutes / 60);
 		return `${hours}h ${Math.floor(minutes % 60)}m`;
 	}
+
+	// -----------------------------------------------------------------------
+	// UI: a compact pill matching the top bar's network-status pill — a
+	// status dot + age line, and a clickable countdown ring that doubles as
+	// the refresh button.
+	// -----------------------------------------------------------------------
+
+	const RING_RADIUS = 13.5;
+	const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+	const isOnline = $derived($network.isOnline);
+	const autoRefreshOn = $derived($autoRefreshEnabled && $refreshInterval > 0);
+	const lastUpdateMs = $derived(
+		$dataFreshness.lastUpdate ? $dataFreshness.lastUpdate.getTime() : null
+	);
+
+	// Fraction of the interval still remaining — the ring depletes as time
+	// runs out. Clamped so a sliver always stays visible while waiting.
+	const ringFraction = $derived(
+		autoRefreshOn && isOnline && lastUpdateMs !== null
+			? Math.min(1, Math.max(0.02, countdown / $refreshInterval))
+			: 1
+	);
+
+	const statusKey = $derived(
+		!isOnline
+			? 'offline'
+			: lastUpdateMs === null
+				? 'never'
+				: $dataFreshness.isFresh
+					? 'fresh'
+					: $dataFreshness.isOutdated
+						? 'outdated'
+						: 'stale'
+	);
+
+	// Per-state styling: the status dot, the countdown ring stroke, and the
+	// soft glow behind the ring all share one color language with the state.
+	const STATUS_STYLES = {
+		fresh: {
+			dot: 'animate-pulse bg-success ring-2 ring-success/25 motion-reduce:animate-none',
+			ring: 'stroke-primary'
+		},
+		outdated: {
+			dot: 'bg-info ring-2 ring-info/25',
+			ring: 'stroke-info'
+		},
+		stale: {
+			dot: 'bg-warning ring-2 ring-warning/25',
+			ring: 'stroke-warning'
+		},
+		never: {
+			dot: 'bg-base-content/30',
+			ring: 'stroke-base-content/40'
+		},
+		offline: {
+			dot: 'bg-base-content/40',
+			ring: 'stroke-base-content/40'
+		}
+	} as const;
+
+	const statusDotClass = $derived(STATUS_STYLES[statusKey].dot);
+	const ringStrokeClass = $derived(STATUS_STYLES[statusKey].ring);
+
+	const statusText = $derived.by(() => {
+		if (!isOnline) {
+			return lastUpdateMs !== null
+				? `Offline — updated ${formatAge(currentTime - lastUpdateMs)}`
+				: 'Offline — cached data';
+		}
+		if (lastUpdateMs === null) return 'Never updated';
+		return `Updated ${formatAge(currentTime - lastUpdateMs)}`;
+	});
+
+	const statusTitle = $derived.by(() => {
+		if (!isOnline) return 'Offline — showing cached data';
+		if (lastUpdateMs === null) return 'No data loaded yet';
+		if ($dataFreshness.isFresh) return 'Data is fresh';
+		if ($dataFreshness.isOutdated) return 'Data is outdated';
+		return 'Data is stale';
+	});
+
+	const ringTitle = $derived.by(() => {
+		if (refreshing) return 'Refreshing…';
+		if (!isOnline) return 'Offline — refresh unavailable';
+		if (autoRefreshOn) {
+			return `Next refresh in ${formatCountdown(countdown)} — click to refresh now`;
+		}
+		return 'Auto-refresh off — click to refresh manually';
+	});
+
+	const ringIcon = $derived.by(() => (autoRefreshOn ? RefreshCw : Pause));
 </script>
 
-<div class="flex items-center gap-4 p-3 bg-base-200 rounded-lg">
-	<!-- Status indicator -->
-	<div class="flex items-center gap-2">
-		{#if $dataFreshness.isFresh}
-			<span class="badge badge-success badge-sm">Fresh</span>
-		{:else if $dataFreshness.isOutdated}
-			<span class="badge badge-info badge-sm">Outdated</span>
-		{:else}
-			<span class="badge badge-warning badge-sm">Stale</span>
-		{/if}
-
-		<span class="text-sm text-base-content/70">
-			Last updated: {formatAge(
-				$dataFreshness.lastUpdate ? currentTime - $dataFreshness.lastUpdate.getTime() : Infinity
-			)}
+<div
+	class="flex items-center rounded-full border border-base-300/60 bg-base-200/60 py-0.5 pl-2.5 pr-1 backdrop-blur transition-colors hover:bg-base-200/80"
+>
+	<!-- Status dot + age -->
+	<div class="flex items-center gap-1.5" title={statusTitle}>
+		<span class="h-2 w-2 shrink-0 rounded-full {statusDotClass}"></span>
+		<span class="text-xs font-medium text-base-content/70 {isOnline ? 'hidden md:inline' : ''}">
+			{statusText}
 		</span>
 	</div>
 
-	<!-- Auto-refresh countdown -->
-	{#if $autoRefreshEnabled && $network.isOnline && $refreshInterval > 0}
-		<span class="text-xs text-base-content/60">
-			Next refresh in: {formatCountdown(countdown)}
-		</span>
-	{:else if !$network.isOnline}
-		<span class="text-xs text-base-content/60"> Offline mode </span>
-	{/if}
-
-	<!-- Manual refresh button -->
-	<button
-		class="btn btn-sm btn-ghost gap-2"
-		onclick={handleRefresh}
-		disabled={refreshing || !$network.isOnline}
-	>
-		{#if refreshing}
-			<span class="loading loading-spinner loading-xs"></span>
-			Refreshing...
-		{:else}
-			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path
+	{#if isOnline}
+		<!-- Countdown ring = refresh button -->
+		<button
+			class="relative ml-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-base-content/10 focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60"
+			onclick={handleRefresh}
+			disabled={refreshing}
+			title={ringTitle}
+			aria-label={ringTitle}
+		>
+			<svg class="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 32 32" aria-hidden="true">
+				<circle
+					cx="16"
+					cy="16"
+					r={RING_RADIUS}
+					fill="none"
+					stroke-width="2.75"
+					class="stroke-base-300/70"
+				></circle>
+				<circle
+					cx="16"
+					cy="16"
+					r={RING_RADIUS}
+					fill="none"
+					stroke-width="2.75"
 					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-				/>
+					stroke-dasharray={RING_CIRCUMFERENCE}
+					stroke-dashoffset={RING_CIRCUMFERENCE * (1 - ringFraction)}
+					class="{ringStrokeClass} transition-[stroke-dashoffset,stroke] duration-1000 ease-linear motion-reduce:transition-none"
+				></circle>
 			</svg>
-			Refresh
-		{/if}
-	</button>
+			{#if refreshing}
+				<span class="loading loading-spinner loading-xs text-primary"></span>
+			{:else}
+				{@const RingIcon = ringIcon}
+				<span class="inline-flex" aria-hidden="true">
+					<RingIcon size={13} strokeWidth={2.6} class="text-base-content/70"></RingIcon>
+				</span>
+			{/if}
+		</button>
+	{/if}
 </div>

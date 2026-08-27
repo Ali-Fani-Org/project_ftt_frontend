@@ -1,9 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { timeEntries, type TimeEntry, type PaginatedTimeEntries } from '$lib/api';
-	import ky from 'ky';
-	import { authToken, baseUrl } from '$lib/stores';
-	import { get } from 'svelte/store';
+	import { useAllTimeEntriesInRange } from '$lib/queries/timeEntries';
+	import type { TimeEntry } from '$lib/api';
 	import { network } from '$lib/network';
 	import confetti from 'canvas-confetti';
 	var scalar = 2;
@@ -22,90 +19,41 @@
 		entries: TimeEntry[];
 	}
 
-	let days = $state<HeatmapData[]>([]);
-	let weeks = $state<(HeatmapData | null)[][]>([]);
-	let loading = $state(true);
-	let error = $state('');
-	let debugInfo = $state<{ start: string; end: string; total: number; inMonth: number } | null>(
-		null
+	let currentMonth = $state(new Date());
+
+	// Server state via TanStack Query — the COMPLETE month dataset, fetched through
+	// the shared range query (every page). The query key reacts to `currentMonth`,
+	// so navigating months re-fetches automatically; results are cached and
+	// invalidated by any timer start/stop/edit (queryKeys.timeEntries.all).
+	const monthQuery = useAllTimeEntriesInRange(
+		() => {
+			const anchor = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+			return formatLocalDate(anchor);
+		},
+		() => {
+			const anchor = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+			return formatLocalDate(anchor);
+		}
 	);
 
-	const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-	const MAX_CACHE_ENTRIES = 12; // Keep only last 12 months of cache
-
-	/**
-	 * Get cache key for a specific month
-	 */
-	function getCacheKey(year: number, month: number): string {
-		return `chart_heatmap_${year}_${String(month + 1).padStart(2, '0')}`;
-	}
-
-	/**
-	 * Cleanup old cache entries to prevent unbounded growth
-	 */
-	function cleanupOldCache(): void {
-		try {
-			const keys: string[] = [];
-			for (let i = 0; i < localStorage.length; i++) {
-				const key = localStorage.key(i);
-				if (key?.startsWith('chart_heatmap_')) {
-					keys.push(key);
-				}
-			}
-			// If we have more than MAX_CACHE_ENTRIES, remove the oldest ones
-			if (keys.length > MAX_CACHE_ENTRIES) {
-				// Sort by key (which includes year_month) to get chronological order
-				keys.sort();
-				const toRemove = keys.slice(0, keys.length - MAX_CACHE_ENTRIES);
-				toRemove.forEach((key) => localStorage.removeItem(key));
-			}
-		} catch (err) {
-			console.warn('Failed to cleanup old heatmap cache:', err);
-		}
-	}
-
-	/**
-	 * Save heatmap data to localStorage
-	 */
-	function saveToCache(year: number, month: number, data: HeatmapData[], weeks: (HeatmapData | null)[][]): void {
-		try {
-			// Cleanup old entries before saving new one
-			cleanupOldCache();
-			
-			const cacheData = {
-				data,
-				weeks,
-				timestamp: Date.now()
-			};
-			localStorage.setItem(getCacheKey(year, month), JSON.stringify(cacheData));
-		} catch (err) {
-			console.warn('Failed to save heatmap data to cache:', err);
-		}
-	}
-
-	/**
-	 * Load heatmap data from localStorage
-	 */
-	function loadFromCache(year: number, month: number): { data: HeatmapData[]; weeks: (HeatmapData | null)[][] } | null {
-		try {
-			const cached = localStorage.getItem(getCacheKey(year, month));
-			if (!cached) return null;
-
-			const parsed = JSON.parse(cached);
-			const age = Date.now() - parsed.timestamp;
-
-			// Check if cache is still valid
-			if (age > CACHE_TTL) {
-				localStorage.removeItem(getCacheKey(year, month));
-				return null;
-			}
-
-			return { data: parsed.data || [], weeks: parsed.weeks || [] };
-		} catch (err) {
-			console.warn('Failed to load heatmap data from cache:', err);
-			return null;
-		}
-	}
+	const monthData = $derived(buildMonthData(monthQuery.data ?? [], currentMonth));
+	let days = $derived(monthData.days);
+	let weeks = $derived(monthData.weeks);
+	let totalMonthSeconds = $derived(monthData.totalMonthSeconds);
+	let monthLabel = $derived(
+		new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).toLocaleString(undefined, {
+			month: 'short',
+			year: 'numeric'
+		})
+	);
+	let loading = $derived(monthQuery.isPending);
+	let error = $derived(
+		!monthQuery.data && monthQuery.isError
+			? !$network.isOnline
+				? 'No cached data available. Please connect to the internet.'
+				: 'Failed to load activity data. Please try again.'
+			: ''
+	);
 
 	function formatLocalDate(date: Date): string {
 		const year = date.getFullYear();
@@ -115,248 +63,149 @@
 	}
 
 	const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-	let monthLabel = $state('');
-	let currentMonth = $state(new Date());
 
-	onMount(async () => {
-		await loadMonthData(currentMonth);
-	});
+	/**
+	 * Pure computation: turn the month's raw entries into the heatmap grid.
+	 * Entry datetimes arrive in Asia/Tehran (+03:30), so date strings are taken
+	 * directly from the ISO values rather than re-converting via the browser tz.
+	 */
+	function buildMonthData(entries: TimeEntry[], baseDate: Date) {
+		const year = baseDate.getFullYear();
+		const month = baseDate.getMonth();
 
-	async function loadMonthData(baseDate: Date) {
-		try {
-			loading = true;
-			error = '';
+		const anchor = new Date(year, month, 1);
+		const firstDayOfMonth = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+		const lastDayOfMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
 
-			const year = baseDate.getFullYear();
-			const month = baseDate.getMonth();
+		const dayMap = new Map<string, HeatmapData>();
+		const daysInMonth = lastDayOfMonth.getDate();
 
-			// Check if offline - try to load from cache
-			if (!$network.isOnline) {
-				const cachedData = loadFromCache(year, month);
-				if (cachedData && cachedData.data.length > 0) {
-					days = cachedData.data;
-					weeks = cachedData.weeks;
-					monthLabel = baseDate.toLocaleString(undefined, { month: 'short', year: 'numeric' });
-					loading = false;
-					return;
-				}
-				// If no cache available while offline, show error
-				error = 'No cached data available. Please connect to the internet.';
-				loading = false;
-				return;
-			}
-
-			const anchor = new Date(year, month, 1);
-			const firstDayOfMonth = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-			const lastDayOfMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
-			monthLabel = firstDayOfMonth.toLocaleString(undefined, { month: 'short', year: 'numeric' });
-
-			const startDate = formatLocalDate(firstDayOfMonth);
-			const endDate = formatLocalDate(lastDayOfMonth);
-
-			// Collect all entries across all pages using direct API calls
-			let allEntries: TimeEntry[] = [];
-			let currentPageUrl: string | null =
-				`api/time_entries/?start_date_after_tz=${startDate}&start_date_before_tz=${endDate}&limit=200`;
-			let hasMorePages = true;
-
-			// Fetch all pages using pagination
-			while (hasMorePages && currentPageUrl) {
-				// Create the API request with proper authentication
-				const token = get(authToken);
-				const baseUrlValue = get(baseUrl) as string;
-				// Construct full URL - if currentPageUrl is a relative path, add baseUrl with trailing slash
-				let fullUrl;
-				if (currentPageUrl.startsWith('http')) {
-					// If currentPageUrl is already a full URL (from next/previous), use as-is
-					fullUrl = currentPageUrl;
-				} else {
-					// If currentPageUrl is a relative path, prepend the base URL with trailing slash
-					fullUrl = `${baseUrlValue}${baseUrlValue.endsWith('/') ? '' : '/'}${currentPageUrl}`;
-				}
-
-				const response: PaginatedTimeEntries = await ky
-					.get(fullUrl, {
-						headers: {
-							Authorization: token ? `Token ${token}` : ''
-						}
-					})
-					.json<PaginatedTimeEntries>();
-
-				allEntries = allEntries.concat(response.results);
-				currentPageUrl = response.next; // This will be null when no more pages are available
-				hasMorePages = !!currentPageUrl; // Continue if there's a next page
-			}
-
-			const dayMap = new Map<string, HeatmapData>();
-			const daysInMonth = lastDayOfMonth.getDate();
-
-			for (let day = 1; day <= daysInMonth; day++) {
-				const d = new Date(anchor.getFullYear(), anchor.getMonth(), day);
-				const ds = formatLocalDate(d);
-				dayMap.set(ds, { date: ds, value: 0, entries: [] });
-			}
-
-			// Helper function to get start of day in Tehran timezone
-			function getStartOfDay(dateStr: string): Date {
-				const isoString = `${dateStr}T00:00:00+03:30`;
-				return new Date(isoString);
-			}
-
-			// Helper function to get end of day in Tehran timezone
-			function getEndOfDay(dateStr: string): Date {
-				const isoString = `${dateStr}T23:59:59.999+03:30`;
-				return new Date(isoString);
-			}
-
-			for (const entry of allEntries) {
-				// Calculate total duration
-				let totalSeconds = 0;
-				if (entry.duration) {
-					totalSeconds = parseInt(entry.duration, 10) || 0;
-				} else if (entry.is_active) {
-					const startTime = new Date(entry.start_time).getTime();
-					totalSeconds = Math.floor((Date.now() - startTime) / 1000);
-				}
-
-				if (totalSeconds <= 0) continue;
-
-				// Extract date strings from API timestamps (already in Tehran timezone)
-				const startDateStr = entry.start_time.split('T')[0];
-				const endDateStr = entry.end_time ? entry.end_time.split('T')[0] : startDateStr;
-
-				// Parse full datetime objects
-				const startTime = new Date(entry.start_time);
-				const endTime = entry.end_time ? new Date(entry.end_time) : new Date();
-
-				// Create a set of all days this entry spans
-				const daysSet = new Set<string>();
-				let currentDay = new Date(startDateStr);
-				const endDayObj = new Date(endDateStr);
-
-				while (currentDay <= endDayObj) {
-					const dayStr = currentDay.toISOString().split('T')[0];
-					daysSet.add(dayStr);
-					currentDay.setDate(currentDay.getDate() + 1);
-				}
-
-				if (daysSet.size === 0) {
-					daysSet.add(startDateStr);
-				}
-
-				// Distribute time across all days the entry spans
-				for (const dayStr of daysSet) {
-					const dayData = dayMap.get(dayStr);
-					if (!dayData) continue;
-
-					// Determine time boundaries for this specific day
-					let dayStartTime: Date;
-					let dayEndTime: Date;
-
-					if (dayStr === startDateStr && dayStr === endDateStr) {
-						// Single day entry
-						dayStartTime = startTime;
-						dayEndTime = endTime;
-					} else if (dayStr === startDateStr) {
-						// First day of multi-day entry
-						dayStartTime = startTime;
-						dayEndTime = getEndOfDay(dayStr);
-					} else if (dayStr === endDateStr) {
-						// Last day of multi-day entry
-						dayStartTime = getStartOfDay(dayStr);
-						dayEndTime = endTime;
-					} else {
-						// Middle day - full 24 hours
-						dayStartTime = getStartOfDay(dayStr);
-						dayEndTime = getEndOfDay(dayStr);
-					}
-
-					// Calculate duration for this specific day
-					const dayDurationMs = dayEndTime.getTime() - dayStartTime.getTime();
-					const dayDurationSeconds = Math.floor(dayDurationMs / 1000);
-
-					// Add entry to this day (only once, on the start day)
-					if (dayStr === startDateStr) {
-						dayData.entries.push(entry);
-					}
-
-					// Add the day's portion of time
-					dayData.value += dayDurationSeconds;
-				}
-			}
-
-			days = Array.from(dayMap.values()).sort(
-				(a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-			);
-
-			// Compute total from raw entry durations (not day-split values) so it matches reports
-			totalMonthSeconds = allEntries.reduce((sum, entry) => {
-				if (entry.duration) {
-					return sum + (parseInt(entry.duration, 10) || 0);
-				} else if (entry.is_active) {
-					return sum + Math.floor((Date.now() - new Date(entry.start_time).getTime()) / 1000);
-				}
-				return sum;
-			}, 0);
-
-			const inMonthEntries = days.reduce((sum, d) => sum + d.entries.length, 0);
-			debugInfo = {
-				start: startDate,
-				end: endDate,
-				total: allEntries.length,
-				inMonth: inMonthEntries
-			};
-
-			buildWeeks(firstDayOfMonth, lastDayOfMonth, dayMap);
-
-			// Save to cache for offline use
-			saveToCache(year, month, days, weeks);
-
-			loading = false;
-		} catch (err) {
-			console.error('Failed to load current month data:', err);
-			
-			// Try to load from cache as fallback
-			const year = baseDate.getFullYear();
-			const month = baseDate.getMonth();
-			const cachedData = loadFromCache(year, month);
-			if (cachedData && cachedData.data.length > 0) {
-				days = cachedData.data;
-				weeks = cachedData.weeks;
-				monthLabel = baseDate.toLocaleString(undefined, { month: 'short', year: 'numeric' });
-				error = '';
-				loading = false;
-				return;
-			}
-			
-			// Provide specific error message based on error type
-			if (!$network.isOnline) {
-				error = 'No cached data available. Please connect to the internet.';
-			} else if ((err as any)?.response?.status === 401) {
-				error = 'Session expired. Please log in again.';
-			} else if ((err as any)?.response?.status >= 500) {
-				error = 'Server error. Please try again later.';
-			} else {
-				error = 'Failed to load activity data. Please try again.';
-			}
-			
-			loading = false;
+		for (let day = 1; day <= daysInMonth; day++) {
+			const d = new Date(anchor.getFullYear(), anchor.getMonth(), day);
+			const ds = formatLocalDate(d);
+			dayMap.set(ds, { date: ds, value: 0, entries: [] });
 		}
+
+		// Helper function to get start of day in Tehran timezone
+		function getStartOfDay(dateStr: string): Date {
+			const isoString = `${dateStr}T00:00:00+03:30`;
+			return new Date(isoString);
+		}
+
+		// Helper function to get end of day in Tehran timezone
+		function getEndOfDay(dateStr: string): Date {
+			const isoString = `${dateStr}T23:59:59.999+03:30`;
+			return new Date(isoString);
+		}
+
+		for (const entry of entries) {
+			// Calculate total duration
+			let totalSeconds = 0;
+			if (entry.duration) {
+				totalSeconds = parseInt(entry.duration, 10) || 0;
+			} else if (entry.is_active) {
+				const startTime = new Date(entry.start_time).getTime();
+				totalSeconds = Math.floor((Date.now() - startTime) / 1000);
+			}
+
+			if (totalSeconds <= 0) continue;
+
+			// Extract date strings from API timestamps (already in Tehran timezone)
+			const startDateStr = entry.start_time.split('T')[0];
+			const endDateStr = entry.end_time ? entry.end_time.split('T')[0] : startDateStr;
+
+			// Parse full datetime objects
+			const startTime = new Date(entry.start_time);
+			const endTime = entry.end_time ? new Date(entry.end_time) : new Date();
+
+			// Create a set of all days this entry spans
+			const daysSet = new Set<string>();
+			let currentDay = new Date(startDateStr);
+			const endDayObj = new Date(endDateStr);
+
+			while (currentDay <= endDayObj) {
+				const dayStr = currentDay.toISOString().split('T')[0];
+				daysSet.add(dayStr);
+				currentDay.setDate(currentDay.getDate() + 1);
+			}
+
+			if (daysSet.size === 0) {
+				daysSet.add(startDateStr);
+			}
+
+			// Distribute time across all days the entry spans
+			for (const dayStr of daysSet) {
+				const dayData = dayMap.get(dayStr);
+				if (!dayData) continue;
+
+				// Determine time boundaries for this specific day
+				let dayStartTime: Date;
+				let dayEndTime: Date;
+
+				if (dayStr === startDateStr && dayStr === endDateStr) {
+					// Single day entry
+					dayStartTime = startTime;
+					dayEndTime = endTime;
+				} else if (dayStr === startDateStr) {
+					// First day of multi-day entry
+					dayStartTime = startTime;
+					dayEndTime = getEndOfDay(dayStr);
+				} else if (dayStr === endDateStr) {
+					// Last day of multi-day entry
+					dayStartTime = getStartOfDay(dayStr);
+					dayEndTime = endTime;
+				} else {
+					// Middle day - full 24 hours
+					dayStartTime = getStartOfDay(dayStr);
+					dayEndTime = getEndOfDay(dayStr);
+				}
+
+				// Calculate duration for this specific day
+				const dayDurationMs = dayEndTime.getTime() - dayStartTime.getTime();
+				const dayDurationSeconds = Math.floor(dayDurationMs / 1000);
+
+				// Add entry to this day (only once, on the start day)
+				if (dayStr === startDateStr) {
+					dayData.entries.push(entry);
+				}
+
+				// Add the day's portion of time
+				dayData.value += dayDurationSeconds;
+			}
+		}
+
+		const days = Array.from(dayMap.values()).sort(
+			(a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+		);
+
+		// Compute total from raw entry durations (not day-split values) so it matches reports
+		const totalMonthSeconds = entries.reduce((sum, entry) => {
+			if (entry.duration) {
+				return sum + (parseInt(entry.duration, 10) || 0);
+			} else if (entry.is_active) {
+				return sum + Math.floor((Date.now() - new Date(entry.start_time).getTime()) / 1000);
+			}
+			return sum;
+		}, 0);
+
+		const weeks = buildWeeks(firstDayOfMonth, lastDayOfMonth, dayMap);
+
+		return { days, weeks, totalMonthSeconds };
 	}
 
 	function goToPreviousMonth() {
-		const next = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
-		currentMonth = next;
-		loadMonthData(next);
+		currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
 	}
 
 	function goToNextMonth() {
-		const next = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
-		currentMonth = next;
-		loadMonthData(next);
+		currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
 	}
 
-	function buildWeeks(firstDay: Date, lastDay: Date, dayMap: Map<string, HeatmapData>) {
+	function buildWeeks(
+		firstDay: Date,
+		lastDay: Date,
+		dayMap: Map<string, HeatmapData>
+	): (HeatmapData | null)[][] {
 		// Build a Sunday-Saturday grid, but only days within [firstDay, lastDay]
 		// get data; days outside the month are null placeholders.
 		const start = new Date(firstDay);
@@ -390,12 +239,7 @@
 			result.push(new Array<HeatmapData | null>(7).fill(null));
 		}
 
-		weeks = result;
-	}
-
-	function secondsToHours(seconds: number): number {
-		if (!seconds || isNaN(seconds)) return 0;
-		return Math.round((seconds / 3600) * 10) / 10;
+		return result;
 	}
 
 	function secondsToHHMMSS(seconds: number): string {
@@ -443,8 +287,6 @@
 		}
 		return `aspect-square rounded-md border border-base-300 ${activityClass(day.value)}`;
 	}
-
-	let totalMonthSeconds = $state(0);
 
 	// Easter egg: confetti for days with ≥8 hours
 	let confettiFiredFor = $state<Set<string>>(new Set());

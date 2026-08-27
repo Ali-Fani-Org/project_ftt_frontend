@@ -36,3 +36,22 @@
 	--depth: 1;
 	--noise: 0;
 }
+
+/*
+	@jis3r/icons renders its svg inside an inline-block wrapper
+	(<div role="img">). An inline svg sits on the text baseline, which adds a
+	phantom descender gap below it and pushes the glyph UP inside its tile.
+	Making the svg block removes that gap, so icons center properly inside
+	flex/grid tiles, buttons and page headers everywhere in the app.
+*/
+div[role='img'] > svg {
+	display: block;
+}
+
+/* Enable touch/pen drag on the app bar in Windows (custom titlebar only).
+   app-region is a Tauri/WinUI-specific property, so it lives in this global
+   stylesheet instead of a component <style> block — the CSS language service
+   would flag it as unknown inside a .svelte file. */
+*[data-tauri-drag-region] {
+	app-region: drag;
+}

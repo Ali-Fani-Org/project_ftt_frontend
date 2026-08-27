@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Time Tracker",
-  "version": "1.4.6",
+  "version": "1.5.0",
   "identifier": "com.time-tracker.dev",
   "build": {
     "frontendDist": "../build",
@@ -17,7 +17,7 @@
         "height": 900,
         "resizable": true,
         "fullscreen": false,
-        "decorations": false,
+        "decorations": true,
         "contentProtected": false,
         "minWidth": 1100,
         "minHeight": 700

@@ -1,8 +1,13 @@
 <script lang="ts">
-	import { type TimeEntry, timeEntries } from './api';
+	import type { TimeEntry, Tag } from './api';
+	import TagChip from './TagChip.svelte';
+	import TagPicker from './TagPicker.svelte';
 	import { createEventDispatcher } from 'svelte';
 	import { network } from './network';
 	import { createEditableEntryHandlers, type EditableEntryStateUpdate } from './editableEntry';
+	import { useUpdateTimeEntryMutation } from './queries/timeEntries';
+
+	const updateMutation = useUpdateTimeEntryMutation();
 
 	const dispatch = createEventDispatcher();
 
@@ -19,6 +24,9 @@
 	let editedDescription = $state('');
 	let isSavingEdit = $state(false);
 	let editError = $state('');
+	let isEditingTags = $state(false);
+	let tagSaveError = $state('');
+	let selectedTagIds: number[] = $state([]);
 
 	// Create handlers using the reusable utility
 	const editHandlers = createEditableEntryHandlers({
@@ -33,7 +41,7 @@
 		},
 		getEntry: () => entry,
 		setEntry: (updatedEntry) => { entry = updatedEntry; },
-		onUpdate: timeEntries.update,
+		onUpdate: (id, data) => updateMutation.mutateAsync({ id, data }),
 		onUpdateSuccess: (updatedEntry) => {
 			dispatch('updated', { entry: updatedEntry });
 		},
@@ -101,6 +109,23 @@
 
 	// Destructure handlers for use in template
 	const { startEditingTitle, startEditingDescription, cancelEditing, saveTitle, saveDescription } = editHandlers;
+
+	async function startEditTags() {
+		selectedTagIds = entry?.tags.map((t: Tag) => t.id) ?? [];
+		isEditingTags = true;
+		tagSaveError = '';
+	}
+
+	async function saveTags() {
+		if (!entry || !$network.isOnline) return;
+		tagSaveError = '';
+		try {
+			await updateMutation.mutateAsync({ id: entry.id, data: { tags: selectedTagIds } });
+			isEditingTags = false;
+		} catch {
+			tagSaveError = 'Failed to save tags.';
+		}
+	}
 </script>
 
 {#if entry}
@@ -138,6 +163,7 @@
 							</button>
 							<button
 								class="btn btn-ghost btn-circle"
+								aria-label="Cancel editing"
 								onclick={cancelEditing}
 								disabled={isSavingEdit}
 							>
@@ -265,28 +291,59 @@
 					</div>
 
 					<!-- Tags Section -->
-					{#if entry.tags && entry.tags.length > 0}
-						<div class="card bg-base-200">
-							<div class="card-body">
-								<h4 class="font-semibold text-lg mb-3 flex items-center gap-2">
-									<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-										></path>
-									</svg>
-									Tags
-								</h4>
-								<div class="flex flex-wrap gap-2">
-									{#each entry.tags as tag}
-										<span class="badge badge-outline badge-lg">{tag}</span>
-									{/each}
+					<div class="card bg-base-200">
+						<div class="card-body">
+							<h4 class="font-semibold text-lg mb-3 flex items-center gap-2">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+									></path>
+								</svg>
+								Tags
+								{#if !isEditingTags && $network.isOnline}
+									<button
+										class="btn btn-ghost btn-xs btn-circle ml-auto"
+										onclick={startEditTags}
+										title="Edit tags"
+										aria-label="Edit tags"
+									>
+										<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+										</svg>
+									</button>
+								{/if}
+							</h4>
+							{#if isEditingTags}
+								<TagPicker bind:value={selectedTagIds} allowCreate={false} />
+								{#if tagSaveError}
+									<p class="text-xs text-error mt-2">{tagSaveError}</p>
+								{/if}
+								<div class="flex gap-2 mt-3">
+									<button class="btn btn-primary btn-sm" onclick={saveTags} disabled={!$network.isOnline}>
+										Save tags
+									</button>
+									<button class="btn btn-ghost btn-sm" onclick={() => (isEditingTags = false)}>Cancel</button>
 								</div>
-							</div>
+							{:else}
+								{#if entry.tags && entry.tags.length > 0}
+									<div class="flex flex-wrap gap-2">
+										{#each entry.tags as tag (tag.id)}
+											{#if typeof tag === 'string'}
+												<span class="badge badge-outline badge-lg">{tag}</span>
+											{:else}
+												<TagChip tag={tag} size="sm" />
+											{/if}
+										{/each}
+									</div>
+								{:else}
+									<p class="text-base-content/50 italic text-sm">No tags</p>
+								{/if}
+							{/if}
 						</div>
-					{/if}
+					</div>
 				</div>
 
 				<!-- Right Sidebar - Details -->

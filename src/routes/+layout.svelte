@@ -2,10 +2,8 @@
 	import '../app.css';
 	import { onMount, onDestroy } from 'svelte';
 	import { dev, version } from '$app/environment';
-	import { env } from '$env/dynamic/public';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import * as Sentry from '@sentry/sveltekit';
 	import {
 		authToken,
 		user,
@@ -15,35 +13,20 @@
 		statsPanelEnabled
 	} from '$lib/stores';
 	import { setAuthContext, getAuthContext } from '$lib/auth-context';
-	import TitleBar from '$lib/TitleBar.svelte';
 	import Sidebar from '$lib/Sidebar.svelte';
 	import Navbar from '$lib/Navbar.svelte';
 	import '$lib/notifications'; // Initialize notification service
 	import { themeChange } from 'theme-change';
-	import WaveBackground from '$lib/WaveBackground.svelte';
+	import BackgroundAnimation from '$lib/BackgroundAnimation.svelte';
 	import logger from '$lib/logger';
 	import { network } from '$lib/network';
 	import ToastContainer from '$lib/ToastContainer.svelte';
-	import { getVersion } from '@tauri-apps/api/app';
-	import { type, version as osVersion, platform, arch } from '@tauri-apps/plugin-os';
-
-	// App version from package.json (injected at build time via vite.config.ts)
-	// @ts-ignore - __APP_VERSION__ is defined in vite.config.ts
-	const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.4.1';
-
-	// Initialize Sentry (only once, without replay to avoid multiple instances)
-	if (env.PUBLIC_SENTRY_DSN) {
-		Sentry.init({
-			dsn: env.PUBLIC_SENTRY_DSN,
-			integrations: [
-				Sentry.browserTracingIntegration()
-			],
-			tracesSampleRate: 1.0,
-			release: `time-tracker@${APP_VERSION}`,
-			environment: dev ? 'development' : 'production',
-			sendDefaultPii: true // Enable sending user IP and other PII
-		});
-	}
+	import { PersistQueryClientProvider } from '@tanstack/svelte-query-persist-client';
+	import { queryClient, queryPersistOptions } from '$lib/queryClient';
+	import { prefetchRoute } from '$lib/queries/prefetch';
+	import { auth } from '$lib/api';
+	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
+	import SyncIndicator from '$lib/SyncIndicator.svelte';
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -62,43 +45,6 @@
 			const currentWindow = getCurrentWindow();
 			currentWindow; // Test if it works
 			isTauri = true;
-
-			// Add Tauri environment data to Sentry
-			try {
-				const appVersion = await getVersion();
-				const osType = await type();
-				const osVer = await osVersion();
-				const osPlatform = await platform();
-				const osArch = await arch();
-				
-				Sentry.setTags({
-					environment: 'tauri',
-					os_type: osType,
-					os_version: osVer,
-					os_platform: osPlatform,
-					os_arch: osArch
-				});
-				
-				Sentry.setContext('os', {
-					name: osType,
-					version: osVer
-				});
-				
-				Sentry.setRelease(`time-tracker@${appVersion}`);
-
-				// Fetch public IP for desktop app (since there's no server to capture it)
-				try {
-					const ipResponse = await fetch('https://api.ipify.org?format=json');
-					const ipData = await ipResponse.json();
-					if (ipData.ip) {
-						Sentry.setUser({ ip_address: ipData.ip });
-					}
-				} catch {
-					// IP fetch failed, continue without it
-				}
-			} catch (e) {
-				logger.warn("Failed to gather Tauri context for Sentry", e);
-			}
 
 			// Listen for single instance event
 			const { listen } = await import('@tauri-apps/api/event');
@@ -133,31 +79,34 @@
 		authStore.initialize();
 
 		// Wait for persistent stores to finish loading before marking auth as initialized
-		const [tokenValue, userValue] = await Promise.all([
-			authToken.initialized,
-			user.initialized
-		]);
-		logger.log('[AuthInit] Stores loaded:', { token: tokenValue ? 'exists' : 'null', user: userValue ? 'exists' : 'null' });
+		const [tokenValue, userValue] = await Promise.all([authToken.initialized, user.initialized]);
+		logger.log('[AuthInit] Stores loaded:', {
+			token: tokenValue ? 'exists' : 'null',
+			user: userValue ? 'exists' : 'null'
+		});
+
+		// Refresh the profile from the server so permission flags (e.g. is_staff)
+		// are current. A stored user from an older session may lack is_staff,
+		// which hides admin-only UI (tag management). Offline or transient
+		// server errors keep the stored user unchanged.
+		if ($authToken) {
+			try {
+				const freshUser = await auth.getUser();
+				user.set(freshUser);
+			} catch {
+				// keep the stored user (offline or transient server error)
+			}
+		}
 
 		authInitialized = true;
 		logger.log('[AuthInit] authInitialized set to true');
 
-		// Preload commonly accessed data after initial authentication is set up
+		// Warm the timer page's queries after initial render (projects + active + today)
 		if ($authToken) {
-			// Preload timer page resources after initial render
-			const preloadTimer = () => {
-				import('$lib/api').then(({ projects, timeEntries }) => {
-					projects.list().catch((err) => logger.warn('Failed to preload projects in layout:', err));
-					timeEntries
-						.getCurrentActive()
-						.catch((err) => logger.warn('Failed to preload active timer in layout:', err));
-				});
-			};
-
 			if ('requestIdleCallback' in window) {
-				requestIdleCallback(preloadTimer);
+				requestIdleCallback(() => prefetchRoute('/timer'));
 			} else {
-				setTimeout(preloadTimer, 0);
+				setTimeout(() => prefetchRoute('/timer'), 0);
 			}
 		}
 	});
@@ -296,89 +245,92 @@
 	}
 </script>
 
-{#if $backgroundAnimationEnabled}
-	<WaveBackground />
-{/if}
+<PersistQueryClientProvider client={queryClient} persistOptions={queryPersistOptions}>
+	{#if $backgroundAnimationEnabled}
+		<BackgroundAnimation />
+	{/if}
 
-{#if isTauri}
-	<TitleBar />
-{/if}
-
-{#if dev}
-	<!-- Debug info -->
-	<div class="fixed bottom-4 left-4 bg-black text-white p-2 rounded text-sm z-50">
-		Tauri detected: {isTauri ? 'Yes' : 'No'}
-	</div>
-{/if}
-
-{#if !authInitialized}
-	<!-- Loading screen during auth initialization -->
-	<div class="min-h-screen flex items-center justify-center bg-base-200">
-		<div class="text-center">
-			<span class="loading loading-spinner loading-lg text-primary"></span>
-			<p class="mt-4 text-base-content/70">Loading...</p>
+	{#if dev}
+		<!-- Debug info -->
+		<div class="fixed bottom-4 left-4 bg-black text-white p-2 rounded text-sm z-50">
+			Tauri detected: {isTauri ? 'Yes' : 'No'}
 		</div>
-	</div>
-{:else if showMainLayout}
-	<!-- Main authenticated layout using DaisyUI Drawer -->
-	<div class="drawer lg:drawer-open min-h-screen">
-		<!-- Drawer toggle input -->
-		<input id="app-drawer" type="checkbox" class="drawer-toggle" bind:this={drawerCheckbox} />
 
-		<!-- Drawer content (main content area with navbar) -->
-		<div class="drawer-content flex flex-col">
-			<Navbar />
+		<!-- TanStack Query Devtools (dev only; toggle stored in localStorage) -->
+		<SvelteQueryDevtools />
+	{/if}
 
-			<!-- Offline Banner - positioned below navbar -->
-			{#if !$network.isOnline}
-				<div class="alert alert-error px-4 py-3 shadow-lg sticky top-16 lg:top-0 z-40">
-					<div class="flex items-center justify-between w-full">
-						<div class="flex items-center gap-3">
-							<!-- Pulsing offline icon -->
-							<span class="relative flex h-3 w-3">
-								<span
-									class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"
-								></span>
-								<span class="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
-							</span>
+	{#if !authInitialized}
+		<!-- Loading screen during auth initialization -->
+		<div class="min-h-screen flex items-center justify-center bg-base-200">
+			<div class="text-center">
+				<span class="loading loading-spinner loading-lg text-primary"></span>
+				<p class="mt-4 text-base-content/70">Loading...</p>
+			</div>
+		</div>
+	{:else if showMainLayout}
+		<!-- Main authenticated layout using DaisyUI Drawer -->
+		<div class="drawer lg:drawer-open min-h-screen">
+			<!-- Drawer toggle input -->
+			<input id="app-drawer" type="checkbox" class="drawer-toggle" bind:this={drawerCheckbox} />
 
-							<div class="flex flex-col">
-								<span class="font-bold">No Internet Connection</span>
-								<span class="text-sm opacity-90">
-									Showing cached data from {formatLastOnline($network.lastOnline)}
+			<!-- Drawer content (main content area with navbar) -->
+			<div class="drawer-content flex flex-col">
+				<Navbar />
+
+				<!-- Offline Banner - positioned below navbar -->
+				{#if !$network.isOnline}
+					<div class="alert alert-error px-4 py-3 shadow-lg sticky top-14 z-40">
+						<div class="flex items-center justify-between w-full">
+							<div class="flex items-center gap-3">
+								<!-- Pulsing offline icon -->
+								<span class="relative flex h-3 w-3">
+									<span
+										class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"
+									></span>
+									<span class="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
 								</span>
+
+								<div class="flex flex-col">
+									<span class="font-bold">No Internet Connection</span>
+									<span class="text-sm opacity-90">
+										Showing cached data from {formatLastOnline($network.lastOnline)}
+									</span>
+								</div>
 							</div>
+
+							<!-- Reconnection status -->
+							{#if $network.isChecking}
+								<div class="flex items-center gap-2">
+									<span class="loading loading-spinner loading-sm"></span>
+									<span class="text-sm">Reconnecting...</span>
+								</div>
+							{/if}
 						</div>
-
-						<!-- Reconnection status -->
-						{#if $network.isChecking}
-							<div class="flex items-center gap-2">
-								<span class="loading loading-spinner loading-sm"></span>
-								<span class="text-sm">Reconnecting...</span>
-							</div>
-						{/if}
 					</div>
-				</div>
-			{/if}
+				{/if}
+				<!-- Main page content -->
+				<main class="flex-1 p-4 lg:p-6">
+					{@render children()}
+				</main>
 
-			<!-- Main page content -->
-			<main class="flex-1 p-4 lg:p-6 overflow-y-auto">
-				{@render children()}
-			</main>
+				<!-- Subtle global sync indicator while any query is fetching -->
+				<SyncIndicator />
+			</div>
+
+			<!-- Drawer side (sidebar) -->
+			<Sidebar />
 		</div>
+	{:else}
+		<!-- Login page or other non-authenticated content -->
+		<div class="min-h-screen">
+			{@render children()}
+		</div>
+	{/if}
 
-		<!-- Drawer side (sidebar) -->
-		<Sidebar />
-	</div>
-{:else}
-	<!-- Login page or other non-authenticated content -->
-	<div class="min-h-screen">
-		{@render children()}
-	</div>
-{/if}
-
-<!-- Toast notifications - visible on all pages -->
-<ToastContainer />
+	<!-- Toast notifications - visible on all pages -->
+	<ToastContainer />
+</PersistQueryClientProvider>
 
 <style>
 	/* Custom styles for better spacing */
@@ -389,10 +341,5 @@
 
 	main {
 		flex: 1;
-	}
-
-	/* Adjust for Tauri title bar */
-	:global(.with-titlebar) .drawer-content {
-		padding-top: 0;
 	}
 </style>

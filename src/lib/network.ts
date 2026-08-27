@@ -116,7 +116,7 @@ const createNetworkStore = () => {
 		if (!cachedBaseUrl) {
 			cachedBaseUrl = get(baseUrl);
 		}
-		return createProbeUrl(cachedBaseUrl);
+		return createProbeUrl(cachedBaseUrl ?? '');
 	};
 
 	// Single probe attempt (no retry)
@@ -336,7 +336,7 @@ const createNetworkStore = () => {
 		checkInitialStatus();
 		
 		// Update cached value when baseUrl changes
-		baseUrl.subscribe((newUrl) => {
+		baseUrl.subscribe((newUrl: string) => {
 			cachedBaseUrl = newUrl;
 		});
 	}
@@ -382,7 +382,7 @@ export async function checkConnectivity(timeout: number = 3000): Promise<boolean
 	if (!browser) return false;
 	if (!navigator.onLine) return false;
 
-	const configuredBaseUrl = get(baseUrl);
+	const configuredBaseUrl = String(get(baseUrl));
 	const probeUrl = createProbeUrl(configuredBaseUrl);
 
 	if (!probeUrl) return navigator.onLine;

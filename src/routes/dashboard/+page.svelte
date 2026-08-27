@@ -1,42 +1,35 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
-	import { user, timeEntriesDisplayMode, featureFlagsStore } from '$lib/stores';
-	import { timeEntries, type TimeEntry } from '$lib/api';
+	import PageHeader from '$lib/PageHeader.svelte';
+	import { Square } from '@lucide/svelte';
+	import { Play, Pencil, ChartColumn, ListChecks } from '@jis3r/icons';
+	import { LayoutDashboard } from '@jis3r/icons';
+	import {
+		user,
+		timeEntriesDisplayMode,
+		autoRefreshEnabled,
+		timerRefreshInterval
+	} from '$lib/stores';
+	import type { TimeEntry, PaginatedTimeEntries } from '$lib/api';
 	import TasksModal from '$lib/TasksModal.svelte';
 	import Last7DaysChart from '$lib/Last7DaysChart.svelte';
 	import CalendarHeatmap from '$lib/CalendarHeatmap.svelte';
 	import ProjectsBarChart from '$lib/ProjectsBarChart.svelte';
-	import { preloadOnHover } from '$lib/preloadOnHover';
-	import DebugPreloadIcon from '$lib/DebugPreloadIcon.svelte';
-	import { debugPreloadActive } from '$lib/preloadOnHover';
-	import { refreshController } from '$lib/refreshController';
-	import DataFreshnessIndicator from '$lib/DataFreshnessIndicator.svelte';
-	import { network } from '$lib/network';
+	import { prefetchRoute } from '$lib/queries/prefetch';
+	import { queryClient } from '$lib/queryClient';
+	import { queryKeys } from '$lib/queries/keys';
+	import { createQueries } from '$lib/queries/createQueries.svelte';
+	import { timeEntries as timeEntriesApi } from '$lib/api';
+	import TagChip from '$lib/TagChip.svelte';
+	import { useStopTimerMutation } from '$lib/queries/timeEntries';
+	import {
+		computeTotalSeconds,
+		formatDuration,
+		getEntryDurationSeconds
+	} from '$lib/reports/analytics';
 
-	let recentEntries = $state<TimeEntry[]>([]);
-	let todayEntries = $state<TimeEntry[]>([]);
-	let activeEntry = $state<TimeEntry | null>(null);
-	let loading = $state(true);
-	let error = $state('');
 	let showTasksModal = $state(false);
-
-	// Stats for today
-	let todayTotalSeconds = $state(0);
-	let todayCompletedTasks = $state(0);
-
-	// Feature flags
-	let showProcessMonitorButton = $state(false);
-	let loadingFeatureFlags = $state(true);
-
-	// Track preloading state
-	const preloadingStates = {
-		'/timer': false,
-		'/entries': false,
-		'/settings': false,
-		'/processes': false
-	};
 
 	// Helper functions to get date ranges
 	/**
@@ -52,173 +45,151 @@
 		};
 	}
 
-	// Handler to update preloading state
-	function setPreloading(path, state) {
-		preloadingStates[path] = state;
+	/**
+	 * Gets the date of Monday of the current week (local time) as YYYY-MM-DD,
+	 * used to scope the "this week" summary strip.
+	 * @returns Monday's date string
+	 */
+	function getWeekStart(): string {
+		const now = new Date();
+		const daysSinceMonday = (now.getDay() + 6) % 7;
+		const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
+		const month = String(monday.getMonth() + 1).padStart(2, '0');
+		const day = String(monday.getDate()).padStart(2, '0');
+		return `${monday.getFullYear()}-${month}-${day}`;
 	}
 
-	// Clean up old dashboard caches (keep only last 7 days)
-	function cleanupOldDashboardCaches() {
-		try {
-			const today = new Date();
-			const keysToRemove: string[] = [];
-			
-			for (let i = 0; i < localStorage.length; i++) {
-				const key = localStorage.key(i);
-				if (key?.startsWith('dashboard_today_')) {
-					const dateStr = key.replace('dashboard_today_', '');
-					const cacheDate = new Date(dateStr);
-					const daysDiff = Math.floor((today.getTime() - cacheDate.getTime()) / (1000 * 60 * 60 * 24));
-					
-					if (daysDiff > 7) {
-						keysToRemove.push(key);
-					}
-				}
-			}
-			
-			keysToRemove.forEach(key => localStorage.removeItem(key));
-			if (keysToRemove.length > 0) {
-				console.log(`Cleaned up ${keysToRemove.length} old dashboard caches`);
-			}
-		} catch (err) {
-			console.warn('Failed to cleanup old dashboard caches:', err);
-		}
-	}
+	// Server state via TanStack Query — shared cache + automatic revalidation.
+	// Today's entries, recent activity, and the active timer all share the app
+	// query cache, so starting/stopping a timer on the timer page invalidates
+	// these queries too (via queryKeys.timeEntries.all).
+	const refreshInterval = () => ($autoRefreshEnabled ? $timerRefreshInterval || 30000 : false);
 
-	// Helper to load cached time entries
-	async function loadCachedTimeEntries(): Promise<{
-		todayEntries: TimeEntry[];
-		recentEntries: TimeEntry[];
-		activeEntry: TimeEntry | null;
-	} | null> {
-		try {
-			// Try localStorage cache
-			const todayKey = 'dashboard_today_entries';
-			const recentKey = 'dashboard_recent_entries';
-			const activeKey = 'dashboard_active_entry';
-
-			const todayStored = localStorage.getItem(todayKey);
-			const recentStored = localStorage.getItem(recentKey);
-			const activeStored = localStorage.getItem(activeKey);
-
-			if (todayStored || recentStored) {
-				return {
-					todayEntries: todayStored ? JSON.parse(todayStored) : [],
-					recentEntries: recentStored ? JSON.parse(recentStored) : [],
-					activeEntry: activeStored ? JSON.parse(activeStored) : null
-				};
-			}
-		} catch (err) {
-			console.warn('Failed to load cached time entries:', err);
-		}
-		return null;
-	}
-
-	// Note: Authentication is now handled globally in the layout
-	onMount(async () => {
-		try {
-			// Clean up old caches on mount
-			cleanupOldDashboardCaches();
-			
-			loading = true;
-			loadingFeatureFlags = true;
-
-			// Load feature flags
-			await featureFlagsStore.loadFeatures();
-			showProcessMonitorButton = await featureFlagsStore.isFeatureEnabled('process-monitor-ui');
-			loadingFeatureFlags = false;
-
-			// Check if online before making API calls
-			const isOnline = $network.isOnline;
-
-			// Get today's date range
-			const todayRange = getTodayRange();
-
-			if (isOnline) {
-				// Online: fetch from API
-				const [todayResult, recentEntriesResult, activeResult] =
-					await Promise.allSettled([
-						timeEntries.listWithFilters({
+	// Single observer via the vendored createQueries (see
+	// src/lib/queries/createQueries.svelte.ts for why we can't use the
+	// @tanstack/svelte-query version: it builds its QueriesObserver inside a
+	// `$derived`, which crashes with state_unsafe_mutation once SyncIndicator's
+	// useIsFetching subscribes to the query cache). Same keys/shapes, so
+	// prefetch + invalidation still hit the same cache entries.
+	const [todayQuery, recentQuery, weekQuery, activeQuery] = createQueries(() => {
+		const todayRange = getTodayRange();
+		const weekStart = getWeekStart();
+		return {
+			queries: [
+				{
+					queryKey: queryKeys.timeEntries.filtered({
+						start_date_after_tz: todayRange.start,
+						start_date_before_tz: todayRange.end,
+						limit: 100
+					}),
+					queryFn: () =>
+						timeEntriesApi.listWithFilters({
 							start_date_after_tz: todayRange.start,
 							start_date_before_tz: todayRange.end,
 							limit: 100
 						}),
-						timeEntries.list(),
-						(async () => {
-							try {
-								return await timeEntries.getCurrentActive();
-							} catch {
-								return null;
-							}
-						})()
-					]);
-
-				if (todayResult.status === 'fulfilled') {
-					const data = todayResult.value;
-					todayEntries = Array.isArray(data) ? data : data?.results || [];
-					calculateStats(
-						todayEntries,
-						activeResult.status === 'fulfilled' ? activeResult.value : null
-					);
+					staleTime: 30_000,
+					refetchInterval: refreshInterval()
+				},
+				{
+					queryKey: queryKeys.timeEntries.filtered({ limit: 10 }),
+					queryFn: () => timeEntriesApi.listWithFilters({ limit: 10 }),
+					staleTime: 30_000,
+					refetchInterval: refreshInterval()
+				},
+				{
+					queryKey: queryKeys.timeEntries.filtered({
+						start_date_after_tz: weekStart,
+						limit: 500
+					}),
+					queryFn: () =>
+						timeEntriesApi.listWithFilters({
+							start_date_after_tz: weekStart,
+							limit: 500
+						}),
+					staleTime: 30_000,
+					refetchInterval: refreshInterval()
+				},
+				{
+					queryKey: queryKeys.timeEntries.active,
+					queryFn: () => timeEntriesApi.getCurrentActive(),
+					staleTime: 15_000,
+					refetchInterval: refreshInterval()
 				}
+			]
+		};
+	});
 
-				if (recentEntriesResult.status === 'fulfilled') {
-					const data = recentEntriesResult.value;
-					const entriesArray = Array.isArray(data) ? data : data?.results || [];
-					recentEntries = entriesArray.slice(0, 5);
-				}
-
-				if (activeResult.status === 'fulfilled') {
-					activeEntry = activeResult.value;
-				}
-			} else {
-				// Offline: try to load from cache
-				console.log('Dashboard: Offline mode, loading from cache');
-
-				// Load cached time entries
-				const cachedEntries = await loadCachedTimeEntries();
-				if (cachedEntries) {
-					todayEntries = cachedEntries.todayEntries;
-					recentEntries = cachedEntries.recentEntries;
-					activeEntry = cachedEntries.activeEntry;
-					calculateStats(todayEntries, activeEntry);
+	let todayEntries = $derived<TimeEntry[]>(
+		(todayQuery.data as PaginatedTimeEntries | undefined)?.results ?? []
+	);
+	let recentEntries = $derived<TimeEntry[]>(
+		(recentQuery.data as PaginatedTimeEntries | undefined)?.results.slice(0, 5) ?? []
+	);
+	let weekEntries = $derived<TimeEntry[]>(
+		(weekQuery.data as PaginatedTimeEntries | undefined)?.results ?? []
+	);
+	let weekTotalSeconds = $derived(computeTotalSeconds(weekEntries));
+	let weekTopProject = $derived<string>(
+		(() => {
+			const totals = new Map<string, number>();
+			for (const entry of weekEntries) {
+				const name = entry.project || 'No project';
+				totals.set(name, (totals.get(name) ?? 0) + getEntryDurationSeconds(entry));
+			}
+			let top = '';
+			let topSecs = 0;
+			for (const [name, secs] of totals) {
+				if (secs > topSecs) {
+					top = name;
+					topSecs = secs;
 				}
 			}
+			return top;
+		})()
+	);
+	let weekDayTotals = $derived<number[]>(
+		(() => {
+			const buckets = [0, 0, 0, 0, 0, 0, 0];
+			for (const entry of weekEntries) {
+				const dow = (new Date(entry.start_time).getDay() + 6) % 7; // Mon=0
+				buckets[dow] += getEntryDurationSeconds(entry);
+			}
+			return buckets;
+		})()
+	);
+	let weekMaxDay = $derived(Math.max(0, ...weekDayTotals));
+	const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+	let activeEntry = $derived<TimeEntry | null>((activeQuery.data as TimeEntry | undefined) ?? null);
+	let loading = $derived(
+		todayQuery.isPending && recentQuery.isPending && weekQuery.isPending && activeQuery.isPending
+	);
+	let error = $derived(
+		!todayEntries.length &&
+			!recentEntries.length &&
+			!activeEntry &&
+			(todayQuery.isError || recentQuery.isError || activeQuery.isError)
+			? 'Failed to load dashboard data'
+			: ''
+	);
 
-			loading = false;
-		} catch (err) {
-			console.error('Dashboard loading error:', err);
-			error = 'Failed to load dashboard data';
-			loading = false;
-		}
-	});
+	// Stats for today
+	let todayTotalSeconds = $derived(computeTodaySeconds(todayEntries, activeEntry));
+	let todayCompletedTasks = $derived(todayEntries.filter((entry) => !entry.is_active).length);
 
-	// Register refresh callback with refresh controller
-	refreshController.register('dashboard-page', async () => {
-		await refreshAllData();
-	});
-
-	// Cleanup function to unregister from refresh controller
-	onDestroy(() => {
-		refreshController.unregister('dashboard-page');
-	});
-
-	function calculateStats(entries: TimeEntry[], active: TimeEntry | null) {
-		// Calculate completed tasks today
-		todayCompletedTasks = entries.filter((entry) => !entry.is_active).length;
-
-		// Calculate total seconds today
-		todayTotalSeconds = 0;
+	function computeTodaySeconds(entries: TimeEntry[], active: TimeEntry | null): number {
+		let total = 0;
 		for (const entry of entries) {
 			if (entry.duration) {
 				const duration = parseInt(entry.duration, 10) || 0; // Duration is now in seconds as string
-				todayTotalSeconds += duration;
+				total += duration;
 			} else if (entry.is_active && active?.id === entry.id) {
 				// For active entry, calculate from start time to now
 				const startTime = new Date(entry.start_time).getTime();
-				todayTotalSeconds += Math.floor((Date.now() - startTime) / 1000);
+				total += Math.floor((Date.now() - startTime) / 1000);
 			}
 		}
+		return total;
 	}
 
 	/**
@@ -250,6 +221,22 @@
 		}
 	}
 
+	const stopTimerMutation = useStopTimerMutation();
+
+	function projectDotClass(name: string): string {
+		const palette = [
+			'bg-primary',
+			'bg-secondary',
+			'bg-accent',
+			'bg-info',
+			'bg-success',
+			'bg-warning'
+		];
+		let sum = 0;
+		for (let i = 0; i < name.length; i++) sum = (sum + name.charCodeAt(i)) % palette.length;
+		return palette[sum];
+	}
+
 	const openTimeEntries = async () => {
 		const mode = get(timeEntriesDisplayMode);
 		if (mode === 'modal') {
@@ -257,33 +244,6 @@
 			return;
 		}
 		goto('/entries');
-	};
-
-	const openProcessMonitor = async () => {
-		try {
-			await featureFlagsStore.logFeatureAccess('process-monitor-ui');
-			await featureFlagsStore.logFeatureAccess('process-monitor-backend');
-		} catch (error) {
-			console.error('Failed to log process monitor access:', error);
-		}
-
-		try {
-			const { getCurrentWindow } = await import('@tauri-apps/api/window');
-			getCurrentWindow();
-			const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-			const webview = new WebviewWindow('process-monitor', {
-				url: `${window.location.origin}/processes`,
-				title: 'System Process Monitor',
-				width: 1000,
-				height: 700,
-				resizable: true,
-				decorations: false,
-				fullscreen: false,
-				contentProtected: true
-			});
-		} catch {
-			window.open('/processes', '_blank');
-		}
 	};
 
 	function getGreeting(): string {
@@ -294,92 +254,16 @@
 	}
 
 	// Enable debug mode in development
-	const debugMode = import.meta.env.DEV;
-
-	async function refreshAllData() {
-		try {
-			// Skip refresh if offline
-			if (!$network.isOnline) {
-				console.log('Dashboard: Skipping refresh while offline');
-				return;
-			}
-
-			// Get today's date range
-			const todayRange = getTodayRange();
-
-			const [todayResult, recentEntriesResult, activeResult] =
-				await Promise.allSettled([
-					timeEntries.listWithFilters({
-						start_date_after_tz: todayRange.start,
-						start_date_before_tz: todayRange.end,
-						limit: 100
-					}),
-					timeEntries.list(), // For recent entries
-					(async () => {
-						try {
-							return await timeEntries.getCurrentActive();
-						} catch {
-							return null;
-						}
-					})()
-				]);
-
-			if (todayResult.status === 'fulfilled') {
-				const data = todayResult.value;
-				todayEntries = Array.isArray(data) ? data : data?.results || [];
-				calculateStats(
-					todayEntries,
-					activeResult.status === 'fulfilled' ? activeResult.value : null
-				);
-				// Save to localStorage for offline use
-				try {
-					localStorage.setItem('dashboard_today_entries', JSON.stringify(todayEntries));
-				} catch (e) {}
-			}
-
-			if (recentEntriesResult.status === 'fulfilled') {
-				const data = recentEntriesResult.value;
-				const entriesArray = Array.isArray(data) ? data : data?.results || [];
-				recentEntries = entriesArray.slice(0, 5);
-				// Save to localStorage for offline use
-				try {
-					localStorage.setItem('dashboard_recent_entries', JSON.stringify(recentEntries));
-				} catch (e) {}
-			}
-
-			if (activeResult.status === 'fulfilled') {
-				activeEntry = activeResult.value;
-				// Save to localStorage for offline use
-				try {
-					localStorage.setItem('dashboard_active_entry', JSON.stringify(activeEntry));
-				} catch (e) {}
-			}
-
-			// Update data freshness manager - only when online
-			if (typeof window !== 'undefined') {
-				import('$lib/dataFreshness').then(({ dataFreshnessManager }) => {
-					dataFreshnessManager.updateTimestamp('global');
-				}).catch(() => {
-					// Ignore import errors when offline
-				});
-			}
-		} catch (err) {
-			console.error('Dashboard refresh error:', err);
-			error = 'Failed to refresh dashboard data';
-		}
-	}
 </script>
 
 <div class="container mx-auto p-4 lg:p-8">
 	<!-- Header -->
 	<div class="mb-6">
-		<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-			<div>
-				<h1 class="text-3xl font-bold text-primary">Dashboard</h1>
-				<p class="text-base-content/70">{getGreeting()}, {$user?.first_name || 'User'}!</p>
-			</div>
-			<DataFreshnessIndicator onRefresh={refreshAllData} />
-		</div>
+		<PageHeader
+			icon={LayoutDashboard}
+			title="Dashboard"
+			subtitle={`${getGreeting()}, ${$user?.first_name || 'User'}!`}
+		/>
 	</div>
 
 	{#if loading}
@@ -467,7 +351,9 @@
 					<div class="flex items-center justify-between">
 						<div>
 							<h3 class="card-title text-sm font-normal text-base-content/70">Hours Today</h3>
-							<p class="text-3xl font-bold text-secondary font-mono">{formatTimeHHMMSS(todayTotalSeconds)}</p>
+							<p class="text-3xl font-bold text-secondary font-mono">
+								{formatTimeHHMMSS(todayTotalSeconds)}
+							</p>
 						</div>
 						<div class="avatar placeholder bg-secondary/10 rounded-full p-4">
 							<svg
@@ -493,7 +379,9 @@
 				<div class="card-body flex flex-col justify-center">
 					<div class="flex items-center justify-between">
 						<div>
-							<h3 class="card-title text-sm font-normal text-base-content/70">Tasks Completed Today</h3>
+							<h3 class="card-title text-sm font-normal text-base-content/70">
+								Tasks Completed Today
+							</h3>
 							<p class="text-3xl font-bold text-accent">{todayCompletedTasks}</p>
 						</div>
 						<div class="avatar placeholder bg-accent/10 rounded-full p-4">
@@ -536,39 +424,107 @@
 			<div class="card bg-base-100 shadow-lg">
 				<div class="card-body">
 					<h2 class="card-title mb-4">Recent Activity</h2>
+
+					<!-- This week summary strip -->
+					<div class="grid grid-cols-3 gap-3 mb-4 p-3 bg-base-200 rounded-lg">
+						<div class="min-w-0">
+							<p class="text-[11px] uppercase tracking-wider text-base-content/50">This week</p>
+							<p class="text-lg font-bold font-mono tabular-nums">
+								{formatDuration(weekTotalSeconds)}
+							</p>
+						</div>
+						<div class="min-w-0">
+							<p class="text-[11px] uppercase tracking-wider text-base-content/50">Entries</p>
+							<p class="text-lg font-bold">{weekEntries.length}</p>
+						</div>
+						<div class="min-w-0">
+							<p class="text-[11px] uppercase tracking-wider text-base-content/50">Top project</p>
+							<p class="text-sm font-medium truncate" title={weekTopProject}>
+								{weekTopProject || '—'}
+							</p>
+						</div>
+					</div>
+
+					<!-- Mon→Sun mini bars -->
+					<div class="flex items-end gap-1 h-8 mb-5" aria-label="Hours by weekday">
+						{#each weekDayTotals as secs, i}
+							<div
+								class="flex-1 rounded-sm bg-primary/40"
+								style="height:{weekMaxDay > 0
+									? Math.max(10, Math.round((secs / weekMaxDay) * 100))
+									: 4}%"
+								title="{weekdayLabels[i]} · {formatDuration(secs)}"
+							></div>
+						{/each}
+					</div>
+
 					{#if recentEntries.length > 0}
-						<div class="space-y-3">
+						<div class="space-y-2">
 							{#each recentEntries as entry}
-								<div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
-									<div class="flex-1">
-										<h4 class="font-medium text-sm">{entry.title}</h4>
-										<p class="text-xs text-base-content/60">
-											{entry.project} • {formatDate(entry.start_time)}
-										</p>
-									</div>
-									<div class="flex items-center space-x-2">
-										<span
-											class="badge {entry.is_active ? 'badge-success' : 'badge-neutral'} text-xs"
-										>
-											{entry.is_active ? 'Active' : 'Done'}
+								<button
+									class="flex w-full items-center gap-3 p-3 bg-base-200 rounded-lg text-left border-0 cursor-pointer transition-colors hover:bg-base-300 focus-visible:ring-2 focus-visible:ring-primary/40"
+									onclick={() => goto('/entries')}
+								>
+									<span class="w-2 h-2 rounded-full shrink-0 {projectDotClass(entry.project)}"
+									></span>
+									<span class="flex-1 min-w-0">
+										<span class="flex items-center justify-between gap-3">
+											<span class="font-medium text-sm truncate" title={entry.title}>
+												{entry.title}
+											</span>
+											<span
+												class="text-xs font-mono tabular-nums shrink-0 {entry.is_active
+													? 'text-success'
+													: 'text-base-content/70'}"
+											>
+												{formatDuration(getEntryDurationSeconds(entry))}
+											</span>
 										</span>
-									</div>
-								</div>
+										<span class="flex items-center gap-2 mt-1 min-w-0">
+											{#if entry.is_active}
+												<span
+													class="flex items-center gap-1.5 text-xs font-medium text-success shrink-0"
+												>
+													<span class="relative flex h-2 w-2">
+														<span
+															class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"
+														></span>
+														<span class="relative inline-flex rounded-full h-2 w-2 bg-success"
+														></span>
+													</span>
+													Active
+												</span>
+											{/if}
+											{#if entry.project}
+												<span class="text-xs text-base-content/50 truncate">{entry.project}</span>
+											{/if}
+											{#if entry.tags?.length}
+												<span class="flex items-center gap-1 flex-wrap min-w-0">
+													{#each entry.tags.slice(0, 2) as tag}
+														<TagChip {tag} size="xs" />
+													{/each}
+													{#if entry.tags.length > 2}
+														<span
+															class="badge badge-xs badge-ghost font-normal text-base-content/60"
+															>+{entry.tags.length - 2}</span
+														>
+													{/if}
+												</span>
+											{/if}
+											<span class="text-xs text-base-content/40 ml-auto shrink-0">
+												{formatDate(entry.start_time)}
+											</span>
+										</span>
+									</span>
+								</button>
 							{/each}
 						</div>
 						<div class="card-actions mt-4">
 							<button
 								class="btn btn-outline btn-sm"
-								use:preloadOnHover={'/entries'}
-								onpreloadstart={() => setPreloading('/entries', true)}
-								onpreloadend={() => setPreloading('/entries', false)}
-								onpreloadcancel={() => setPreloading('/entries', false)}
+								onmouseenter={() => prefetchRoute('/entries')}
 								onclick={openTimeEntries}
 							>
-								{#if preloadingStates['/entries']}
-									<span class="loading loading-spinner loading-xs mr-2"></span>
-								{/if}
-								<DebugPreloadIcon active={debugMode && preloadingStates['/entries']} />
 								View All Entries
 							</button>
 						</div>
@@ -598,105 +554,64 @@
 				<div class="card-body">
 					<h2 class="card-title mb-4">Quick Actions</h2>
 					<div class="space-y-3">
-						<button
-							class="btn btn-primary btn-block justify-start"
-							use:preloadOnHover={'/timer'}
-							onpreloadstart={() => setPreloading('/timer', true)}
-							onpreloadend={() => setPreloading('/timer', false)}
-							onpreloadcancel={() => setPreloading('/timer', false)}
-							onclick={() => goto('/timer')}
-						>
-							{#if preloadingStates['/timer']}
-								<span class="loading loading-spinner loading-xs mr-2"></span>
-							{/if}
-							<DebugPreloadIcon active={debugMode && preloadingStates['/timer']} />
-							<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293H15M9 10V9a2 2 0 012-2h2a2 2 0 012 2v1"
-								></path>
-							</svg>
-							Start New Timer
-						</button>
-
-						<button
-							class="btn btn-outline btn-block justify-start"
-							use:preloadOnHover={'/entries'}
-							onpreloadstart={() => setPreloading('/entries', true)}
-							onpreloadend={() => setPreloading('/entries', false)}
-							onpreloadcancel={() => setPreloading('/entries', false)}
-							onclick={openTimeEntries}
-						>
-							{#if preloadingStates['/entries']}
-								<span class="loading loading-spinner loading-xs mr-2"></span>
-							{/if}
-							<DebugPreloadIcon active={debugMode && preloadingStates['/entries']} />
-							<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-								></path>
-							</svg>
-							View All Entries
-						</button>
-
-						<button
-							class="btn btn-outline btn-block justify-start"
-							use:preloadOnHover={'/settings'}
-							onpreloadstart={() => setPreloading('/settings', true)}
-							onpreloadend={() => setPreloading('/settings', false)}
-							onpreloadcancel={() => setPreloading('/settings', false)}
-							onclick={() => goto('/settings')}
-						>
-							{#if preloadingStates['/settings']}
-								<span class="loading loading-spinner loading-xs mr-2"></span>
-							{/if}
-							<DebugPreloadIcon active={debugMode && preloadingStates['/settings']} />
-							<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-								></path>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-								></path>
-							</svg>
-							Settings
-						</button>
-
-						{#if !loadingFeatureFlags && showProcessMonitorButton}
+						{#if activeEntry}
 							<button
-								class="btn btn-outline btn-block justify-start"
-								use:preloadOnHover={'/processes'}
-								onpreloadstart={() => setPreloading('/processes', true)}
-								onpreloadend={() => setPreloading('/processes', false)}
-								onpreloadcancel={() => setPreloading('/processes', false)}
-								onclick={openProcessMonitor}
+								class="btn btn-error btn-block justify-start"
+								disabled={stopTimerMutation.isPending}
+								onclick={() => void stopTimerMutation.mutateAsync(activeEntry.id)}
 							>
-								{#if preloadingStates['/processes']}
-									<span class="loading loading-spinner loading-xs mr-2"></span>
+								{#if stopTimerMutation.isPending}
+									<span class="loading loading-spinner loading-sm mr-2"></span>
+								{:else}
+									<Square class="w-5 h-5 mr-2 shrink-0" />
 								{/if}
-								<DebugPreloadIcon active={debugMode && preloadingStates['/processes']} />
-								<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
-									></path>
-								</svg>
-								Process Monitor
+								<span class="min-w-0 truncate">Stop Timer: {activeEntry.title}</span>
+							</button>
+						{:else}
+							<button
+								class="btn btn-primary btn-block justify-start"
+								onmouseenter={() => prefetchRoute('/timer')}
+								onclick={() => goto('/timer')}
+							>
+								<span class="mr-2 shrink-0" aria-hidden="true">
+									<Play size={20} />
+								</span>
+
+								Start New Timer
 							</button>
 						{/if}
+
+						<button
+							class="btn btn-outline btn-block justify-start"
+							onclick={() => (showTasksModal = true)}
+						>
+							<span class="mr-2 shrink-0" aria-hidden="true">
+								<Pencil size={20} />
+							</span>
+							Log Time Entry
+						</button>
+
+						<button
+							class="btn btn-outline btn-block justify-start"
+							onmouseenter={() => prefetchRoute('/reports')}
+							onclick={() => goto('/reports')}
+						>
+							<span class="mr-2 shrink-0" aria-hidden="true">
+								<ChartColumn size={20} />
+							</span>
+							View Reports
+						</button>
+
+						<button
+							class="btn btn-outline btn-block justify-start"
+							onmouseenter={() => prefetchRoute('/entries')}
+							onclick={openTimeEntries}
+						>
+							<span class="mr-2 shrink-0" aria-hidden="true">
+								<ListChecks size={20} />
+							</span>
+							View All Entries
+						</button>
 					</div>
 				</div>
 			</div>
@@ -712,10 +627,9 @@
 					<div class="card-actions justify-end">
 						<button
 							class="btn btn-secondary"
-							use:preloadOnHover={'/timer'}
+							onmouseenter={() => prefetchRoute('/timer')}
 							onclick={() => goto('/timer')}
 						>
-							<DebugPreloadIcon active={debugMode && preloadingStates['/timer']} />
 							View in Timer
 						</button>
 					</div>
@@ -728,4 +642,3 @@
 		<TasksModal on:close={() => (showTasksModal = false)} />
 	{/if}
 </div>
-

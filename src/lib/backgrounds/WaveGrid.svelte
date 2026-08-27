@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import * as THREE from 'three';
+	import { resolveCssColor, createThemeObserver } from './themeColors';
+
+	// ------------------------------------------------------------------
+	// Wave Grid — the original animated background, preserved as-is.
+	// A flat grid of dots displaced by sin(x) + sin(z), GPU-side.
+	// ------------------------------------------------------------------
 
 	// Component Props
 	export let speed = 0.02; // Adjusted speed scale for Shader time
@@ -20,9 +26,6 @@
 	let material: THREE.PointsMaterial;
 	let themeObserver: MutationObserver;
 
-	// Color Helper
-	let canvasCtx: CanvasRenderingContext2D;
-
 	// Uniforms object shared with the Shader
 	const uniforms = {
 		uTime: { value: 0 },
@@ -32,35 +35,13 @@
 	// ----------------------
 	// Color Logic
 	// ----------------------
-	// Helper to convert CSS colors (oklch, var, etc) to valid Hex/RGB for Three.js
-	const getResolvedColor = (cssColor: string) => {
-		if (!canvasCtx) {
-			const canvas = document.createElement('canvas');
-			canvas.width = 1;
-			canvas.height = 1;
-			canvasCtx = canvas.getContext('2d', { willReadFrequently: true })!;
-		}
-
-		// Paint the color then read the actual pixel to get an RGB hex value.
-		canvasCtx.clearRect(0, 0, 1, 1);
-		canvasCtx.fillStyle = cssColor;
-		canvasCtx.fillRect(0, 0, 1, 1);
-		const [r, g, b, a] = canvasCtx.getImageData(0, 0, 1, 1).data;
-
-		// If alpha is zero, treat as transparent black to avoid NaN conversions.
-		const toHex = (value: number) => value.toString(16).padStart(2, '0');
-		return `#${toHex(r)}${toHex(g)}${toHex(b)}${a === 255 ? '' : toHex(a)}`;
-	};
-
 	const updateColors = () => {
 		if (!scene || !material || !colorReference) return;
 
 		const computed = getComputedStyle(colorReference);
 
 		// 1. Get Background Color (maps to --b1)
-		const bgCSS = computed.getPropertyValue('background-color');
-		const bgHex = getResolvedColor(bgCSS);
-
+		const bgHex = resolveCssColor(computed.getPropertyValue('background-color'));
 		if (scene.background instanceof THREE.Color) {
 			scene.background.set(bgHex);
 		} else {
@@ -68,9 +49,7 @@
 		}
 
 		// 2. Get Primary Color (maps to --p)
-		const dotCSS = computed.color;
-		const dotHex = getResolvedColor(dotCSS);
-		material.color.set(dotHex);
+		material.color.set(resolveCssColor(computed.color));
 	};
 
 	onMount(() => {
@@ -84,8 +63,7 @@
 
 		renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 		renderer.setSize(window.innerWidth, window.innerHeight);
-		// Allow full device pixel ratio (no cap) to avoid implicit FPS limits.
-		renderer.setPixelRatio(window.devicePixelRatio);
+		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 		canvasContainer.appendChild(renderer.domElement);
 
@@ -142,11 +120,7 @@
 		updateColors();
 
 		// 4. Mutation Observer for Theme Changes
-		themeObserver = new MutationObserver(updateColors);
-		themeObserver.observe(document.documentElement, {
-			attributes: true,
-			attributeFilter: ['data-theme']
-		});
+		themeObserver = createThemeObserver(updateColors);
 
 		// 5. Animation Loop
 		const animate = () => {
@@ -193,7 +167,7 @@
 
 <div bind:this={canvasContainer} class="wave-bg" aria-hidden="true"></div>
 
-<!-- 
+<!--
 	Hidden element to resolve DaisyUI colors via CSS.
 	We map --p (primary) to color and --b1 (base-100) to background-color.
 	We use oklch explicitly here to ensure we capture the variables correctly.

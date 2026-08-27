@@ -3,19 +3,60 @@
 	import { createEventDispatcher } from 'svelte';
 	import { onMount } from 'svelte';
 	import { pingBaseUrl, type BaseUrlPingResult } from './network';
+	import { createForm } from '@tanstack/svelte-form';
 
 	const dispatch = createEventDispatcher();
 
-	let localBaseUrl = $state($baseUrl);
-	let isSaving = $state(false);
 	let saveError = $state('');
 	let lastTest = $state<BaseUrlPingResult | null>(null);
 	let isRefreshingHistory = $state(false);
 
 	const normalizeBaseUrl = (value: string) => value.trim().replace(/\/+$/, '');
 
+	// TanStack Form: validation lives in the field validator, the submit handler
+	// owns the ping → history → save flow.
+	const form = createForm(() => ({
+		defaultValues: {
+			baseUrl: $baseUrl
+		},
+		onSubmit: async ({ value }) => {
+			saveError = '';
+			lastTest = null;
+
+			const nextUrl = normalizeBaseUrl(value.baseUrl);
+			const result = await pingBaseUrl(nextUrl, { timeoutMs: 3000 });
+			lastTest = result;
+
+			baseUrlHistory.update((entries) => {
+				const existingIndex = entries.findIndex((e) => e.url === nextUrl);
+				const updated = {
+					url: nextUrl,
+					ok: result.ok,
+					lastPingMs: result.pingMs,
+					lastCheckedAt: result.checkedAt
+				};
+				if (existingIndex >= 0) {
+					const next = [...entries];
+					next.splice(existingIndex, 1);
+					return [updated, ...next];
+				}
+				return [updated, ...entries];
+			});
+
+			if (!result.ok) {
+				saveError = result.error ?? 'Connection test failed';
+				return;
+			}
+
+			baseUrl.set(nextUrl);
+			dispatch('close');
+		}
+	}));
+
+	const isSubmitting = form.useSelector((state) => state.isSubmitting);
+
 	function selectFromHistory(url: string) {
-		localBaseUrl = url;
+		form.setFieldValue('baseUrl', url);
 		saveError = '';
 		lastTest = null;
 	}
@@ -52,58 +93,8 @@
 		refreshHistoryPings();
 	});
 
-	async function testAndSave() {
-		saveError = '';
-		lastTest = null;
-
-		const nextUrl = normalizeBaseUrl(localBaseUrl);
-		if (!nextUrl) {
-			saveError = 'Base URL is required';
-			return;
-		}
-
-		try {
-			new URL(nextUrl);
-		} catch {
-			saveError = 'Invalid URL (must include http:// or https://)';
-			return;
-		}
-
-		isSaving = true;
-		try {
-			const result = await pingBaseUrl(nextUrl, { timeoutMs: 3000 });
-			lastTest = result;
-
-			baseUrlHistory.update((entries) => {
-				const existingIndex = entries.findIndex((e) => e.url === nextUrl);
-				const updated = {
-					url: nextUrl,
-					ok: result.ok,
-					lastPingMs: result.pingMs,
-					lastCheckedAt: result.checkedAt
-				};
-				if (existingIndex >= 0) {
-					const next = [...entries];
-					next.splice(existingIndex, 1);
-					return [updated, ...next];
-				}
-				return [updated, ...entries];
-			});
-
-			if (!result.ok) {
-				saveError = result.error ?? 'Connection test failed';
-				return;
-			}
-
-			baseUrl.set(nextUrl);
-			dispatch('close');
-		} finally {
-			isSaving = false;
-		}
-	}
-
 	function cancel() {
-		localBaseUrl = $baseUrl; // Reset to current value
+		form.reset();
 		dispatch('close');
 	}
 </script>
@@ -116,13 +107,39 @@
 			<label class="label" for="baseUrl">
 				<span class="label-text">Base URL</span>
 			</label>
-			<input
-				id="baseUrl"
-				bind:value={localBaseUrl}
-				type="url"
-				placeholder="http://localhost:8000"
-				class="input input-bordered"
-			/>
+			<form.Field
+				name="baseUrl"
+				validators={{
+					onChange: ({ value }) => {
+						const url = normalizeBaseUrl(String(value));
+						if (!url) return 'Base URL is required';
+						try {
+							new URL(url);
+						} catch {
+							return 'Invalid URL (must include http:// or https://)';
+						}
+						return undefined;
+					}
+				}}
+			>
+				{#snippet children(field)}
+					<input
+						id="baseUrl"
+						type="url"
+						placeholder="http://localhost:8000"
+						class="input input-bordered {field.state.meta.errors.length ? 'input-error' : ''}"
+						name={field.name}
+						value={field.state.value}
+						onblur={field.handleBlur}
+						oninput={(e) => field.handleChange(e.currentTarget.value)}
+					/>
+					{#if field.state.meta.errors.length}
+						<div class="label">
+							<span class="label-text-alt text-error">{field.state.meta.errors[0]}</span>
+						</div>
+					{/if}
+				{/snippet}
+			</form.Field>
 		</div>
 
 		{#if saveError}
@@ -175,8 +192,8 @@
 
 		<div class="modal-action">
 			<button class="btn" onclick={cancel}>Cancel</button>
-			<button class="btn btn-primary" onclick={testAndSave} disabled={isSaving}>
-				{#if isSaving}
+			<button class="btn btn-primary" onclick={() => form.handleSubmit()} disabled={isSubmitting.current}>
+				{#if isSubmitting.current}
 					Testing...
 				{:else}
 					Test & Save

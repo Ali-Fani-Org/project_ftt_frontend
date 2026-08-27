@@ -1,65 +1,48 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { authToken } from '$lib/stores';
-	import { timeEntries, type PaginatedTimeEntries, type TimeEntry } from '$lib/api';
-	import { get } from 'svelte/store';
 	import { createEventDispatcher } from 'svelte';
+	import type { PaginatedTimeEntries } from '$lib/api';
+	import { useFilteredTimeEntries, type TimeEntryFilters } from '$lib/queries/timeEntries';
 
 	const dispatch = createEventDispatcher();
 
-	let data = $state<PaginatedTimeEntries | null>(null);
-	let loading = $state(true);
-	let error = $state('');
-
 	// Pagination state
 	let currentCursor = $state<string | null>(null);
-	let hasNext = $state(false);
-	let hasPrevious = $state(false);
 
-	onMount(async () => {
-		const token = get(authToken);
-		if (!token) {
-			goto('/');
-			return;
-		}
-
-		await loadData();
-	});
-
-	async function loadData(cursor?: string | null) {
-		try {
-			loading = true;
-			error = '';
-			const result = await timeEntries.list(cursor || undefined);
-			data = result;
-			currentCursor = cursor || null;
-			hasNext = !!result.next;
-			hasPrevious = !!result.previous;
-		} catch (err) {
-			error = 'Failed to load time entries';
-			console.error(err);
-		} finally {
-			loading = false;
-		}
+	// Server state via TanStack Query — the cursor is part of the query key, so
+	// each page is cached and navigating back and forth is instant. Edits made
+	// elsewhere invalidate this list automatically via queryKeys.timeEntries.all.
+	function getCurrentFilters(): TimeEntryFilters {
+		return {
+			cursor: currentCursor ?? undefined
+		};
 	}
+
+	const entriesQuery = useFilteredTimeEntries(getCurrentFilters, () => ({
+		keepPreviousData: true
+	}));
+
+	let data = $derived<PaginatedTimeEntries | null>(entriesQuery.data ?? null);
+	let loading = $derived(entriesQuery.isPending);
+	let error = $derived(
+		!entriesQuery.data && entriesQuery.isError ? 'Failed to load time entries' : ''
+	);
+	let hasNext = $derived(!!data?.next);
+	let hasPrevious = $derived(!!data?.previous);
 
 	function extractCursor(url: string): string | null {
 		const urlObj = new URL(url);
 		return urlObj.searchParams.get('cursor');
 	}
 
-	async function goToNext() {
+	function goToNext() {
 		if (data?.next) {
-			const cursor = extractCursor(data.next);
-			await loadData(cursor);
+			currentCursor = extractCursor(data.next);
 		}
 	}
 
-	async function goToPrevious() {
+	function goToPrevious() {
 		if (data?.previous) {
-			const cursor = extractCursor(data.previous);
-			await loadData(cursor);
+			currentCursor = extractCursor(data.previous);
 		}
 	}
 

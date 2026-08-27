@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+## 1.5.0 (2026-08-28)
+
+- Feat: Animated backgrounds — six theme-aware variants (Aurora Drift, Wave, Bokeh Float, Ocean, Nebula, Lattice) selectable in Settings, re-tinting live with the active theme
+- Feat: Ocean background — real-time spectral FFT ocean (JONSWAP spectrum, GPU FFT cascades, physical foam, Preetham sky) with a clock-driven sun, a textured self-luminous moon (vendored NASA albedo), and a moonlit night mode
+- Feat: Ocean wave-character knob (calm swells ↔ stormy chop) mapped to the spectrum's wind speed
+- Feat: Settings — Background style now uses the app's custom dropdown, with a memory warning for the heavy Ocean background
+- Feat: Timer — suggest most-used project/tags for similar recent titles while typing, with keyboard navigation (arrows/Enter/Esc); edit tags while the timer is running; redesigned advanced options
+- Feat: Page-header clock hands spin while a timer is running
+- Feat: Dashboard — redesigned Recent Activity and Quick Actions cards; data-freshness indicator with hover-expand pill
+- Feat: Tag admin — searchable tag input with icon/color pickers matching the admin style; tag lists and time entries render tags as proper chips
+- Feat: Auto-suggest an icon and color for new tags as the title is typed in TagPicker/TagManager (`inferTagStyle`), until the user explicitly picks one
+- Fix: Selected project label in the ProjectPicker now uses `text-base-content` instead of `text-neutral`, keeping it bright and legible in dark mode
+- Perf: Ocean engine hot path is now allocation-free (removed per-frame Euler/array allocations); switching to light backgrounds frees ~50–110 MB heap + ~53 MB GPU with no leaks across switches
+- Chore: Document the background system (variants, bridge protocol, moon, memory measurements) in `docs/background-animations.md`
+
 ## 1.4.6 (2026-04-22)
 
 - Feat: Add `StartupWMClass=Time Tracker` to Linux `.desktop` file via custom Handlebars template, fixing taskbar icon grouping on GNOME/KDE/Wayland compositors

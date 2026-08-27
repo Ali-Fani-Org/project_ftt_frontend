@@ -109,6 +109,15 @@ export interface Project {
 	description: string;
 }
 
+export interface Tag {
+	id: number;
+	title: string;
+	tag: string;
+	icon: string;
+	color: string;
+	created_at: string;
+}
+
 export interface TimeEntry {
 	id: number;
 	title: string;
@@ -119,7 +128,7 @@ export interface TimeEntry {
 	is_active: boolean;
 	user: string;
 	project: string;
-	tags: string[];
+	tags: Tag[];
 }
 
 export interface PaginatedTimeEntries {
@@ -128,30 +137,8 @@ export interface PaginatedTimeEntries {
 	results: TimeEntry[];
 }
 
-export interface FeatureFlag {
-	id: number;
-	key: string;
-	name: string;
-	description: string;
-	is_enabled: boolean;
-	rollout_percentage: number;
-	user_count: number;
-	created_at: string;
-	updated_at: string;
-}
-
-export interface FeatureFlagsResponse {
-	enabled_features: FeatureFlag[];
-	disabled_features: FeatureFlag[];
-	total_features: number;
-}
-
-export interface FeatureFlagCheck {
-	feature_key: string;
-	feature_name: string;
-	is_enabled: boolean;
-	feature_enabled_globally: boolean;
-	user_has_access: boolean;
+export interface RegistrationStatus {
+	public_registration: boolean;
 }
 
 export interface Notification {
@@ -164,7 +151,7 @@ export interface Notification {
 }
 
 // Cache for API responses to improve performance
-const apiCache = new Map<
+export const apiCache = new Map<
 	string,
 	{ data: any; timestamp: number; ttl: number; lastValidated: number; isStale: boolean }
 >();
@@ -314,10 +301,12 @@ export async function fetchWithRetry<T>(
 			}
 
 			// Don't retry 4xx errors (except 429)
+			const httpError = error as { response?: { status?: number } };
 			if (
-				error.response?.status >= 400 &&
-				error.response?.status < 500 &&
-				error.response?.status !== 429
+				httpError.response?.status !== undefined &&
+				httpError.response.status >= 400 &&
+				httpError.response.status < 500 &&
+				httpError.response.status !== 429
 			) {
 				throw error;
 			}
@@ -401,7 +390,9 @@ function setCached(key: string, data: any, ttl: number = CACHE_TTL) {
  * Type for error response objects that can come from different HTTP clients
  * Supports standard Response objects and Ky-specific response objects
  */
-export type ErrorResponse = Response | { _data?: Record<string, any>; clone?: () => Response; json?: () => Promise<any> };
+export type ErrorResponse =
+	| Response
+	| { _data?: Record<string, any>; clone?: () => Response; json?: () => Promise<any> };
 
 /**
  * Parse error response from API calls
@@ -466,9 +457,22 @@ export const auth = {
 			throw error;
 		}
 	},
-	getUser: async () => {
-		const cacheKey = 'user:me';
-		const cached = getCached(cacheKey);
+	getUser: async (): Promise<{
+		id: number;
+		username: string;
+		first_name: string;
+		last_name: string;
+		profile_image: string | null;
+	}> => {
+		const cacheKey = 'user:me:v2';
+		const cached = getCached<{
+			id: number;
+			username: string;
+			first_name: string;
+			last_name: string;
+			profile_image: string | null;
+			is_staff?: boolean;
+		}>(cacheKey);
 		if (cached) return cached;
 
 		const result = await api.get('auth/users/me/').json<{
@@ -477,6 +481,7 @@ export const auth = {
 			first_name: string;
 			last_name: string;
 			profile_image: string | null;
+			is_staff?: boolean;
 		}>();
 		setCached(cacheKey, result, CACHE_TTL);
 		return result;
@@ -488,9 +493,9 @@ export const auth = {
 		profile_image?: string | null;
 	}) => {
 		// Clear cache when updating
-		apiCache.delete('user:me');
+		apiCache.delete('user:me:v2');
 		try {
-			localStorage.removeItem(LOCALSTORAGE_PREFIX + 'user:me');
+			localStorage.removeItem(LOCALSTORAGE_PREFIX + 'user:me:v2');
 		} catch (err) {}
 		// Use PUT to replace or update the resource; many DRF endpoints also accept PATCH
 		const result = await api.put('auth/users/me/', { json: data }).json<{
@@ -499,15 +504,16 @@ export const auth = {
 			first_name: string;
 			last_name: string;
 			profile_image: string | null;
+			is_staff?: boolean;
 		}>();
-		setCached('user:me', result, CACHE_TTL);
+		setCached('user:me:v2', result, CACHE_TTL);
 		return result;
 	},
 	updateUserForm: async (form: FormData) => {
 		// Clear cache when updating
-		apiCache.delete('user:me');
+		apiCache.delete('user:me:v2');
 		try {
-			localStorage.removeItem(LOCALSTORAGE_PREFIX + 'user:me');
+			localStorage.removeItem(LOCALSTORAGE_PREFIX + 'user:me:v2');
 		} catch (err) {}
 		// Use PATCH with form data to support partial updates and file upload.
 		const result = await api.patch('auth/users/me/', { body: form }).json<{
@@ -516,8 +522,9 @@ export const auth = {
 			first_name: string;
 			last_name: string;
 			profile_image: string | null;
+			is_staff?: boolean;
 		}>();
-		setCached('user:me', result, CACHE_TTL);
+		setCached('user:me:v2', result, CACHE_TTL);
 		return result;
 	}
 };
@@ -544,6 +551,26 @@ export const projects = {
 	}
 };
 
+export const tags = {
+	/** Tags endpoint returns a plain array (pagination_class = None). */
+	list: async () => {
+		const result = await api.get('api/tags/').json<Tag[]>();
+		return result;
+	},
+	create: async (data: { title: string; tag?: string; icon: string; color: string }) => {
+		return await api.post('api/tags/', { json: data }).json<Tag>();
+	},
+	update: async (
+		id: number,
+		data: Partial<{ title: string; tag: string; icon: string; color: string }>
+	) => {
+		return await api.patch(`api/tags/${id}/`, { json: data }).json<Tag>();
+	},
+	remove: async (id: number) => {
+		await api.delete(`api/tags/${id}/`);
+	}
+};
+
 export const timeEntries = {
 	list: async (cursor?: string, limit?: number) => {
 		const params = new URLSearchParams();
@@ -567,6 +594,8 @@ export const timeEntries = {
 		duration_min?: string;
 		duration_max?: string;
 		project?: number;
+		search?: string;
+		tags?: string;
 		cursor?: string;
 		limit?: number;
 		ordering?: string;
@@ -586,6 +615,8 @@ export const timeEntries = {
 		if (filters?.duration_min) params.append('duration_min', filters.duration_min);
 		if (filters?.duration_max) params.append('duration_max', filters.duration_max);
 		if (filters?.project) params.append('project', filters.project.toString());
+		if (filters?.search) params.append('search', filters.search);
+		if (filters?.tags) params.append('tags', filters.tags);
 		if (filters?.cursor) params.append('cursor', filters.cursor);
 		if (filters?.limit) params.append('limit', filters.limit.toString());
 		if (filters?.ordering) params.append('ordering', filters.ordering);
@@ -595,7 +626,7 @@ export const timeEntries = {
 		// CRITICAL: No API calls when offline - return cache immediately
 		if (!get(network).isOnline) {
 			console.log(`Offline: returning cached data for ${cacheKey}`);
-			const cached = getCached(cacheKey);
+			const cached = getCached<PaginatedTimeEntries>(cacheKey);
 			if (cached) return cached;
 			console.warn(`No cached data available for ${cacheKey} while offline`);
 			// Return empty paginated result instead of null (no count field)
@@ -634,28 +665,25 @@ export const timeEntries = {
 		const result = await api.post(`api/time_entries/${id}/stop/`).json<TimeEntry>();
 		return result;
 	},
-	getCurrentActive: async () => {
+	getCurrentActive: async (): Promise<TimeEntry | null> => {
 		const cacheKey = 'time_entries:current_active';
 
 		// CRITICAL: No API calls when offline - return cache immediately
 		if (!get(network).isOnline) {
 			console.log(`Offline: returning cached data for ${cacheKey}`);
-			const cached = getCached(cacheKey);
+			const cached = getCached<TimeEntry>(cacheKey);
 			if (cached) return cached;
 			console.warn(`No cached data available for ${cacheKey} while offline`);
 			return null;
 		}
 
 		try {
-			// Try to fetch from API first
-			const data = await api.get('api/time_entries/current_active/').json<TimeEntry>();
-			// Cache the successful response
-			setCached(cacheKey, data, CACHE_TTL);
-			return data;
-		} catch (error: any) {
-			// 404 means no active timer - this is expected, clear cache and return null
-			if (error?.response?.status === 404) {
-				console.log('No active timer found (404), clearing cache');
+			// Always 200: `entry` is the active TimeEntry, or null when none is running
+			// ("no active entry" is normal state, not an error).
+			const { entry } = await api
+				.get('api/time_entries/current_active/')
+				.json<{ entry: TimeEntry | null }>();
+			if (entry === null) {
 				apiCache.delete(cacheKey);
 				try {
 					localStorage.removeItem(LOCALSTORAGE_PREFIX + cacheKey);
@@ -664,10 +692,13 @@ export const timeEntries = {
 				}
 				return null;
 			}
-
-			// For other errors, try to get cached data
+			// Cache the successful response
+			setCached(cacheKey, entry, CACHE_TTL);
+			return entry;
+		} catch (error: any) {
+			// For real errors (network, 5xx), try to get cached data
 			console.warn(`API call failed for ${cacheKey}, trying cache...`, error);
-			const cached = getCached(cacheKey);
+			const cached = getCached<TimeEntry>(cacheKey);
 			if (cached) {
 				console.log(`Using cached data for ${cacheKey}`);
 				return cached;
@@ -683,7 +714,10 @@ export const timeEntries = {
 	 * @param data - Object containing fields to update (title, description, tags)
 	 * @returns The updated TimeEntry object
 	 */
-	update: async (id: number, data: { title?: string; description?: string | null; tags?: number[] }) => {
+	update: async (
+		id: number,
+		data: { title?: string; description?: string | null; tags?: number[] }
+	) => {
 		// Clear all time_entries related caches when updating
 		// Use known cache keys instead of iterating all localStorage keys
 		const knownCacheKeys = [
@@ -692,12 +726,12 @@ export const timeEntries = {
 			'time_entries:list',
 			'time_entries:filtered'
 		];
-		
+
 		// Clear from in-memory cache
 		for (const key of knownCacheKeys) {
 			apiCache.delete(key);
 		}
-		
+
 		// Also clear any dynamic filtered keys from in-memory cache
 		const dynamicKeys = Array.from(apiCache.keys()).filter((key) =>
 			key.startsWith('time_entries:filtered:')
@@ -705,7 +739,7 @@ export const timeEntries = {
 		for (const key of dynamicKeys) {
 			apiCache.delete(key);
 		}
-		
+
 		// Clear from localStorage using known keys
 		for (const key of knownCacheKeys) {
 			try {
@@ -714,7 +748,7 @@ export const timeEntries = {
 				console.warn(`Failed to remove cache key ${key}:`, err);
 			}
 		}
-		
+
 		// Clear dynamic filtered keys from localStorage
 		// Note: We iterate localStorage here because filtered keys are dynamic
 		// but we limit the iteration to only keys matching our prefix pattern
@@ -745,58 +779,15 @@ export const timeEntries = {
 	}
 };
 
-export const featureFlags = {
-	getMyFeatures: async (): Promise<FeatureFlagsResponse> => {
-		const cacheKey = 'feature-flags:my-features';
-		const cached = getCached(cacheKey);
-		if (cached) return cached;
-
-		const result = await api
-			.get('api/feature-flags/user-features/my_features/')
-			.json<FeatureFlagsResponse>();
-		setCached(cacheKey, result, CACHE_TTL); // Cache for 5 minutes
-		return result;
-	},
-
-	checkFeature: async (featureKey: string): Promise<FeatureFlagCheck> => {
-		const cacheKey = `feature-flags:check:${featureKey}`;
-		const cached = getCached(cacheKey);
-		if (cached) return cached;
-
-		const result = await api
-			.get(`api/feature-flags/user-features/${featureKey}/check/`)
-			.json<FeatureFlagCheck>();
-		setCached(cacheKey, result, CACHE_TTL);
-		return result;
-	},
-
-	checkPublicFeature: async (featureKey: string): Promise<FeatureFlagCheck> => {
-		const cacheKey = `feature-flags:public-check:${featureKey}`;
-		const cached = getCached<FeatureFlagCheck>(cacheKey);
-		if (cached) return cached;
-
-		const result = await ky
-			.get(`${get(baseUrl)}/api/feature-flags/public-check/${featureKey}/`)
-			.json<FeatureFlagCheck>();
-		setCached(cacheKey, result, CACHE_TTL);
-		return result;
-	},
-
-	logAccess: async (
-		featureKey: string
-	): Promise<{ message: string; feature_key: string; feature_name: string }> => {
-		// Don't cache log access calls as they should always hit the server
-		return await api
-			.post(`api/feature-flags/user-features/${featureKey}/log-access/`)
-			.json<{ message: string; feature_key: string; feature_name: string }>();
-	}
-};
-
-export const notifications = {
-	acknowledge: async (notificationId: string): Promise<{ message: string }> => {
-		return await api
-			.post(`api/notifications/${notificationId}/acknowledge/`)
-			.json<{ message: string }>();
+export const publicStatus = {
+	/**
+	 * Whether new-user registration is enabled (public, no auth needed).
+	 * Used by the login page to decide whether to show the signup form.
+	 */
+	getRegistrationStatus: async (): Promise<RegistrationStatus> => {
+		return await ky
+			.get(`${get(baseUrl)}/api/accounts/registration-status/`)
+			.json<RegistrationStatus>();
 	}
 };
 
@@ -822,7 +813,9 @@ export const passkeys = {
 			})
 			.json<{ options: string }>();
 	},
-	registerComplete: async (credential: any): Promise<{ detail: string; credential: PasskeyCredential }> => {
+	registerComplete: async (
+		credential: any
+	): Promise<{ detail: string; credential: PasskeyCredential }> => {
 		return await api
 			.post('api/passkeys/register/complete/', { json: { credential } })
 			.json<{ detail: string; credential: PasskeyCredential }>();
@@ -841,7 +834,14 @@ export const passkeys = {
 	): Promise<{
 		detail: string;
 		token: string;
-		user: { id: number; username: string; first_name: string; last_name: string; profile_image: string | null };
+		user: {
+			id: number;
+			username: string;
+			first_name: string;
+			last_name: string;
+			profile_image: string | null;
+			is_staff: boolean;
+		};
 	}> => {
 		// Use ky directly (no auth token needed) for unauthenticated endpoints
 		return await ky
@@ -857,6 +857,7 @@ export const passkeys = {
 					first_name: string;
 					last_name: string;
 					profile_image: string | null;
+					is_staff: boolean;
 				};
 			}>();
 	}

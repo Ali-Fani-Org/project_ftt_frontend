@@ -885,11 +885,9 @@ The Time Entries API provides comprehensive time tracking functionality with adv
 }
 ```
 
-**Response (404 Not Found):**
+**Response (200 OK — no active entry):** "no active entry" is normal state, not an error
 ```json
-{
-    "detail": "No active time entry found."
-}
+null
 ```
 
 ### Add Idle Session

@@ -187,7 +187,29 @@ bun run tauri build      # Build native executable
 bun run check            # Type checking and linting
 bun run format           # Format code with Prettier
 bun run lint             # Run ESLint
+
+# Upstream tracking
+bun run check:createqueries-fix  # Flags when the vendored createQueries can be retired
 ```
+
+### Vendored `createQueries` (upstream bug)
+
+The dashboard uses a single `createQueries` observer from a **vendored copy** at
+`src/lib/queries/createQueries.svelte.ts`. The `@tanstack/svelte-query@6.x`
+version constructs its `QueriesObserver` inside a `$derived`, which throws
+`state_unsafe_mutation` on load whenever a `createSubscriber`-backed cache
+subscriber exists (our `SyncIndicator` uses `useIsFetching`). Upstream PR
+[TanStack/query#9493](https://github.com/TanStack/query/pull/9493) fixed the
+same bug for `createQuery`/`createMutation` but **not** for `createQueries`
+(still unfixed on `main` as of 2026-08-27).
+
+The vendored copy mirrors the upstream implementation with the observer moved
+into `$state` + effects. Run `bun run check:createqueries-fix` (ideally in CI)
+— it exits non-zero with migration steps the moment the installed package ships
+the upstream fix, at which point the vendored file can be deleted.
+
+Full background, upstream tracking, and the retirement checklist live in
+[docs/createqueries-upstream-bug.md](docs/createqueries-upstream-bug.md).
 
 ### Development Setup
 

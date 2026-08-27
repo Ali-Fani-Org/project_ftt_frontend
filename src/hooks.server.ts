@@ -1,7 +1,5 @@
 import type { Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
-import { sentryHandle } from '@sentry/sveltekit';
-import * as Sentry from '@sentry/sveltekit';
 
 // Server-side handle function for preloading and caching strategies
 const serverPreloadHandle: Handle = async ({ event, resolve }) => {
@@ -30,36 +28,4 @@ const preloadHandle: Handle = async ({ event, resolve }) => {
 	return await resolve(event);
 };
 
-// Add extra context to Sentry events
-const sentryContextHandle: Handle = async ({ event, resolve }) => {
-	let clientAddress = '{{auto}}';
-
-	try {
-		clientAddress = event.getClientAddress();
-	} catch {
-		// getClientAddress is unavailable during prerender.
-	}
-
-	// Set user IP from request
-	Sentry.setUser({
-		ip_address: event.request.headers.get('x-forwarded-for') || 
-					event.request.headers.get('x-real-ip') || 
-					clientAddress ||
-					'{{auto}}'
-	});
-
-	// Add server context
-	Sentry.setContext('server', {
-		url: event.request.url,
-		method: event.request.method,
-		headers: {
-			'user-agent': event.request.headers.get('user-agent') || 'unknown',
-			'accept': event.request.headers.get('accept') || 'unknown'
-		}
-	});
-
-	return await resolve(event);
-};
-
-// Chain the handles - Sentry needs to be the first handler
-export const handle = sequence(sentryHandle(), sentryContextHandle, serverPreloadHandle, preloadHandle);
+export const handle = sequence(serverPreloadHandle, preloadHandle);

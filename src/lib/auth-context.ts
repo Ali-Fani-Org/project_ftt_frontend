@@ -2,10 +2,7 @@ import { setContext, getContext } from 'svelte';
 import { writable, get } from 'svelte/store';
 import { authToken, user, globalLogout } from './stores';
 import { auth, passkeys } from './api';
-import {
-	startRegistration,
-	startAuthentication
-} from '@simplewebauthn/browser';
+import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
 import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
 import { network } from './network';
@@ -276,7 +273,8 @@ export function createAuthStore(): AuthStore {
 					username: result.user.username,
 					first_name: result.user.first_name,
 					last_name: result.user.last_name,
-					profile_image: result.user.profile_image
+					profile_image: result.user.profile_image,
+					is_staff: result.user.is_staff
 				};
 				user.set(userData);
 
@@ -324,8 +322,7 @@ export function createAuthStore(): AuthStore {
 
 				return { success: true, credential: result.credential };
 			} catch (error: any) {
-				const errorMessage =
-					error?.message || 'Passkey registration failed. Please try again.';
+				const errorMessage = error?.message || 'Passkey registration failed. Please try again.';
 				return { success: false, error: errorMessage };
 			}
 		},
@@ -364,7 +361,7 @@ export function createAuthStore(): AuthStore {
 					// Parse the cached values
 					// Auth tokens are plain strings, no need to parse
 					const parsedToken = cachedToken;
-					
+
 					// User data is JSON, needs parsing
 					let parsedUser: any;
 					try {

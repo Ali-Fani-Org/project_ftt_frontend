@@ -1,5 +1,5 @@
 import { createAvatar } from '@dicebear/core';
-import { croodles } from '@dicebear/collection';
+import { adventurer, croodles } from '@dicebear/collection';
 
 /**
  * Generate a Dicebear avatar URL using username as seed

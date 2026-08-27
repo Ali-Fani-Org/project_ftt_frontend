@@ -1,10 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { timeEntries, type TimeEntry, type PaginatedTimeEntries } from '$lib/api';
-	import ky from 'ky';
-	import { authToken, baseUrl } from '$lib/stores';
-	import { get } from 'svelte/store';
-	import { network } from '$lib/network';
+	import type { TimeEntry } from '$lib/api';
+	import { useAllTimeEntriesInRange } from '$lib/queries/timeEntries';
 
 	// Chart data structure
 	interface DayData {
@@ -22,9 +18,6 @@
 		seconds: number;
 	}
 
-	let chartData = $state<DayData[]>([]);
-	let loading = $state(true);
-	let error = $state('');
 	let dateTooltip = $state<{ show: boolean; date: string; x: number; y: number }>({
 		show: false,
 		date: '',
@@ -37,56 +30,40 @@
 	// hitting the API. Useful while designing styles.
 	const USE_SAMPLE_DATA = false;
 
-	// Cache key for localStorage
-	const CACHE_KEY = 'chart_last7days_cache';
-	const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-
-	/**
-	 * Save chart data to localStorage
-	 */
-	function saveToCache(data: DayData[]): void {
-		try {
-			const cacheData = {
-				data,
-				timestamp: Date.now()
-			};
-			localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-		} catch (err) {
-			console.warn('Failed to save chart data to cache:', err);
-		}
+	// Format a date in the server's timezone (Asia/Tehran)
+	function formatTehranDate(date: Date): string {
+		const year = date.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
+		const month = date.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
+		const day = date.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
+		return `${year}-${month}-${day}`;
 	}
 
-	/**
-	 * Load chart data from localStorage
-	 */
-	function loadFromCache(): DayData[] | null {
-		try {
-			const cached = localStorage.getItem(CACHE_KEY);
-			if (!cached) return null;
-
-			const parsed = JSON.parse(cached);
-			const age = Date.now() - parsed.timestamp;
-
-			// Check if cache is still valid
-			if (age > CACHE_TTL) {
-				localStorage.removeItem(CACHE_KEY);
-				return null;
-			}
-
-			return parsed.data || null;
-		} catch (err) {
-			console.warn('Failed to load chart data from cache:', err);
-			return null;
-		}
+	// The date 6 days ago (inclusive of today = 7 full days). Kept as a function
+	// so the query re-creates its key when a new day rolls over.
+	function getRangeStart(): string {
+		const sixDaysAgo = new Date();
+		sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
+		return formatTehranDate(sixDaysAgo);
+	}
+	function getRangeEnd(): string {
+		return formatTehranDate(new Date());
 	}
 
-	onMount(async () => {
-		if (USE_SAMPLE_DATA) {
-			loadSampleData();
-		} else {
-			await loadLast7DaysData();
-		}
-	});
+	// Server state via TanStack Query — the chart needs the COMPLETE 7-day
+	// dataset, so it fetches every page through the shared range query. The
+	// result is cached under a `range` key and invalidated by any timer
+	// start/stop/edit (queryKeys.timeEntries.all).
+	const rangeQuery = useAllTimeEntriesInRange(getRangeStart, getRangeEnd);
+
+	let chartData = $derived(
+		USE_SAMPLE_DATA ? buildSampleData() : buildChartData(rangeQuery.data ?? [])
+	);
+	let loading = $derived(!USE_SAMPLE_DATA && rangeQuery.isPending);
+	let error = $derived(
+		!USE_SAMPLE_DATA && !rangeQuery.data && rangeQuery.isError
+			? 'Failed to load activity data'
+			: ''
+	);
 
 	function showDateTooltip(date: string, event: MouseEvent) {
 		if (tooltipTimeout) {
@@ -113,7 +90,7 @@
 		dateTooltip.show = false;
 	}
 
-	function loadSampleData() {
+	function buildSampleData(): DayData[] {
 		// Sample data showing how tasks should be distributed across time segments
 		const today: DayData = {
 			date: '2025-12-10',
@@ -151,7 +128,7 @@
 			maxSegmentSeconds: 60 * 60
 		};
 
-		chartData = [
+		return [
 			today,
 			yesterday,
 			twoDaysAgo,
@@ -169,310 +146,124 @@
 					maxSegmentSeconds: 0
 				}))
 		];
-
-		loading = false;
-		error = '';
 	}
 
-	async function loadLast7DaysData() {
-		try {
-			loading = true;
-			error = '';
+	function buildChartData(entries: TimeEntry[]): DayData[] {
+		const now = new Date();
 
-			// Check if offline - try to load from cache
-			if (!$network.isOnline) {
-				const cachedData = loadFromCache();
-				if (cachedData && cachedData.length > 0) {
-					chartData = cachedData;
-					loading = false;
-					return;
-				}
-				// If no cache available while offline, show error
-				error = 'No cached data available. Please connect to the internet.';
-				loading = false;
-				return;
-			}
+		// Initialize all 7 days (today first) using Tehran timezone
+		const dayMap = new Map<string, DayData>();
+		for (let i = 0; i <= 6; i++) {
+			const date = new Date(now);
+			date.setDate(now.getDate() - i);
+			const year = date.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
+			const month = date.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
+			const dayVal = date.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
+			const dateStr = `${year}-${month}-${dayVal}`;
+			const label = i === 0 ? 'Today' : i === 1 ? 'Yesterday' : `${i} days ago`;
 
-			// Calculate today's date string in Asia/Tehran timezone
-			const now = new Date();
-
-			// Format the date in Asia/Tehran timezone
-			const year = now.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
-			const month = now.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
-			const day = now.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
-			const todayStr = `${year}-${month}-${day}`;
-
-			// Get date range for the last 7 days
-			// We need to calculate the date 6 days ago (not 7) to get 7 full days including today
-			// This accounts for the exclusive boundaries in the API (start_date_after_tz, start_date_before_tz)
-			const sixDaysAgo = new Date(now);
-			sixDaysAgo.setDate(now.getDate() - 6);
-
-			// Format this date in Tehran timezone too
-			const year6 = sixDaysAgo.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
-			const month6 = sixDaysAgo.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
-			const day6 = sixDaysAgo.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
-			const sixDaysAgoStr = `${year6}-${month6}-${day6}`;
-
-			// API date range for debugging
-			// console.log('API date range parameters:', {
-			//   start_date_after_tz: sixDaysAgoStr,
-			//   start_date_before_tz: todayStr
-			// });
-
-			// Collect all entries across all pages using direct API calls
-			let allEntries: TimeEntry[] = [];
-			let currentPageUrl: string | null =
-				`api/time_entries/?start_date_after_tz=${sixDaysAgoStr}&start_date_before_tz=${todayStr}&limit=200`;
-			let hasMorePages = true;
-
-			// Fetch all pages using pagination
-			while (hasMorePages && currentPageUrl) {
-				// Create the API request with proper authentication
-				const token = get(authToken);
-				const baseUrlValue = String(get(baseUrl));
-				
-				// Validate baseUrl
-				if (!baseUrlValue) {
-					throw new Error('Base URL is not configured');
-				}
-				
-				// Construct full URL - if currentPageUrl is a relative path, add baseUrl with trailing slash
-				let fullUrl;
-				try {
-					if (currentPageUrl.startsWith('http')) {
-						fullUrl = currentPageUrl;
-					} else if (currentPageUrl.startsWith('/')) {
-						fullUrl = `${baseUrlValue}${currentPageUrl}`;
-					} else {
-						fullUrl = `${baseUrlValue}${baseUrlValue.endsWith('/') ? '' : '/'}${currentPageUrl}`;
-					}
-					
-					// Validate URL format
-					new URL(fullUrl);
-				} catch (err) {
-					console.error('Invalid URL construction:', { baseUrlValue, currentPageUrl });
-					throw new Error('Failed to construct valid API URL');
-				}
-
-				const response: PaginatedTimeEntries = await ky
-					.get(fullUrl, {
-						headers: {
-							Authorization: token ? `Token ${token}` : ''
-						}
-					})
-					.json();
-
-				allEntries = allEntries.concat(response.results);
-				currentPageUrl = response.next; // This will be null when no more pages are available
-				hasMorePages = !!currentPageUrl; // Continue if there's a next page
-			}
-
-			// Debug: Log all API entries received
-			// console.log('Total entries received from API:', allEntries.length);
-			// allEntries.forEach((entry, index) => {
-			//   console.log(`Entry ${index + 1}:`, {
-			//     id: entry.id,
-			//     title: entry.title,
-			//     start_time: entry.start_time,
-			//     end_time: entry.end_time,
-			//     duration: entry.duration,
-			//     start_date_only: entry.start_time?.split('T')[0]
-			//   });
-			// });
-
-			// Initialize all 7 days (today first), but only dates within the actual data range
-			const dayMap = new Map<string, DayData>();
-
-			// First, create entries for the last 7 days using Tehran timezone
-			// console.log('Creating day map for last 7 days:');
-			for (let i = 0; i <= 6; i++) {
-				const date = new Date(now);
-				date.setDate(now.getDate() - i);
-				// Format in Tehran timezone to ensure consistency
-				const year = date.toLocaleString('en', { year: 'numeric', timeZone: 'Asia/Tehran' });
-				const month = date.toLocaleString('en', { month: '2-digit', timeZone: 'Asia/Tehran' });
-				const dayVal = date.toLocaleString('en', { day: '2-digit', timeZone: 'Asia/Tehran' });
-				const dateStr = `${year}-${month}-${dayVal}`;
-				const label = i === 0 ? 'Today' : i === 1 ? 'Yesterday' : `${i} days ago`;
-
-				// console.log(`Day ${i}: ${dateStr} (${label})`);
-
-				dayMap.set(dateStr, {
-					date: dateStr,
-					label,
-					totalSeconds: 0,
-					formattedDuration: '0h 0m',
-					segments: [0, 0, 0, 0, 0, 0, 0, 0], // 8 time segments (3-hour intervals)
-					maxSegmentSeconds: 0
-				});
-			}
-
-			// Calculate total time for each day and distribute across segments based on actual time ranges
-			// console.log('Processing entries to assign to days...');
-			for (const entry of allEntries) {
-				// console.log(`Processing entry ${entry.id}: ${entry.title} (${entry.start_time})`);
-
-				// Calculate duration based on start/end times
-				let durationSeconds = 0;
-				if (entry.duration) {
-					// Duration is now in seconds as string (e.g., "8.0", "127172.0")
-					durationSeconds = parseInt(entry.duration, 10) || 0;
-				} else if (entry.end_time) {
-					// If we have an explicit end_time but no duration, derive it
-					const startTime = new Date(entry.start_time).getTime();
-					const endTime = new Date(entry.end_time).getTime();
-					durationSeconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
-				} else if (entry.is_active) {
-					// For active entries, calculate from start time to now
-					const startTime = new Date(entry.start_time).getTime();
-					durationSeconds = Math.floor((Date.now() - startTime) / 1000);
-				} else {
-					// Fallback: entries with no duration/end_time and not active.
-					durationSeconds = 5 * 60; // 5 minutes
-				}
-
-				if (durationSeconds <= 0) continue;
-
-				// NEW APPROACH: Work directly with the date strings from API
-				// The API returns dates in Tehran timezone (+03:30), so we extract the date part directly
-				const startDateStr = entry.start_time.split('T')[0]; // YYYY-MM-DD
-				const endDateStr = entry.end_time ? entry.end_time.split('T')[0] : startDateStr;
-
-				// Parse the full datetime but keep track of the original date strings
-				const startTime = new Date(entry.start_time);
-				const endTime = entry.end_time ? new Date(entry.end_time) : new Date();
-
-				// console.log(`Entry ${entry.id} - Direct date extraction:`, {
-				//   start_iso: entry.start_time,
-				//   end_iso: entry.end_time,
-				//   start_date_only: startDateStr,
-				//   end_date_only: endDateStr,
-				//   start_time_obj: startTime.toISOString(),
-				//   end_time_obj: endTime.toISOString()
-				// });
-
-				// Extract the date from the start_time for initial day lookup
-				const entryStartDateStr = entry.start_time.split('T')[0]; // YYYY-MM-DD
-				// console.log(`Entry ${entry.id} start date: ${entryStartDateStr}`);
-				const dayData = dayMap.get(entryStartDateStr);
-
-				if (!dayData) {
-					// console.log(`WARNING: No day data found for entry ${entry.id} with date ${entryStartDateStr}`);
-					// console.log('Available day dates:', Array.from(dayMap.keys()));
-				}
-
-				// NEW SIMPLE APPROACH: Process each day based on date strings directly
-				// console.log(`Entry ${entry.id} - Processing days from ${startDateStr} to ${endDateStr}`);
-
-				// Create a set of all days this entry spans
-				const daysSet = new Set<string>();
-				let currentDay = new Date(startDateStr);
-				const endDayObj = new Date(endDateStr);
-
-				while (currentDay <= endDayObj) {
-					const dayStr = currentDay.toISOString().split('T')[0];
-					daysSet.add(dayStr);
-					// console.log(`Entry ${entry.id} - Adding day: ${dayStr}`);
-
-					// Move to next day
-					currentDay.setDate(currentDay.getDate() + 1);
-				}
-
-				// For simple entries that don't span multiple days, just use the start date
-				if (daysSet.size === 0) {
-					daysSet.add(startDateStr);
-				}
-
-				// Process each day - distribute time properly across all days
-				for (const dayStr of daysSet) {
-					const dayData = dayMap.get(dayStr);
-					if (!dayData) {
-						// console.log(`Entry ${entry.id} - No day data found for ${dayStr}`);
-						continue;
-					}
-
-					// console.log(`Entry ${entry.id} - Processing day ${dayStr}`);
-
-					// Determine the actual time boundaries for THIS specific day
-					let dayStartTime: Date;
-					let dayEndTime: Date;
-
-					if (dayStr === startDateStr && dayStr === endDateStr) {
-						// Single day entry - use actual start and end times
-						dayStartTime = startTime;
-						dayEndTime = endTime;
-						// console.log(`Entry ${entry.id} - Single day entry on ${dayStr}`);
-					} else if (dayStr === startDateStr) {
-						// First day of multi-day entry - from start time to end of day
-						dayStartTime = startTime;
-						dayEndTime = getEndOfDay(dayStr);
-						// console.log(`Entry ${entry.id} - First day: ${dayStr} from ${dayStartTime.toISOString()} to ${dayEndTime.toISOString()}`);
-					} else if (dayStr === endDateStr) {
-						// Last day of multi-day entry - from start of day to end time
-						dayStartTime = getStartOfDay(dayStr);
-						dayEndTime = endTime;
-						// console.log(`Entry ${entry.id} - Last day: ${dayStr} from ${dayStartTime.toISOString()} to ${dayEndTime.toISOString()}`);
-					} else {
-						// Middle day - full 24 hours
-						dayStartTime = getStartOfDay(dayStr);
-						dayEndTime = getEndOfDay(dayStr);
-						// console.log(`Entry ${entry.id} - Middle day: ${dayStr} (full 24 hours)`);
-					}
-
-					// Calculate duration for this specific day in seconds
-					const dayDurationMs = dayEndTime.getTime() - dayStartTime.getTime();
-					const dayDurationSeconds = Math.floor(dayDurationMs / 1000);
-
-					// console.log(`Entry ${entry.id} - Day ${dayStr} duration: ${dayDurationSeconds}s (${(dayDurationSeconds / 3600).toFixed(2)}h)`);
-
-					// Add to day's total
-					dayData.totalSeconds += dayDurationSeconds;
-
-					// Distribute across time segments for this day
-					distributeTimeByHourRange(dayData, dayStartTime, dayEndTime, dayDurationSeconds);
-				}
-			}
-
-			// Format durations and compute segment max for each day
-			// console.log('Final day data before formatting:');
-			for (const [dateStr, dayData] of dayMap.entries()) {
-				// console.log(`${dateStr}: ${dayData.totalSeconds} seconds, label: ${dayData.label}`);
-			}
-
-			for (const dayData of dayMap.values()) {
-				dayData.formattedDuration = formatDuration(dayData.totalSeconds);
-				// Compute per-day max segment value for relative bar heights
-				dayData.maxSegmentSeconds = Math.max(0, ...dayData.segments);
-			}
-
-			// Convert to array and sort by date (today first)
-			chartData = Array.from(dayMap.values()).sort(
-				(a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-			);
-
-			// Save to cache for offline use
-			saveToCache(chartData);
-
-			// console.log('Final chart data (sorted):');
-			chartData.forEach((day, index) => {
-				// console.log(`Chart day ${index}: ${day.date} (${day.label}) - ${day.formattedDuration}`);
+			dayMap.set(dateStr, {
+				date: dateStr,
+				label,
+				totalSeconds: 0,
+				formattedDuration: '0h 0m',
+				segments: [0, 0, 0, 0, 0, 0, 0, 0], // 8 time segments (3-hour intervals)
+				maxSegmentSeconds: 0
 			});
-
-			loading = false;
-		} catch (err) {
-			console.error('Error loading last 7 days data:', err);
-			// Try to load from cache as fallback
-			const cachedData = loadFromCache();
-			if (cachedData && cachedData.length > 0) {
-				chartData = cachedData;
-				error = '';
-				loading = false;
-				return;
-			}
-			error = 'Failed to load activity data';
-			loading = false;
 		}
+
+		// Calculate total time for each day and distribute across segments based on actual time ranges
+		for (const entry of entries) {
+			// Calculate duration based on start/end times
+			let durationSeconds = 0;
+			if (entry.duration) {
+				// Duration is now in seconds as string (e.g., "8.0", "127172.0")
+				durationSeconds = parseInt(entry.duration, 10) || 0;
+			} else if (entry.end_time) {
+				// If we have an explicit end_time but no duration, derive it
+				const startTime = new Date(entry.start_time).getTime();
+				const endTime = new Date(entry.end_time).getTime();
+				durationSeconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
+			} else if (entry.is_active) {
+				// For active entries, calculate from start time to now
+				const startTime = new Date(entry.start_time).getTime();
+				durationSeconds = Math.floor((Date.now() - startTime) / 1000);
+			} else {
+				// Fallback: entries with no duration/end_time and not active.
+				durationSeconds = 5 * 60; // 5 minutes
+			}
+
+			if (durationSeconds <= 0) continue;
+
+			// The API returns dates in Tehran timezone (+03:30), so the date part is extracted directly
+			const startDateStr = entry.start_time.split('T')[0]; // YYYY-MM-DD
+			const endDateStr = entry.end_time ? entry.end_time.split('T')[0] : startDateStr;
+			const startTime = new Date(entry.start_time);
+			const endTime = entry.end_time ? new Date(entry.end_time) : new Date();
+
+			// Create a set of all days this entry spans
+			const daysSet = new Set<string>();
+			let currentDay = new Date(startDateStr);
+			const endDayObj = new Date(endDateStr);
+			while (currentDay <= endDayObj) {
+				daysSet.add(currentDay.toISOString().split('T')[0]);
+				currentDay.setDate(currentDay.getDate() + 1);
+			}
+
+			// For simple entries that don't span multiple days, just use the start date
+			if (daysSet.size === 0) {
+				daysSet.add(startDateStr);
+			}
+
+			// Process each day - distribute time properly across all days
+			for (const dayStr of daysSet) {
+				const dayData = dayMap.get(dayStr);
+				if (!dayData) continue;
+
+				// Determine the actual time boundaries for THIS specific day
+				let dayStartTime: Date;
+				let dayEndTime: Date;
+
+				if (dayStr === startDateStr && dayStr === endDateStr) {
+					// Single day entry - use actual start and end times
+					dayStartTime = startTime;
+					dayEndTime = endTime;
+				} else if (dayStr === startDateStr) {
+					// First day of multi-day entry - from start time to end of day
+					dayStartTime = startTime;
+					dayEndTime = getEndOfDay(dayStr);
+				} else if (dayStr === endDateStr) {
+					// Last day of multi-day entry - from start of day to end time
+					dayStartTime = getStartOfDay(dayStr);
+					dayEndTime = endTime;
+				} else {
+					// Middle day - full 24 hours
+					dayStartTime = getStartOfDay(dayStr);
+					dayEndTime = getEndOfDay(dayStr);
+				}
+
+				// Calculate duration for this specific day in seconds
+				const dayDurationMs = dayEndTime.getTime() - dayStartTime.getTime();
+				const dayDurationSeconds = Math.floor(dayDurationMs / 1000);
+
+				// Add to day's total
+				dayData.totalSeconds += dayDurationSeconds;
+
+				// Distribute across time segments for this day
+				distributeTimeByHourRange(dayData, dayStartTime, dayEndTime, dayDurationSeconds);
+			}
+		}
+
+		// Format durations and compute per-day max segment value for relative bar heights
+		for (const dayData of dayMap.values()) {
+			dayData.formattedDuration = formatDuration(dayData.totalSeconds);
+			dayData.maxSegmentSeconds = Math.max(0, ...dayData.segments);
+		}
+
+		// Convert to array and sort by date (today first)
+		return Array.from(dayMap.values()).sort(
+			(a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+		);
 	}
 
 	// Helper function to get start of day in Tehran timezone

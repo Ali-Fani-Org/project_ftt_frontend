@@ -58,16 +58,20 @@ Feature flags allow us to independently control functionality across different p
 ### Developer Tools
 
 - **Key**: `devtools`
-- **Type**: UI Control
-- **Description**: Controls access to browser developer tools toggle functionality
-- **Default State**: Disabled (fail-secure)
-- **UI Location**: Dashboard navigation bar
-- **Dependencies**: None
+- **Type**: UI Control + Rust gate
+- **Description**: Controls access to the DevTools toggle. Enforced on two layers: (1) the frontend hides the button and ignores F12/Ctrl+Shift+I when the flag is off, and (2) the Rust `toggle_devtools` command refuses to open devtools until `sync_feature_flag` pushes `enabled: true` from the server response.
+- **Default State**: Disabled (fail-secure — Rust gate starts as `false`)
+- **UI Location**: Timer page bottom toolbar (alongside Process Monitor)
+- **Keyboard shortcut**: F12 or Ctrl+Shift+I (only active when flag is enabled)
+- **Dependencies**: `tauri/devtools` crate feature (already compiled in)
 - **Usage**:
   ```typescript
   showDevtoolsButton = await featureFlagsStore.isFeatureEnabled('devtools');
   const isDevtoolsEnabled = () => featureFlagsStore.isFeatureEnabled('devtools');
   ```
+- **Rust commands**:
+  - `toggle_devtools` — opens/closes devtools on the calling window; returns `Err` if the Rust-side flag is `false`.
+  - `sync_feature_flag { key: "devtools", enabled: bool }` — called automatically by `featureFlagsStore.loadFeatures()` and `featureFlagsStore.isFeatureEnabled("devtools")` to keep the Rust gate in sync.
 - **Admin Setup**:
   ```python
   FeatureFlag.objects.create(

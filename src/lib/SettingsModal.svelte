@@ -14,24 +14,35 @@
 	import { createEventDispatcher } from 'svelte';
 	import { onMount } from 'svelte';
 	import { getVersion } from '@tauri-apps/api/app';
+	import { createForm } from '@tanstack/svelte-form';
 
 	const dispatch = createEventDispatcher();
 
-	let localBaseUrl = $state($baseUrl);
-	let localTheme = $state($theme);
-	let customTheme = $state('');
-	let enablePreview = $state(false);
-	let localMinimizeToTray = $state($minimizeToTray);
-	let localCloseToTray = $state($closeToTray);
-	let localAutostart = $state($autostart);
-	let localBackgroundAnimation = $state($backgroundAnimationEnabled);
+	// TanStack Form owns the modal's field state + validation; the submit
+	// handler runs the previous `save()` logic.
+	const form = createForm(() => ({
+		defaultValues: {
+			baseUrl: $baseUrl,
+			theme: $theme,
+			customTheme: '',
+			enablePreview: false,
+			minimizeToTray: $minimizeToTray,
+			closeToTray: $closeToTray,
+			autostart: $autostart,
+			backgroundAnimation: $backgroundAnimationEnabled
+		},
+		onSubmit: async ({ value }) => {
+			await saveValues(value);
+		}
+	}));
 
 	let appVersion = $state('');
 	let showLogoutConfirm = $state(false);
 
+	const formValues = form.useSelector((state) => state.values);
+
 	onMount(async () => {
 		appVersion = await getVersion();
-		// no-op: devtools feature is managed elsewhere
 	});
 
 	const builtInThemes = [
@@ -75,12 +86,12 @@
 
 	let themes = $derived([...builtInThemes, ...Object.keys($customThemes), 'custom']);
 
-	// Preview theme
+	// Preview theme (driven by form values)
 	$effect(() => {
-		if (enablePreview && localTheme && localTheme !== $theme) {
-			console.log('Previewing theme:', localTheme);
-			applyTheme(localTheme);
-		} else if (!enablePreview) {
+		const v = formValues.current;
+		if (v.enablePreview && v.theme && v.theme !== $theme) {
+			applyTheme(v.theme);
+		} else if (!v.enablePreview) {
 			// Reset to current theme
 			applyTheme($theme);
 		}
@@ -110,14 +121,23 @@
 		}
 	}
 
-	async function save() {
-		baseUrl.set(localBaseUrl);
-		minimizeToTray.set(localMinimizeToTray);
-		closeToTray.set(localCloseToTray);
-		autostart.set(localAutostart);
-		backgroundAnimationEnabled.set(localBackgroundAnimation);
+	async function saveValues(v: {
+		baseUrl: string;
+		theme: string;
+		customTheme: string;
+		enablePreview: boolean;
+		minimizeToTray: boolean;
+		closeToTray: boolean;
+		autostart: boolean;
+		backgroundAnimation: boolean;
+	}) {
+		baseUrl.set(v.baseUrl);
+		minimizeToTray.set(v.minimizeToTray);
+		closeToTray.set(v.closeToTray);
+		autostart.set(v.autostart);
+		backgroundAnimationEnabled.set(v.backgroundAnimation);
 		try {
-			if (localAutostart) {
+			if (v.autostart) {
 				await enable();
 			} else {
 				await disable();
@@ -125,29 +145,32 @@
 		} catch (error) {
 			console.error('Failed to update autostart:', error);
 		}
-		if (localTheme === 'custom') {
+		if (v.theme === 'custom') {
 			// Parse the custom theme
-			const themeNameMatch = customTheme.match(/\[data-theme="([^"]+)"\]/);
+			const themeNameMatch = v.customTheme.match(/\[data-theme="([^"]+)"\]/);
 			const originalName = themeNameMatch ? themeNameMatch[1] : 'custom';
 			const displayName = `Custom(${originalName})`;
 			const vars: Record<string, string> = {};
 
 			// Parse CSS variables from the theme definition
-			const varMatches = customTheme.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g);
+			const varMatches = v.customTheme.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g);
 			for (const match of varMatches) {
 				vars[`--${match[1]}`] = match[2].trim();
 			}
 
-			console.log('Parsed custom theme:', { originalName, displayName, vars });
 			customThemes.update((ct: Record<string, Record<string, string>>) => ({
 				...ct,
 				[displayName]: vars
 			}));
 			theme.set(displayName);
 		} else {
-			theme.set(localTheme);
+			theme.set(v.theme);
 		}
 		dispatch('close');
+	}
+
+	async function save() {
+		await form.handleSubmit();
 	}
 
 	function cancel() {
@@ -163,9 +186,6 @@
 		showLogoutConfirm = false;
 	}
 
-	function saveBackgroundAnimation() {
-		backgroundAnimationEnabled.set(localBackgroundAnimation);
-	}
 </script>
 
 <div class="modal modal-open">
@@ -176,58 +196,115 @@
 			<label class="label" for="baseUrl">
 				<span class="label-text">Base URL</span>
 			</label>
-			<input
-				id="baseUrl"
-				bind:value={localBaseUrl}
-				type="text"
-				placeholder="http://localhost:8000"
-				class="input input-bordered"
-			/>
+			<form.Field name="baseUrl">
+				{#snippet children(field)}
+					<input
+						id="baseUrl"
+						type="text"
+						placeholder="http://localhost:8000"
+						class="input input-bordered"
+						name={field.name}
+						value={field.state.value}
+						onblur={field.handleBlur}
+						oninput={(e) => field.handleChange(e.currentTarget.value)}
+					/>
+				{/snippet}
+			</form.Field>
 		</div>
 
 		<div class="form-control">
 			<label class="label" for="theme">
 				<span class="label-text">Theme</span>
 			</label>
-			<select id="theme" bind:value={localTheme} class="select select-bordered">
-				{#each themes as t}
-					<option value={t}>{t}</option>
-				{/each}
-			</select>
-			<label class="label cursor-pointer">
-				<span class="label-text">Enable Preview</span>
-				<input type="checkbox" bind:checked={enablePreview} class="checkbox" />
-			</label>
+			<form.Field name="theme">
+				{#snippet children(field)}
+					<select
+						id="theme"
+						class="select select-bordered"
+						name={field.name}
+						value={field.state.value}
+						onchange={(e) => field.handleChange(e.currentTarget.value)}
+					>
+						{#each themes as t}
+							<option value={t}>{t}</option>
+						{/each}
+					</select>
+				{/snippet}
+			</form.Field>
+			<form.Field name="enablePreview">
+				{#snippet children(field)}
+					<label class="label cursor-pointer">
+						<span class="label-text">Enable Preview</span>
+						<input
+							type="checkbox"
+							class="checkbox"
+							checked={field.state.value}
+							onchange={(e) => field.handleChange(e.currentTarget.checked)}
+						/>
+					</label>
+				{/snippet}
+			</form.Field>
 		</div>
 
 		<div class="form-control">
 			<h4 class="label-text font-semibold mb-2">Tray Behavior</h4>
 			<div class="space-y-2">
-				<label class="label cursor-pointer">
-					<span class="label-text">Minimize to tray</span>
-					<input type="checkbox" bind:checked={localMinimizeToTray} class="checkbox" />
-				</label>
-				<label class="label cursor-pointer">
-					<span class="label-text">Close to tray</span>
-					<input type="checkbox" bind:checked={localCloseToTray} class="checkbox" />
-				</label>
-				<label class="label cursor-pointer">
-					<span class="label-text">Autostart on boot</span>
-					<input type="checkbox" bind:checked={localAutostart} class="checkbox" />
-				</label>
+				<form.Field name="minimizeToTray">
+					{#snippet children(field)}
+						<label class="label cursor-pointer">
+							<span class="label-text">Minimize to tray</span>
+							<input
+								type="checkbox"
+								class="checkbox"
+								checked={field.state.value}
+								onchange={(e) => field.handleChange(e.currentTarget.checked)}
+							/>
+						</label>
+					{/snippet}
+				</form.Field>
+				<form.Field name="closeToTray">
+					{#snippet children(field)}
+						<label class="label cursor-pointer">
+							<span class="label-text">Close to tray</span>
+							<input
+								type="checkbox"
+								class="checkbox"
+								checked={field.state.value}
+								onchange={(e) => field.handleChange(e.currentTarget.checked)}
+							/>
+						</label>
+					{/snippet}
+				</form.Field>
+				<form.Field name="autostart">
+					{#snippet children(field)}
+						<label class="label cursor-pointer">
+							<span class="label-text">Autostart on boot</span>
+							<input
+								type="checkbox"
+								class="checkbox"
+								checked={field.state.value}
+								onchange={(e) => field.handleChange(e.currentTarget.checked)}
+							/>
+						</label>
+					{/snippet}
+				</form.Field>
 			</div>
 		</div>
 
 		<div class="form-control mt-4">
-			<label class="label cursor-pointer">
-				<span class="label-text">Show animated background</span>
-				<input
-					type="checkbox"
-					bind:checked={localBackgroundAnimation}
-					onchange={saveBackgroundAnimation}
-					class="checkbox"
-				/>
-			</label>
+			<form.Field name="backgroundAnimation">
+				{#snippet children(field)}
+					<label class="label cursor-pointer">
+						<span class="label-text">Show animated background</span>
+						<input
+							type="checkbox"
+							class="checkbox"
+							checked={field.state.value}
+							onchange={(e) => field.handleChange(e.currentTarget.checked)}
+						/>
+					</label>
+				{/snippet}
+			</form.Field>
 		</div>
 
 		{#if Object.keys($customThemes).length > 0}
@@ -258,16 +335,22 @@
 			<label class="label" for="customTheme">
 				<span class="label-text">Custom Theme Definition</span>
 			</label>
-			<textarea
-				id="customTheme"
-				bind:value={customTheme}
-				placeholder="Paste the full custom theme definition from DaisyUI website"
-				class="textarea textarea-bordered"
-				rows="10"
-			></textarea>
+			<form.Field name="customTheme">
+				{#snippet children(field)}
+					<textarea
+						id="customTheme"
+						placeholder="Paste the full custom theme definition from DaisyUI website"
+						class="textarea textarea-bordered"
+						rows="10"
+						name={field.name}
+						value={field.state.value}
+						oninput={(e) => field.handleChange(e.currentTarget.value)}
+					></textarea>
+				{/snippet}
+			</form.Field>
 		</div>
 
-		{#if enablePreview}
+		{#if formValues.current.enablePreview}
 			<div class="form-control">
 				<h4 class="label-text font-semibold mb-2">Theme Preview</h4>
 				<div class="bg-base-100 p-4 rounded-box border">
