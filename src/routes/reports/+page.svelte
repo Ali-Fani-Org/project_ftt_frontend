@@ -22,7 +22,7 @@
 	import PunchcardHeatmap from '$lib/reports/PunchcardHeatmap.svelte';
 	import RankedBars from '$lib/reports/RankedBars.svelte';
 	import TagChip from '$lib/TagChip.svelte';
-	import { useFilteredTimeEntries, type TimeEntryFilters } from '$lib/queries/timeEntries';
+	import { useAllFilteredTimeEntries, type TimeEntryFilters } from '$lib/queries/timeEntries';
 	import {
 		avgDailySeconds,
 		computeTotalSeconds,
@@ -62,8 +62,7 @@
 	function getCurrentFilters(): TimeEntryFilters {
 		return {
 			start_date_after_tz: currentRange.start ?? undefined,
-			start_date_before_tz: currentRange.end ?? undefined,
-			limit: 500
+			start_date_before_tz: currentRange.end ?? undefined
 		};
 	}
 
@@ -72,22 +71,23 @@
 		// without dates yet) so the delta query never drags the whole dataset.
 		return {
 			start_date_after_tz: prevRange.start ?? '1970-01-01',
-			start_date_before_tz: prevRange.end ?? '1970-01-02',
-			limit: 500
+			start_date_before_tz: prevRange.end ?? '1970-01-02'
 		};
 	}
 
 	// Refetch cadence comes from the Data Refresh Settings via queryClient
 	// defaults, so the settings page controls how often these reports revalidate.
-	const entriesQuery = useFilteredTimeEntries(getCurrentFilters, () => ({
+	// Both fetches page through EVERY entry in range (no limit) so long ranges
+	// like a full year aren't silently truncated to a single 500-row page.
+	const entriesQuery = useAllFilteredTimeEntries(getCurrentFilters, () => ({
 		keepPreviousData: true
 	}));
-	const prevQuery = useFilteredTimeEntries(getPrevFilters, () => ({
+	const prevQuery = useAllFilteredTimeEntries(getPrevFilters, () => ({
 		keepPreviousData: true
 	}));
 
-	let entries = $derived<TimeEntry[]>(entriesQuery.data?.results ?? []);
-	let prevEntries = $derived<TimeEntry[]>(prevQuery.data?.results ?? []);
+	let entries = $derived<TimeEntry[]>(entriesQuery.data ?? []);
+	let prevEntries = $derived<TimeEntry[]>(prevQuery.data ?? []);
 	let loading = $derived(entriesQuery.isPending);
 	let error = $derived(
 		!entriesQuery.data && entriesQuery.isError ? 'Failed to load report data' : ''
