@@ -18,6 +18,7 @@ export const queryKeys = {
 			['time-entries', 'filtered-all', filters] as const,
 		infinite: (filters: Record<string, unknown>) => ['time-entries', 'infinite', filters] as const,
 		range: (start: string, end: string) => ['time-entries', 'range', start, end] as const,
+		report: (filters: object) => ['time-entries', 'report', filters] as const,
 		suggestions: (limit: number) => ['time-entries', 'suggestions', limit] as const
 	}
 } as const;

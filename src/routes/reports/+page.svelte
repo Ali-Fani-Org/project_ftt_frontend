@@ -22,24 +22,25 @@
 	import PunchcardHeatmap from '$lib/reports/PunchcardHeatmap.svelte';
 	import RankedBars from '$lib/reports/RankedBars.svelte';
 	import TagChip from '$lib/TagChip.svelte';
-	import { useAllFilteredTimeEntries, type TimeEntryFilters } from '$lib/queries/timeEntries';
+	import { useReportData } from '$lib/queries/report';
 	import {
-		avgDailySeconds,
-		computeTotalSeconds,
-		dayOfWeekData,
+		DAY_LABELS_SAT_FIRST,
+		TIME_RANGE_OPTIONS,
+		dayOfWeekFromAggregates,
 		formatDuration,
 		getEntryDurationSeconds,
 		getPreviousRange,
 		getTimeRangeDates,
 		getTimeRangeDisplay,
-		hourlyData,
+		heatmapFromValues,
+		hourlyFromAggregates,
 		percentDelta,
-		projectData,
-		spanDays,
-		tagsData,
-		topTasksData,
-		TIME_RANGE_OPTIONS,
-		type RankedItem
+		trendSeriesFromDaily,
+		type BucketUnit,
+		type HeatmapMatrix,
+		type RankedItem,
+		type TagDatum,
+		type TrendBucket
 	} from '$lib/reports/analytics';
 
 	// ============================= Filter state =============================
@@ -59,52 +60,90 @@
 		getPreviousRange(selectedTimeRange, { customStart: customStartDate, customEnd: customEndDate })
 	);
 
-	function getCurrentFilters(): TimeEntryFilters {
-		return {
-			start_date_after_tz: currentRange.start ?? undefined,
-			start_date_before_tz: currentRange.end ?? undefined
-		};
-	}
-
-	function getPrevFilters(): TimeEntryFilters {
-		// An empty window when there is no previous period (e.g. custom picked
-		// without dates yet) so the delta query never drags the whole dataset.
-		return {
-			start_date_after_tz: prevRange.start ?? '1970-01-01',
-			start_date_before_tz: prevRange.end ?? '1970-01-02'
-		};
-	}
-
-	// Refetch cadence comes from the Data Refresh Settings via queryClient
-	// defaults, so the settings page controls how often these reports revalidate.
-	// Both fetches page through EVERY entry in range (no limit) so long ranges
-	// like a full year aren't silently truncated to a single 500-row page.
-	const entriesQuery = useAllFilteredTimeEntries(getCurrentFilters, () => ({
-		keepPreviousData: true
-	}));
-	const prevQuery = useAllFilteredTimeEntries(getPrevFilters, () => ({
-		keepPreviousData: true
-	}));
-
-	let entries = $derived<TimeEntry[]>(entriesQuery.data ?? []);
-	let prevEntries = $derived<TimeEntry[]>(prevQuery.data ?? []);
-	let loading = $derived(entriesQuery.isPending);
-	let error = $derived(
-		!entriesQuery.data && entriesQuery.isError ? 'Failed to load report data' : ''
+	// Single aggregated request: the server computes every series (see
+	// api/time_entries/report_data), so the payload is a few KB regardless of
+	// range — the old path fetched every raw entry in the window (twice, for
+	// the deltas), which made the Year view cost thousands of serialized rows.
+	const reportQuery = useReportData(
+		() => currentRange,
+		() => prevRange,
+		() => ({ keepPreviousData: true })
 	);
-	let isShowingCachedData = $derived(!$network.isOnline && entries.length > 0);
+
+	const payload = $derived(reportQuery.data?.current);
+	const prevWindow = $derived(reportQuery.data?.previous);
+
+	// Recent-activity rows shaped as TimeEntry so the existing table template
+	// (TagChip + live duration for a still-running entry) works unchanged.
+	let recentEntries = $derived<TimeEntry[]>(
+		(payload?.recent ?? []).map((row) => ({
+			id: row.id,
+			title: row.title,
+			description: '',
+			start_time: row.start_time ?? '',
+			end_time: row.end_time,
+			duration: row.duration,
+			is_active: row.is_active,
+			user: '',
+			project: row.project ?? '',
+			tags: row.tags.map((t) => ({
+				id: t.id,
+				title: t.title,
+				tag: '',
+				icon: t.icon,
+				color: t.color,
+				created_at: ''
+			}))
+		}))
+	);
+
+	let loading = $derived(reportQuery.isPending);
+	let error = $derived(
+		!reportQuery.data && reportQuery.isError ? 'Failed to load report data' : ''
+	);
+	let isShowingCachedData = $derived(!$network.isOnline && !!reportQuery.data);
 
 	// ============================= Analytics ===============================
+	// The server aggregates; the client only derives tiny view values
+	// (averages, deltas, best-day/peak-hour picks).
 
-	const totalSeconds = $derived(computeTotalSeconds(entries));
-	const totalEntries = $derived(entries.length);
-	const avgDaily = $derived(avgDailySeconds(entries, currentRange));
-	const days = $derived(spanDays(currentRange));
-	const projects = $derived(projectData(entries));
-	const tasks = $derived(topTasksData(entries, 6));
-	const tags = $derived(tagsData(entries, 10));
-	const dow = $derived(dayOfWeekData(entries));
-	const hours = $derived(hourlyData(entries));
+	const totalSeconds = $derived(payload?.total_seconds ?? 0);
+	const totalEntries = $derived(payload?.entry_count ?? 0);
+	const days = $derived(payload?.span_days ?? 1);
+	const avgDaily = $derived(Math.floor(totalSeconds / days));
+	const trend = $derived(trendSeriesFromDaily(payload?.daily ?? [], currentRange));
+	const heatmap = $derived(
+		heatmapFromValues(payload?.heatmap ?? Array.from({ length: 7 }, () => Array<number>(24).fill(0)))
+	);
+	const projects = $derived(
+		(payload?.projects ?? []).map((p) => ({
+			name: p.name,
+			totalSeconds: p.seconds,
+			count: p.count
+		}))
+	);
+	const tasks = $derived(
+		(payload?.tasks ?? []).slice(0, 6).map((t) => ({
+			name: t.name,
+			totalSeconds: t.seconds,
+			count: t.count
+		}))
+	);
+	const tags = $derived<TagDatum[]>(
+		(payload?.tags ?? []).slice(0, 10).map((t) => ({
+			name: t.title,
+			totalSeconds: t.seconds,
+			count: t.count,
+			color: t.color,
+			tag: null
+		}))
+	);
+	const dow = $derived(
+		dayOfWeekFromAggregates(payload?.weekday_seconds ?? [], payload?.weekday_counts ?? [])
+	);
+	const hours = $derived(
+		hourlyFromAggregates(payload?.hour_seconds ?? [], payload?.hour_counts ?? [])
+	);
 
 	const bestDay = $derived(
 		dow.reduce((best, d) => (d.totalSeconds > best.totalSeconds ? d : best), dow[0])
@@ -123,10 +162,12 @@
 			: null
 	);
 
-	// Period-over-period deltas (null until the previous-period query resolves).
-	const hasPrev = $derived(prevQuery.data != null);
-	const prevTotal = $derived(computeTotalSeconds(prevEntries));
-	const prevAvg = $derived(avgDailySeconds(prevEntries, prevRange));
+	// Period-over-period deltas (null until the report payload resolves).
+	const hasPrev = $derived(reportQuery.data != null);
+	const prevTotal = $derived(prevWindow?.total_seconds ?? 0);
+	const prevAvg = $derived(
+		prevWindow ? Math.floor(prevWindow.total_seconds / prevWindow.span_days) : 0
+	);
 	const totalDelta = $derived(hasPrev ? percentDelta(totalSeconds, prevTotal) : null);
 	const avgDelta = $derived(hasPrev ? percentDelta(avgDaily, prevAvg) : null);
 
@@ -235,7 +276,7 @@
 	}
 
 	async function retry() {
-		await Promise.all([entriesQuery.refetch(), prevQuery.refetch()]);
+		await reportQuery.refetch();
 	}
 </script>
 
@@ -322,7 +363,7 @@
 				<span>{error}</span>
 				<button class="btn btn-sm btn-outline btn-error" onclick={retry}>Retry</button>
 			</div>
-		{:else if loading && !entriesQuery.data}
+		{:else if loading && !reportQuery.data}
 			<!-- ======================== Skeleton states ======================== -->
 			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
 				{#each Array.from({ length: 5 }) as _}
@@ -438,7 +479,7 @@
 									{currentRange.start ?? '—'} – {currentRange.end ?? '—'}
 								</span>
 							</div>
-							<DailyActivityChart {entries} range={currentRange} />
+							<DailyActivityChart buckets={trend.buckets} unit={trend.unit} />
 						</div>
 					</div>
 
@@ -478,7 +519,7 @@
 									</p>
 								</div>
 							</div>
-							<PunchcardHeatmap {entries} />
+							<PunchcardHeatmap matrix={heatmap} />
 						</div>
 					</div>
 
@@ -542,7 +583,7 @@
 							</div>
 							<h3 class="card-title text-sm">Recent activity</h3>
 							<span class="badge badge-ghost badge-sm text-base-content/60 font-normal">
-								Showing {Math.min(12, entries.length)} of {entries.length}
+								Showing {recentEntries.length} of {totalEntries}
 							</span>
 						</div>
 						<div class="overflow-x-auto -mx-5 px-5">
@@ -557,7 +598,7 @@
 									</tr>
 								</thead>
 								<tbody>
-									{#each entries.slice(0, 12) as entry}
+									{#each recentEntries as entry}
 										<tr class="hover">
 											<td class="text-xs whitespace-nowrap tabular-nums">
 												{new Date(entry.start_time).toLocaleDateString(undefined, {

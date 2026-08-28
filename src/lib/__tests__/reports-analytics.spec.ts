@@ -4,12 +4,15 @@ import {
 	chooseBucketUnit,
 	computeTotalSeconds,
 	dayOfWeekData,
+	dayOfWeekFromAggregates,
 	formatDuration,
 	getEntryDurationSeconds,
 	getPreviousRange,
 	getTimeRangeDates,
 	resolveEntriesRange,
+	heatmapFromValues,
 	heatmapMatrix,
+	hourlyFromAggregates,
 	hourlyData,
 	percentDelta,
 	projectData,
@@ -17,6 +20,7 @@ import {
 	tagsData,
 	topTasksData,
 	trendSeries,
+	trendSeriesFromDaily,
 	type DateRange
 } from '../reports/analytics';
 import type { TimeEntry, Tag } from '$lib/api';
@@ -455,5 +459,81 @@ describe('heatmapMatrix', () => {
 		expect(matrix.values[6][9]).toBe(0);
 		expect(matrix.maxSeconds).toBe(5400);
 		expect(matrix.totalSeconds).toBe(6000);
+	});
+});
+
+// -----------------------------------------------------------------------------
+// Server-aggregate helpers (report_data payload -> view models)
+// -----------------------------------------------------------------------------
+
+describe('trendSeriesFromDaily', () => {
+	it('folds dated server rows into zero-filled daily buckets', () => {
+		const range: DateRange = { start: '2026-08-14', end: '2026-08-16' };
+		const { unit, buckets } = trendSeriesFromDaily(
+			[
+				{ date: '2026-08-14', seconds: 1200 },
+				{ date: '2026-08-16', seconds: 3600 }
+			],
+			range
+		);
+		expect(unit).toBe('day');
+		expect(buckets).toHaveLength(3);
+		expect(buckets[0].totalSeconds).toBe(1200);
+		expect(buckets[1].totalSeconds).toBe(0);
+		expect(buckets[2].totalSeconds).toBe(3600);
+	});
+
+	it('switches to weekly buckets beyond 92 days and merges daily rows', () => {
+		const range: DateRange = { start: '2026-01-01', end: '2026-08-01' };
+		const { unit, buckets } = trendSeriesFromDaily(
+			[
+				{ date: '2026-01-01', seconds: 600 }, // Thursday — clipped into the Sat-start week frame
+				{ date: '2026-01-03', seconds: 300 } // Saturday — starts the next week frame
+			],
+			range
+		);
+		expect(unit).toBe('week');
+		// Frame 0 spans 2025-12-27..2026-01-02 (backtracked to Saturday, clipped
+		// to the range start), frame 1 spans 2026-01-03..01-09.
+		expect(buckets[0].totalSeconds).toBe(600);
+		expect(buckets[1].totalSeconds).toBe(300);
+	});
+});
+
+describe('heatmapFromValues', () => {
+	it('derives max/total from the server matrix without copying values', () => {
+		const values: number[][] = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+		values[0][9] = 3600;
+		values[2][22] = 600;
+		const matrix = heatmapFromValues(values);
+		expect(matrix.maxSeconds).toBe(3600);
+		expect(matrix.totalSeconds).toBe(4200);
+		expect(matrix.values).toBe(values);
+	});
+});
+
+describe('dayOfWeekFromAggregates', () => {
+	it('maps Saturday-first arrays onto DAY_LABELS_SAT_FIRST with averages', () => {
+		const seconds = [7200, 0, 3600, 0, 0, 0, 0];
+		const counts = [2, 0, 1, 0, 0, 0, 0];
+		const dow = dayOfWeekFromAggregates(seconds, counts);
+		expect(dow[0]).toEqual({ name: 'Sat', totalSeconds: 7200, count: 2, avgSeconds: 3600 });
+		expect(dow[1]).toEqual({ name: 'Sun', totalSeconds: 0, count: 0, avgSeconds: 0 });
+		expect(dow[2].name).toBe('Mon');
+		expect(dow).toHaveLength(7);
+	});
+});
+
+describe('hourlyFromAggregates', () => {
+	it('builds 24 hour buckets from the server arrays', () => {
+		const seconds: number[] = Array(24).fill(0);
+		seconds[9] = 5400;
+		seconds[22] = 600;
+		const counts: number[] = Array(24).fill(0);
+		counts[9] = 2;
+		const hours = hourlyFromAggregates(seconds, counts);
+		expect(hours).toHaveLength(24);
+		expect(hours[9]).toEqual({ hour: 9, label: '09:00', totalSeconds: 5400, count: 2 });
+		expect(hours[22].totalSeconds).toBe(600);
 	});
 });

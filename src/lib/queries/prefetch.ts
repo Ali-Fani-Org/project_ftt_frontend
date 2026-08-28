@@ -1,7 +1,8 @@
 import { queryClient } from '$lib/queryClient';
 import { queryKeys } from './keys';
-import { projects, tags, timeEntries, type TimeEntry } from '$lib/api';
+import { projects, tags, timeEntries } from '$lib/api';
 import { getTehranToday } from './timeEntries';
+import { buildReportFilters } from './report';
 import { getTimeRangeDates, getPreviousRange } from '$lib/reports/analytics';
 
 /** YYYY-MM-DD in the browser's local timezone (mirrors the pages' date helpers). */
@@ -199,60 +200,21 @@ export function prefetchRoute(path: string): void {
 		}
 
 		case '/reports': {
-			// Reports defaults to "this month" and renders current-vs-previous
-			// deltas, so warm both ranges with the exact keys/filters the page uses
-			// (useAllFilteredTimeEntries → filteredAll keys + paginated fetch).
-			// No `limit` here: the page's keys are built from the two _tz dates
-			// only, so any extra param would miss the cache.
-			const range = getTimeRangeDates('thismonth');
-			const prev = getPreviousRange('thismonth');
-			const currentFilters = {
-				start_date_after_tz: range.start ?? undefined,
-				start_date_before_tz: range.end ?? undefined
-			};
+			// Reports defaults to "this month"; warm the single aggregated report
+			// query with the exact key/filters useReportData builds (the server
+			// returns the whole reports dataset — current + previous window — in
+			// one small payload, so there is nothing else to warm).
+			const filters = buildReportFilters(
+				getTimeRangeDates('thismonth'),
+				getPreviousRange('thismonth')
+			);
 			void queryClient.prefetchQuery({
-				queryKey: queryKeys.timeEntries.filteredAll(currentFilters),
-				queryFn: () => fetchAllPages(currentFilters)
-			});
-			const prevFilters = {
-				start_date_after_tz: prev.start ?? '1970-01-01',
-				start_date_before_tz: prev.end ?? '1970-01-02'
-			};
-			void queryClient.prefetchQuery({
-				queryKey: queryKeys.timeEntries.filteredAll(prevFilters),
-				queryFn: () => fetchAllPages(prevFilters)
+				queryKey: queryKeys.timeEntries.report(filters),
+				queryFn: () => timeEntries.reportData(filters)
 			});
 			break;
 		}
 	}
-}
-
-/**
- * Fetch EVERY page of time entries matching the given filters — mirrors
- * useAllFilteredTimeEntries so prefetched data lands under the exact keys the
- * reports page reads (and doesn't truncate long ranges to one 500-row page).
- */
-async function fetchAllPages(
-	filters: Record<string, string | undefined>
-): Promise<TimeEntry[]> {
-	const all: TimeEntry[] = [];
-	let cursor: string | undefined;
-	let hasMore = true;
-	while (hasMore) {
-		const page = await timeEntries.listWithFilters({
-			...filters,
-			limit: 200,
-			cursor
-		});
-		all.push(...page.results);
-		if (page.next) {
-			cursor = new URL(page.next).searchParams.get('cursor') ?? undefined;
-			hasMore = !!cursor;
-		} else {
-			hasMore = false;
-		}
-	}
-	return all;
 }
 
 type InfiniteEntriesData = {

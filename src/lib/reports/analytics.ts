@@ -410,6 +410,7 @@ interface BucketFrame {
 	label: string;
 	fullLabel: string;
 	startISO: string;
+	endISO: string; // inclusive end date of the bucket
 	startTime: number;
 	endTime: number; // inclusive
 	index: number;
@@ -448,6 +449,7 @@ function buildFrames(unit: BucketUnit, range: DateRange): BucketFrame[] {
 					day: 'numeric'
 				}),
 				startISO: formatLocalDate(cursor),
+				endISO: formatLocalDate(cursor),
 				startTime: cursor.getTime(),
 				endTime: cursor.getTime() + (1000 * 60 * 60 * 24 - 1),
 				index: frames.length
@@ -471,6 +473,7 @@ function buildFrames(unit: BucketUnit, range: DateRange): BucketFrame[] {
 				label: `${MONTH_NAMES_SHORT[weekStart.getMonth()]} ${weekStart.getDate()}`,
 				fullLabel: `${formatLocalDate(weekStart)} – ${formatLocalDate(weekEnd)}`,
 				startISO: formatLocalDate(weekStart),
+				endISO: formatLocalDate(weekEnd),
 				startTime: Math.max(weekStart.getTime(), startTime),
 				endTime: Math.min(
 					weekEnd.getTime() + (1000 * 60 * 60 * 24 - 1),
@@ -493,6 +496,7 @@ function buildFrames(unit: BucketUnit, range: DateRange): BucketFrame[] {
 			label: MONTH_NAMES_SHORT[monthStart.getMonth()],
 			fullLabel: monthStart.toLocaleDateString(undefined, { year: 'numeric', month: 'long' }),
 			startISO: formatLocalDate(monthStart),
+			endISO: formatLocalDate(monthEnd),
 			startTime: Math.max(monthStart.getTime(), startTime),
 			endTime: Math.min(
 				monthEnd.getTime() + (1000 * 60 * 60 * 24 - 1),
@@ -544,6 +548,46 @@ export function trendSeries(
 	};
 }
 
+/**
+ * Zero-filled trend series built from server-side daily aggregates (the
+ * report_data endpoint's `daily` rows) instead of raw entries. Same bucketing
+ * rules as trendSeries() — day/week/month frames by span — with each dated
+ * row folded into the bucket that contains it.
+ */
+export function trendSeriesFromDaily(
+	daily: { date: string; seconds: number }[],
+	range: DateRange,
+	unitOverride?: BucketUnit
+): { unit: BucketUnit; buckets: TrendBucket[] } {
+	const unit = unitOverride ?? chooseBucketUnit(range);
+	const frames = buildFrames(unit, range);
+	const totals = frames.map(() => 0);
+
+	if (frames.length) {
+		let frameIndex = 0;
+		for (const row of daily) {
+			// Both lists are chronological; advance to the frame containing row.date.
+			while (frameIndex < frames.length - 1 && row.date > frames[frameIndex].endISO) {
+				frameIndex++;
+			}
+			const frame = frames[frameIndex];
+			if (row.date >= frame.startISO && row.date <= frame.endISO) {
+				totals[frame.index] += row.seconds;
+			}
+		}
+	}
+
+	return {
+		unit,
+		buckets: frames.map((f, i) => ({
+			label: f.label,
+			fullLabel: f.fullLabel,
+			startISO: f.startISO,
+			totalSeconds: totals[i]
+		}))
+	};
+}
+
 // ============================================================================
 // Heatmap matrix (weekday × hour punchcard)
 // ============================================================================
@@ -575,6 +619,53 @@ export function heatmapMatrix(entries: TimeEntry[], nowMs?: number): HeatmapMatr
 	}
 
 	return { values, maxSeconds: max, totalSeconds: total };
+}
+
+/**
+ * Heatmap matrix straight from the server's report_data `heatmap` (already
+ * Saturday-first × 24 hours) — just derives max/total for the level buckets.
+ */
+export function heatmapFromValues(values: number[][]): HeatmapMatrix {
+	let max = 0;
+	let total = 0;
+	for (const row of values) {
+		for (const cell of row) {
+			if (cell > max) max = cell;
+			total += cell;
+		}
+	}
+	return { values, maxSeconds: max, totalSeconds: total };
+}
+
+/**
+ * Weekday bars from the server's Saturday-first aggregate arrays.
+ */
+export function dayOfWeekFromAggregates(
+	weekdaySeconds: number[],
+	weekdayCounts: number[]
+): DayOfWeekDatum[] {
+	return DAY_LABELS_SAT_FIRST.map((name, i) => {
+		const seconds = weekdaySeconds[i] ?? 0;
+		const count = weekdayCounts[i] ?? 0;
+		return {
+			name,
+			totalSeconds: seconds,
+			count,
+			avgSeconds: count > 0 ? Math.floor(seconds / count) : 0
+		};
+	});
+}
+
+/**
+ * Hour-of-day bars from the server's aggregate arrays (index = local hour).
+ */
+export function hourlyFromAggregates(hourSeconds: number[], hourCounts: number[]): HourDatum[] {
+	return Array.from({ length: 24 }, (_, hour) => ({
+		hour,
+		label: `${hour.toString().padStart(2, '0')}:00`,
+		totalSeconds: hourSeconds[hour] ?? 0,
+		count: hourCounts[hour] ?? 0
+	}));
 }
 
 // ============================================================================

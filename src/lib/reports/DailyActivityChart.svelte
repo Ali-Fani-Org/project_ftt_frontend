@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { TimeEntry } from '$lib/api';
 	import { defineChart } from '@tanstack/charts';
 	import { tooltip } from '@tanstack/charts/tooltip';
 	import { scaleBand } from '@tanstack/charts/scales/band';
@@ -9,27 +8,29 @@
 	import { areaY } from '@tanstack/charts/area';
 	import { BarChart3, Activity } from '@lucide/svelte';
 	import TanStackChart from './TanStackChart.svelte';
-	import { formatDuration, resolvePrimaryColor, trendSeries, type DateRange } from './analytics';
+	import {
+		formatDuration,
+		resolvePrimaryColor,
+		type BucketUnit,
+		type TrendBucket
+	} from './analytics';
 
 	let {
-		entries,
-		range,
+		buckets,
+		unit,
 		height = 260
 	}: {
-		entries: TimeEntry[];
-		range: DateRange;
+		/** Zero-filled trend buckets — from trendSeriesFromDaily (server aggregates). */
+		buckets: TrendBucket[];
+		unit: BucketUnit;
 		height?: number;
 	} = $props();
 
 	let mode = $state<'bars' | 'area'>('bars');
 
-	// Zero-filled series across the whole selected range; the unit (day/week/
-	// month) adapts to the span so yearly ranges stay readable.
-	const series = $derived(trendSeries(entries, range));
-
 	/** Short axis labels; the tooltip's default x value carries them as-is. */
 	const chartData = $derived(
-		series.buckets.map((b) => ({
+		buckets.map((b) => ({
 			label: b.label,
 			fullLabel: b.fullLabel,
 			hours: b.totalSeconds > 0 ? +(b.totalSeconds / 3600).toFixed(2) : 0,
@@ -47,9 +48,7 @@
 		return resolvePrimaryColor();
 	});
 
-	const unitAxisLabel = $derived(
-		series.unit === 'day' ? 'Day' : series.unit === 'week' ? 'Week' : 'Month'
-	);
+	const unitAxisLabel = $derived(unit === 'day' ? 'Day' : unit === 'week' ? 'Week' : 'Month');
 
 	const chartDefinition = $derived.by(() => {
 		if (!hasData) return null;

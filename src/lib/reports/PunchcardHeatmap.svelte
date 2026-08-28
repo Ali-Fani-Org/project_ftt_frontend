@@ -1,23 +1,17 @@
 <script lang="ts">
-	import type { TimeEntry } from '$lib/api';
-	import {
-		DAY_LABELS_SAT_FIRST,
-		formatDuration,
-		heatmapMatrix,
-		resolvePrimaryRgb
-	} from './analytics';
+	import { DAY_LABELS_SAT_FIRST, formatDuration, resolvePrimaryRgb, type HeatmapMatrix } from './analytics';
 
 	let {
-		entries,
+		matrix,
 		cellSize = 14
 	}: {
-		entries: TimeEntry[];
+		/** Weekday × hour matrix — from heatmapFromValues (server aggregates). */
+		matrix: HeatmapMatrix;
 		cellSize?: number;
 	} = $props();
 
 	const rgb = $state(resolvePrimaryRgb());
 
-	const matrix = $derived(heatmapMatrix(entries));
 	const hasData = $derived(matrix.totalSeconds > 0);
 
 	/** 5 visual buckets (index 0 = no time) mapped to alpha intensities. */

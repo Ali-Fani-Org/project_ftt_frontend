@@ -143,6 +143,77 @@ export interface PaginatedTimeEntries {
 	results: TimeEntry[];
 }
 
+// --- Aggregated report payload (api/time_entries/report_data/) -----------------
+
+export interface ReportFilters {
+	start_date_after_tz: string;
+	start_date_before_tz: string;
+	prev_start_date_after_tz?: string;
+	prev_start_date_before_tz?: string;
+}
+
+export interface ReportWindowSummary {
+	start: string;
+	end: string;
+	span_days: number;
+	total_seconds: number;
+	entry_count: number;
+}
+
+export interface ReportDailyRow {
+	date: string; // YYYY-MM-DD (Asia/Tehran)
+	seconds: number;
+	count: number;
+}
+
+export interface ReportRankedRow {
+	name: string;
+	seconds: number;
+	count: number;
+}
+
+export interface ReportTagRow {
+	id: number;
+	title: string;
+	color: string;
+	seconds: number;
+	count: number;
+}
+
+export interface ReportRecentTag {
+	id: number;
+	title: string;
+	icon: string;
+	color: string;
+}
+
+export interface ReportRecentEntry {
+	id: number;
+	title: string;
+	project: string | null;
+	start_time: string | null;
+	end_time: string | null;
+	duration: string | null;
+	is_active: boolean;
+	tags: ReportRecentTag[];
+}
+
+export interface ReportData {
+	current: ReportWindowSummary & {
+		daily: ReportDailyRow[];
+		weekday_seconds: number[]; // Saturday-first, matching DAY_LABELS_SAT_FIRST
+		weekday_counts: number[];
+		hour_seconds: number[]; // index = local hour 0..23
+		hour_counts: number[];
+		heatmap: number[][]; // [weekdayIndex][hour]
+		projects: ReportRankedRow[]; // sorted by seconds desc
+		tasks: ReportRankedRow[]; // top 20 by seconds desc
+		tags: ReportTagRow[]; // top 20 by seconds desc
+		recent: ReportRecentEntry[]; // 12 newest, newest first
+	};
+	previous: ReportWindowSummary;
+}
+
 export interface RegistrationStatus {
 	public_registration: boolean;
 }
@@ -792,6 +863,35 @@ export const timeEntries = {
 		}
 
 		return result;
+	},
+	/**
+	 * Aggregated reports payload from the server (see
+	 * api/time_entries/report_data/): KPIs, daily/weekday/hour series,
+	 * project/task/tag totals, recent rows, and the previous-window summary.
+	 * One small request at any range size — replaces fetching every raw entry
+	 * in the window (which the Year view paid for twice, once per delta).
+	 */
+	reportData: async (filters: ReportFilters): Promise<ReportData | null> => {
+		const params = new URLSearchParams();
+		params.append('start_date_after_tz', filters.start_date_after_tz);
+		params.append('start_date_before_tz', filters.start_date_before_tz);
+		if (filters.prev_start_date_after_tz)
+			params.append('prev_start_date_after_tz', filters.prev_start_date_after_tz);
+		if (filters.prev_start_date_before_tz)
+			params.append('prev_start_date_before_tz', filters.prev_start_date_before_tz);
+		const url = `api/time_entries/report_data/?${params.toString()}`;
+		const cacheKey = `time_entries:report_data:${url}`;
+
+		// CRITICAL: No API calls when offline - return cache immediately
+		if (!get(network).isOnline) {
+			const cached = getCached<ReportData>(cacheKey);
+			if (cached) return cached;
+			console.warn(`Offline: no cached report data for ${cacheKey}`);
+			return null;
+		}
+
+		const result = await fetchWithCache(cacheKey, () => api.get(url).json<ReportData>());
+		return result.data || null;
 	}
 };
 
