@@ -550,8 +550,8 @@ const P = {
   // water optics
   clarity: 1.0, absorbR: 0.34, absorbG: 0.085, absorbB: 0.048,
   scatter: '#0f5f6b', sss: '#2fbfa2', sssStrength: 1.5, refract: 0.55,	// render
-	exposure: 1.05, bloom: 0.42, ssr: !IS_PHONE, glitter: 1.0,
-	scale: IS_PHONE ? 1.0 : 1.5, wire: false, showFoam: true
+  exposure:1.05, bloom:0.42, ssr: !IS_PHONE, glitter: 1.0,  backgroundExposure:1.0, backgroundBloom:1.0, backgroundGlitter:1.0,
+  scale: IS_PHONE ? 1.0 : 1.5, wire: false, showFoam: true
 };
 if (BG_MODE){                    // background: drop the expensive eye-candy
   P.ssr = false;                 // screen-space reflections off
@@ -1439,6 +1439,7 @@ const moonTex = new THREE.TextureLoader().load(
 moonTex.colorSpace = THREE.SRGBColorSpace;
 const moonMesh = new THREE.Mesh(moonGeo, moonMat);
 moonMesh.frustumCulled = false;
+let moonVisibility = 1.0;
 // The moon is SELF-luminous (unlit MeshBasicMaterial): the real moon is far
 // brighter than the night sky, so we render it as a glowing body showing the
 // full albedo (maria + craters) at high brightness. It is not darkened by the
@@ -1448,8 +1449,14 @@ const earthshine = new THREE.AmbientLight(0x2a3a5c, 0.5);     // dim bluish fill
 sceneA.add(moonMesh, earthshine);
 
 function placeMoonMesh(){
-  // hold the moon a fixed distance in front of the camera along MOON.dir
+  // Hold the moon a fixed distance in front of the camera along MOON.dir.
+  // The textured moon is self-luminous, so hide it during daylight rather
+  // than relying only on the sky shader's night-light fade.
   moonMesh.position.copy(camera.position).addScaledVector(MOON.dir, MOON_MESH_DIST);
+  const dayFade = Math.max(0, Math.min(1, (SUN.dir.y + 0.035) * 14.0));
+  moonMat.opacity = BG_MODE ? dayFade * moonVisibility : 1;
+  moonMat.transparent = BG_MODE;
+  moonMesh.visible = !BG_MODE || moonMat.opacity > 0.001;
   // the moon glows on its own (unlit material); keep the fill lighting scoped
   // to the night amount so it never disturbs the daytime terrain/seafloor
   const nightAmt = Math.max(0, Math.min(1, (1.0 - (SUN.dir.y + 0.025) * 18.0)));
@@ -1636,14 +1643,14 @@ function syncUniforms(t){
   oceanU.uShoreWidth.value  = P.shoreWidth;
   oceanU.uRefract.value     = P.refract;
   oceanU.uSSR.value         = P.ssr ? 1.0 : 0.0;
-  oceanU.uGlitter.value     = P.glitter;
+  oceanU.uGlitter.value     = P.glitter * (BG_MODE ? P.backgroundGlitter : 1.0);
   oceanMat.wireframe        = P.wire;
 
   _c.set(P.scatter);
   finalPass.u.uUWColor.value.set(_c.r*0.30, _c.g*0.30, _c.b*0.30);
   finalPass.u.uUWDensity.value = 0.030*inv;
-  finalPass.u.uExposure.value  = P.exposure;
-  finalPass.u.uBloomStr.value  = P.bloom;
+  finalPass.u.uExposure.value  = P.exposure * (BG_MODE ? P.backgroundExposure : 1.0);
+  finalPass.u.uBloomStr.value  = P.bloom * (BG_MODE ? P.backgroundBloom : 1.0);
   finalPass.u.uTime.value      = t;
 }
 
@@ -1910,6 +1917,15 @@ window.__abyssal = {
     if (g !== undefined) P.nightGain = +g;
     refreshSkyUniforms();
   },
+  moonVisible(visible){
+    moonVisibility = visible ? 1 : 0;
+    if (BG_MODE) placeMoonMesh();
+  },
+  backgroundIntensity(exposure, bloom, glitter){
+    if (exposure !== undefined) P.backgroundExposure = Math.max(0, +exposure || 0);
+    if (bloom !== undefined) P.backgroundBloom = Math.max(0, +bloom || 0);
+    if (glitter !== undefined) P.backgroundGlitter = Math.max(0, +glitter || 0);
+  },
   get(){ return { scatter: P.scatter, sss: P.sss, wind: P.windSpeed, t: simTime, wy: waterY, sunElev: P.sunElev, sunAzim: P.sunAzim, moonElev: P.moonElev, moonAzim: P.moonAzim, moonE: P.moonE, nightGain: P.nightGain }; },
   // GPU + heap diagnostics (used for the background performance review)
   mem(){
@@ -1927,6 +1943,10 @@ addEventListener('message', e => {
   if (d.wind !== undefined) window.__abyssal.wind(d.wind);
   if (d.sunElev !== undefined && d.sunAzim !== undefined) window.__abyssal.sun(d.sunElev, d.sunAzim);
   if (d.moonElev !== undefined && d.moonAzim !== undefined) window.__abyssal.moon(d.moonElev, d.moonAzim, d.moonE);
+  if (d.moonVisible !== undefined) window.__abyssal.moonVisible(d.moonVisible);
+  if (d.backgroundExposure !== undefined || d.backgroundBloom !== undefined || d.backgroundGlitter !== undefined) {
+    window.__abyssal.backgroundIntensity(d.backgroundExposure, d.backgroundBloom, d.backgroundGlitter);
+  }
 });
 
 /* surface diagnostics for anything that blows up after start-up */

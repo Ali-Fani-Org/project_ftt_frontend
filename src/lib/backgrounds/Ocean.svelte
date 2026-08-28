@@ -97,6 +97,7 @@
 		const tokens = readThemeTokens(colorRef);
 		const { elev, azim } = sunFromClock(new Date());
 		const moon = moonFromClock(new Date());
+		const isDaylight = elev > -2;
 		frame.contentWindow.postMessage(
 			{
 				type: 'abyssal',
@@ -112,7 +113,15 @@
 				sunAzim: azim,
 				moonElev: moon.elev,
 				moonAzim: moon.azim,
-				moonE: 1.4
+				// Moon visibility is controlled independently from the sky's
+				// physical moonlight intensity.
+				moonE: 1.4,
+				moonVisible: isDaylight ? 0 : 1,
+				// Keep only the embedded daytime highlights restrained. The
+				// scene exposure remains unchanged so the ocean cannot go black.
+				backgroundExposure: isDaylight ? 0.68 : 1,
+				backgroundBloom: isDaylight ? 0.35 : 1,
+				backgroundGlitter: isDaylight ? 0.55 : 1
 			},
 			'*'
 		);
