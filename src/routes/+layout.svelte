@@ -23,7 +23,7 @@
 	import ToastContainer from '$lib/ToastContainer.svelte';
 	import { PersistQueryClientProvider } from '@tanstack/svelte-query-persist-client';
 	import { queryClient, queryPersistOptions } from '$lib/queryClient';
-	import { prefetchRoute } from '$lib/queries/prefetch';
+	import { idlePrefetchRoutes } from '$lib/queries/prefetch';
 	import { auth } from '$lib/api';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import SyncIndicator from '$lib/SyncIndicator.svelte';
@@ -101,13 +101,10 @@
 		authInitialized = true;
 		logger.log('[AuthInit] authInitialized set to true');
 
-		// Warm the timer page's queries after initial render (projects + active + today)
+		// Warm the pages the user is most likely to open, one query-set per idle
+		// slot so warming never competes with real interaction work.
 		if ($authToken) {
-			if ('requestIdleCallback' in window) {
-				requestIdleCallback(() => prefetchRoute('/timer'));
-			} else {
-				setTimeout(() => prefetchRoute('/timer'), 0);
-			}
+			idlePrefetchRoutes(['/timer', '/dashboard', '/entries']);
 		}
 	});
 

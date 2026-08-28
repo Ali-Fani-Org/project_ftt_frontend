@@ -30,6 +30,7 @@
 		type TimeEntryFilters
 	} from '$lib/queries/timeEntries';
 	import { useTagsQuery } from '$lib/queries/tags';
+	import { onIdle, prefetchNextEntriesPage } from '$lib/queries/prefetch';
 	import { resolveEntriesRange } from '$lib/reports/analytics';
 	import { queryClient } from '$lib/queryClient';
 	import { queryKeys } from '$lib/queries/keys';
@@ -152,6 +153,19 @@
 	let hasPrevious = $derived(entriesQuery.hasPreviousPage);
 	let isFetchingPage = $derived(entriesQuery.isFetchingNextPage);
 	let isShowingCachedData = $derived(!$network.isOnline && allEntries.length > 0);
+
+	// Warm page 2 in the background as soon as page 1 is the only cached page,
+	// so the first "next" click renders instantly. Re-arms whenever the filters
+	// change and a fresh single-page result arrives; no-op once the user pages.
+	let warmedNextCursor: string | null = null;
+	$effect(() => {
+		const pages = entriesQuery.data?.pages;
+		const nextCursor = pages?.length === 1 ? (pages[0].next ?? null) : null;
+		if (nextCursor && nextCursor !== warmedNextCursor) {
+			warmedNextCursor = nextCursor;
+			onIdle(() => prefetchNextEntriesPage(getCurrentFilters()));
+		}
+	});
 
 	const hasActiveFilters = $derived(
 		searchQuery.trim() !== '' || selectedProject !== null || selectedTags.length > 0
