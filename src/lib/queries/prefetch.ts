@@ -1,6 +1,6 @@
 import { queryClient } from '$lib/queryClient';
 import { queryKeys } from './keys';
-import { projects, tags, timeEntries } from '$lib/api';
+import { projects, tags, timeEntries, type TimeEntry } from '$lib/api';
 import { getTehranToday } from './timeEntries';
 import { getTimeRangeDates, getPreviousRange } from '$lib/reports/analytics';
 
@@ -200,30 +200,59 @@ export function prefetchRoute(path: string): void {
 
 		case '/reports': {
 			// Reports defaults to "this month" and renders current-vs-previous
-			// deltas, so warm both ranges with the exact keys/filters the page uses.
+			// deltas, so warm both ranges with the exact keys/filters the page uses
+			// (useAllFilteredTimeEntries → filteredAll keys + paginated fetch).
+			// No `limit` here: the page's keys are built from the two _tz dates
+			// only, so any extra param would miss the cache.
 			const range = getTimeRangeDates('thismonth');
 			const prev = getPreviousRange('thismonth');
 			const currentFilters = {
 				start_date_after_tz: range.start ?? undefined,
-				start_date_before_tz: range.end ?? undefined,
-				limit: 500
+				start_date_before_tz: range.end ?? undefined
 			};
 			void queryClient.prefetchQuery({
-				queryKey: queryKeys.timeEntries.filtered(currentFilters),
-				queryFn: () => timeEntries.listWithFilters(currentFilters)
+				queryKey: queryKeys.timeEntries.filteredAll(currentFilters),
+				queryFn: () => fetchAllPages(currentFilters)
 			});
 			const prevFilters = {
 				start_date_after_tz: prev.start ?? '1970-01-01',
-				start_date_before_tz: prev.end ?? '1970-01-02',
-				limit: 500
+				start_date_before_tz: prev.end ?? '1970-01-02'
 			};
 			void queryClient.prefetchQuery({
-				queryKey: queryKeys.timeEntries.filtered(prevFilters),
-				queryFn: () => timeEntries.listWithFilters(prevFilters)
+				queryKey: queryKeys.timeEntries.filteredAll(prevFilters),
+				queryFn: () => fetchAllPages(prevFilters)
 			});
 			break;
 		}
 	}
+}
+
+/**
+ * Fetch EVERY page of time entries matching the given filters — mirrors
+ * useAllFilteredTimeEntries so prefetched data lands under the exact keys the
+ * reports page reads (and doesn't truncate long ranges to one 500-row page).
+ */
+async function fetchAllPages(
+	filters: Record<string, string | undefined>
+): Promise<TimeEntry[]> {
+	const all: TimeEntry[] = [];
+	let cursor: string | undefined;
+	let hasMore = true;
+	while (hasMore) {
+		const page = await timeEntries.listWithFilters({
+			...filters,
+			limit: 200,
+			cursor
+		});
+		all.push(...page.results);
+		if (page.next) {
+			cursor = new URL(page.next).searchParams.get('cursor') ?? undefined;
+			hasMore = !!cursor;
+		} else {
+			hasMore = false;
+		}
+	}
+	return all;
 }
 
 type InfiniteEntriesData = {

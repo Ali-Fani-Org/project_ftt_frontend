@@ -1,4 +1,4 @@
-import { MutationCache, QueryClient, onlineManager } from '@tanstack/svelte-query';
+import { MutationCache, QueryClient, focusManager, onlineManager } from '@tanstack/svelte-query';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import { get } from 'svelte/store';
 import {
@@ -17,12 +17,16 @@ import { toastStore } from './toast';
  * module-level client is safe — there is no per-request isolation to worry about.
  *
  * Defaults are tuned to replace the old manual cache + 30s refreshController:
- * - staleTime 30s: data is considered fresh for 30s, so re-renders and navigation
- *   don't refetch; after that, queries revalidate on demand (refetchInterval,
- *   invalidation from mutations, window focus) instead of blindly polling.
- * - networkMode offlineFirst: queries serve cached data while offline (the app's
- *   probe-based `network` store drives onlineManager) and retries pause; the
- *   moment connectivity returns, refetchOnReconnect resumes them.
+ * - staleTime 0: data is NEVER considered fresh, so every mount, window focus,
+ *   reconnect, filter change, and invalidation refetches from the server while
+ *   online. Cached data only ever shows when the app is offline (served by the
+ *   api layer's fetchWithCache) or as an error fallback — never as a substitute
+ *   for a live fetch. The top-bar refresh button is a convenience, not the only
+ *   way to get fresh data.
+ * - networkMode offlineFirst: queries still run while offline, but the api layer
+ *   (fetchWithCache) short-circuits to cached data whenever the probe-based
+ *   `network` store reports offline, so no request actually leaves the machine;
+ *   the moment connectivity returns, refetchOnReconnect resumes them.
  * - retry 1: one retry for flaky connections without hammering a broken backend.
  *
  * The "Data Refresh Settings" from the settings page are applied reactively
@@ -41,7 +45,10 @@ function mutationErrorMessage(error: unknown): string {
 export const queryClient = new QueryClient({
 	defaultOptions: {
 		queries: {
-			staleTime: 30_000,
+			// Never treat cached data as fresh: while online every mount/focus/
+			// reconnect/period change refetches from the server; the cache is only
+			// a fallback when offline or when a fetch fails.
+			staleTime: 0,
 			gcTime: 10 * 60_000,
 			retry: 1,
 			networkMode: 'offlineFirst',
@@ -69,6 +76,37 @@ export const queryClient = new QueryClient({
 network.subscribe((status) => {
 	onlineManager.setOnline(status.isOnline);
 });
+
+// --- Tauri focus/visibility refetch ---------------------------------------------
+// Browser focus/visibility events are unreliable inside Tauri webviews (e.g.
+// clicking back to the app from another window doesn't fire a visibilitychange),
+// so the desktop window's real state drives TanStack's focusManager:
+// - onFocusChanged covers plain app-switch focus (regaining focus refetches
+//   every active query through the normal refetchOnWindowFocus path, and
+//   blurring pauses retries).
+// - visibilitychange covers restore-from-tray and restore-from-minimize, which
+//   can skip focus events on some platforms — the webview document goes hidden
+//   when the window is minimized/hidden and visible again on restore.
+// Plain browsers keep the default visibility-based handling — the listeners are
+// only registered when the Tauri bridge is present.
+async function setupTauriFocusRefetch(): Promise<void> {
+	if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+	try {
+		const { getCurrentWindow } = await import('@tauri-apps/api/window');
+		const appWindow = getCurrentWindow();
+		await appWindow.onFocusChanged(({ payload: focused }) => {
+			focusManager.setFocused(focused);
+		});
+		document.addEventListener('visibilitychange', () => {
+			focusManager.setFocused(document.visibilityState !== 'hidden');
+		});
+	} catch {
+		// Not running inside Tauri (or the API is unavailable) — the default
+		// visibility-based focus handling still applies in the plain browser.
+	}
+}
+
+void setupTauriFocusRefetch();
 
 function applyRefreshSettings(): void {
 	const enabled = get(autoRefreshEnabled);

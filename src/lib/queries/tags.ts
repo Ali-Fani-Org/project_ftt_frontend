@@ -3,12 +3,11 @@ import { tags as tagsApi, type Tag } from '$lib/api';
 import { queryKeys } from './keys';
 
 
-/** All team-shared tags, cached 5 minutes (they change rarely). */
+/** All team-shared tags. Inherits staleTime 0, so it refetches on every mount while online. */
 export function useTagsQuery() {
 	return createQuery(() => ({
 		queryKey: queryKeys.tags.list(),
-		queryFn: () => tagsApi.list(),
-		staleTime: 5 * 60_000
+		queryFn: () => tagsApi.list()
 	}));
 }
 

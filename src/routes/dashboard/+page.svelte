@@ -88,13 +88,11 @@
 							start_date_before_tz: todayRange.end,
 							limit: 100
 						}),
-					staleTime: 30_000,
 					refetchInterval: refreshInterval()
 				},
 				{
 					queryKey: queryKeys.timeEntries.filtered({ limit: 10 }),
 					queryFn: () => timeEntriesApi.listWithFilters({ limit: 10 }),
-					staleTime: 30_000,
 					refetchInterval: refreshInterval()
 				},
 				{
@@ -107,7 +105,6 @@
 							start_date_after_tz: weekStart,
 							limit: 500
 						}),
-					staleTime: 30_000,
 					refetchInterval: refreshInterval()
 				},
 				{

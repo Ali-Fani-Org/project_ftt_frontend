@@ -33,8 +33,7 @@ export interface RevalidationOptions {
 export function useProjects() {
 	return createQuery(() => ({
 		queryKey: queryKeys.projects,
-		queryFn: () => projects.listFresh(),
-		staleTime: 5 * 60_000
+		queryFn: () => projects.listFresh()
 	}));
 }
 
@@ -75,7 +74,6 @@ export function useTodaySessions(options?: () => RevalidationOptions) {
 			const completed = entries.filter((entry) => !entry.is_active).slice(0, 5);
 			return completed;
 		},
-		staleTime: 15_000,
 		refetchInterval: options ? (options().refetchInterval ?? false) : false
 	}));
 }
@@ -97,8 +95,7 @@ export function useRecentEntriesForSuggestions(limit = 300) {
 			});
 			const entries = Array.isArray(response) ? response : response.results;
 			return entries.filter((entry) => !entry.is_active);
-		},
-		staleTime: 5 * 60_000
+		}
 	}));
 }
 
@@ -108,8 +105,8 @@ export function useRecentEntriesForSuggestions(limit = 300) {
  * Fetch EVERY page of time entries within a `_tz` date range (used by the
  * dashboard charts, which need the complete dataset for a month/7 days).
  * Each page is cached by the api layer (fetchWithCache), and the aggregated
- * result is cached under a `range` query key so chart re-renders and navigation
- * don't re-fetch; edits invalidate it via queryKeys.timeEntries.all.
+ * result is cached under a `range` query key; edits invalidate it via
+ * queryKeys.timeEntries.all.
  */
 export function useAllTimeEntriesInRange(
 	startTz: () => string,
@@ -139,7 +136,6 @@ export function useAllTimeEntriesInRange(
 			}
 			return all;
 		},
-		staleTime: 5 * 60_000,
 		refetchInterval: options ? (options().refetchInterval ?? false) : false
 	}));
 }
@@ -187,7 +183,6 @@ export function useFilteredTimeEntries(
 				return data;
 			},
 			placeholderData: opts.keepPreviousData ? keepPreviousData : undefined,
-			staleTime: 30_000,
 			refetchInterval: opts.refetchInterval ?? false
 		};
 	});
@@ -221,7 +216,6 @@ export function useInfiniteTimeEntries(
 			getPreviousPageParam: (firstPage) =>
 				firstPage.previous ? extractCursor(firstPage.previous) : undefined,
 			placeholderData: opts.keepPreviousData ? keepPreviousData : undefined,
-			staleTime: 30_000,
 			refetchInterval: opts.refetchInterval ?? false
 		};
 	});
@@ -261,7 +255,6 @@ export function useAllFilteredTimeEntries(
 				return all;
 			},
 			placeholderData: opts.keepPreviousData ? keepPreviousData : undefined,
-			staleTime: 60_000,
 			refetchInterval: opts.refetchInterval ?? false
 		};
 	});
