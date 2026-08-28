@@ -49,7 +49,10 @@ export function useActiveTimer(options?: () => RevalidationOptions) {
 		return {
 			queryKey: queryKeys.timeEntries.active,
 			queryFn: () => timeEntriesApi.getCurrentActive(),
-			staleTime: 15_000,
+			// Always stale: the active timer must reflect the server, so every
+			// mount/focus/reconnect refetches it instead of trusting a cached
+			// (possibly synthetic or stale) entry.
+			staleTime: 0,
 			refetchInterval: opts.refetchInterval ?? false
 		};
 	});
@@ -279,29 +282,11 @@ export function useStartTimerMutation() {
 	const queryClient = useQueryClient();
 	return createMutation(() => ({
 		mutationFn: (data: Parameters<typeof timeEntriesApi.start>[0]) => timeEntriesApi.start(data),
-		// Optimistic: show a running timer immediately; the real entry (with the
-		// server id) replaces it on success, and any error rolls the UI back.
-		onMutate: async (data) => {
-			await queryClient.cancelQueries({ queryKey: queryKeys.timeEntries.active });
-			const previous = queryClient.getQueryData<TimeEntry | null>(queryKeys.timeEntries.active);
-			const optimistic: TimeEntry = {
-				id: -Date.now(), // temp id until the server responds
-				title: data.title,
-				description: data.description ?? '',
-				start_time: data.start_time ?? new Date().toISOString(),
-				end_time: null,
-				duration: null,
-				is_active: true,
-				user: '',
-				project: '',
-				tags: resolveTagsFromCache(data.tags ?? [])
-			};
-			queryClient.setQueryData(queryKeys.timeEntries.active, optimistic);
-			return { previous };
-		},
-		onError: (_err, _data, context) => {
-			queryClient.setQueryData(queryKeys.timeEntries.active, context?.previous ?? null);
-		},
+		// NO optimistic write on purpose: a synthetic "running" entry would show
+		// a timer the server never created if the request fails or the app
+		// closes mid-flight (and it could be persisted across restarts). The
+		// page's `isStartingTimer` state covers the pending window, and the real
+		// server entry replaces it on success.
 		onSettled: () => {
 			void queryClient.invalidateQueries({ queryKey: queryKeys.timeEntries.all });
 		},

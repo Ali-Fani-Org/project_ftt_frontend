@@ -97,7 +97,9 @@ refreshOnlyWhenVisible.subscribe(applyRefreshSettings);
 
 // --- Persistence: the whole time-entries + projects cache survives restarts so
 // the app works offline-first (replaces the old per-query localStorage seeds).
-// Bump `buster` whenever the cached data shape changes to force a clean slate.
+// Bump `buster` whenever the cached data shape changes to force a clean slate
+// (v2: the active-timer query is no longer persisted — a stale/synthetic entry
+// used to be hydrated as fresh after a restart, showing a phantom timer).
 export const queryPersister = createSyncStoragePersister({
 	storage: localStorage,
 	key: 'ftt-query-cache',
@@ -133,12 +135,21 @@ try {
 export const queryPersistOptions = {
 	persister: queryPersister,
 	maxAge: 7 * 24 * 60 * 60 * 1000, // keep persisted queries for 7 days
-	buster: 'ftt-v1',
+	buster: 'ftt-v2',
 	dehydrateOptions: {
 		shouldDehydrateQuery: (query: { queryKey: readonly unknown[]; state: { data: unknown } }) => {
 			const root = String(query.queryKey[0] ?? '');
+			// Never persist the active-timer query: it is live, server-truth state
+			// seeded at boot from the WebSocket snapshot + a refetch, so a stale
+			// or synthetic entry can never be hydrated as fresh after a restart.
+			const isActiveTimer =
+				query.queryKey[0] === 'time-entries' && query.queryKey[1] === 'active';
 			// Only persist our data queries — never auth/user/temp state.
-			return (root === 'time-entries' || root === 'projects') && query.state.data !== undefined;
+			return (
+				(root === 'time-entries' || root === 'projects') &&
+				query.state.data !== undefined &&
+				!isActiveTimer
+			);
 		}
 	}
 } as const;

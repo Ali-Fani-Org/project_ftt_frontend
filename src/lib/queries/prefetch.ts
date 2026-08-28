@@ -76,6 +76,9 @@ export function prefetchRoute(path: string): void {
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.timeEntries.active,
 				queryFn: () => timeEntries.getCurrentActive(),
+				// Always stale: a seeded/persisted active entry must be replaced by
+				// the server's answer, never trusted as-is.
+				staleTime: 0,
 				meta: { prefetch: true }
 			});
 			void queryClient.prefetchQuery({
@@ -163,6 +166,9 @@ export function prefetchRoute(path: string): void {
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.timeEntries.active,
 				queryFn: () => timeEntries.getCurrentActive(),
+				// Always stale: a seeded/persisted active entry must be replaced by
+				// the server's answer, never trusted as-is.
+				staleTime: 0,
 				meta: { prefetch: true }
 			});
 			break;

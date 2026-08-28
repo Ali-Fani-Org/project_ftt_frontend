@@ -1,5 +1,11 @@
 import ky from 'ky';
-import { authToken, baseUrl, globalLogout, DATA_STALE_THRESHOLD } from './stores';
+import {
+	authToken,
+	baseUrl,
+	globalLogout,
+	DATA_STALE_THRESHOLD,
+	ACTIVE_TIMER_VALIDITY_THRESHOLD
+} from './stores';
 import { get, writable } from 'svelte/store';
 
 // Create API client with 401 handling and timeout
@@ -668,12 +674,27 @@ export const timeEntries = {
 	getCurrentActive: async (): Promise<TimeEntry | null> => {
 		const cacheKey = 'time_entries:current_active';
 
-		// CRITICAL: No API calls when offline - return cache immediately
+		// The active timer must always reflect the server: it is live state that
+		// starts/stops constantly, and a stale entry misleads in both directions
+		// (phantom "running" timers and hidden real ones).
+		//
+		// Offline: show a cached entry ONLY if it is genuinely running and recent
+		// (within ACTIVE_TIMER_VALIDITY_THRESHOLD). Anything else means "no active
+		// timer" — never a stale phantom.
 		if (!get(network).isOnline) {
-			console.log(`Offline: returning cached data for ${cacheKey}`);
 			const cached = getCached<TimeEntry>(cacheKey);
-			if (cached) return cached;
-			console.warn(`No cached data available for ${cacheKey} while offline`);
+			if (cached) {
+				const meta = apiCache.get(cacheKey);
+				const age = meta ? Date.now() - meta.timestamp : Infinity;
+				if (cached.is_active && age <= ACTIVE_TIMER_VALIDITY_THRESHOLD) {
+					console.log(`Offline: showing cached active timer (${Math.round(age / 60000)}m old)`);
+					return cached;
+				}
+				console.warn(
+					`Offline: ignoring cached active timer (${age === Infinity ? 'unknown age' : `${Math.round(age / 60000)}m old`})`
+				);
+			}
+			console.warn(`Offline: no valid cached active timer for ${cacheKey}`);
 			return null;
 		}
 
@@ -692,19 +713,14 @@ export const timeEntries = {
 				}
 				return null;
 			}
-			// Cache the successful response
+			// Cache the successful response as an offline fallback
 			setCached(cacheKey, entry, CACHE_TTL);
 			return entry;
 		} catch (error: any) {
-			// For real errors (network, 5xx), try to get cached data
-			console.warn(`API call failed for ${cacheKey}, trying cache...`, error);
-			const cached = getCached<TimeEntry>(cacheKey);
-			if (cached) {
-				console.log(`Using cached data for ${cacheKey}`);
-				return cached;
-			}
-
-			// No cached data available - rethrow the error
+			// Never serve stale data for the active timer on error — surface the
+			// failure so TanStack retries (and the UI shows an error) instead of
+			// silently presenting a phantom or missing timer.
+			console.warn(`API call failed for ${cacheKey}, rethrowing`, error);
 			throw error;
 		}
 	},

@@ -575,6 +575,7 @@
 
 			const startedEntry = await startTimerMutation.mutateAsync(payload);
 			startTimer();
+			error = ''; // Clear any previous failure so the page UI returns
 
 			// Emit event to Tauri
 			if (typeof window !== 'undefined' && (window as any).__TAURI__) {
@@ -643,6 +644,7 @@
 
 		try {
 			await stopTimerMutation.mutateAsync(activeEntry.id);
+			error = ''; // Clear any previous failure so the page UI returns
 
 			// Emit event to Tauri
 			if (typeof window !== 'undefined' && (window as any).__TAURI__) {

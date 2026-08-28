@@ -4,24 +4,53 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
+// The default vitest environment is node, which has no localStorage — provide a
+// minimal in-memory stub so the api cache layer (which uses localStorage) works.
+const localStorageMock = (() => {
+	const store = new Map<string, string>();
+	return {
+		getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+		setItem: (key: string, value: string) => void store.set(key, String(value)),
+		removeItem: (key: string) => void store.delete(key),
+		clear: () => void store.clear(),
+		key: (index: number) => [...store.keys()][index] ?? null,
+		get length() {
+			return store.size;
+		}
+	};
+})();
+vi.stubGlobal('localStorage', localStorageMock);
+
 // Mock browser environment
 vi.mock('$app/environment', () => ({
 	browser: true
 }));
 
+// A single MUTABLE network mock. `isOnline` is flipped per test instead of
+// re-registering the module with nested vi.mock calls — nested vi.mock is
+// hoisted to the top of the file, so the last registration used to win for
+// EVERY test (making the whole file see the offline mock).
+const networkMock = vi.hoisted(() => ({ isOnline: true }));
+
 // Mock network store
 vi.mock('../network', () => ({
 	network: {
 		subscribe: (callback: any) => {
-			callback({ isOnline: true });
+			callback({ isOnline: networkMock.isOnline });
 			return () => {};
 		},
 		get isOnline() {
-			return true;
+			return networkMock.isOnline;
 		}
 	},
-	checkConnectivity: vi.fn(() => Promise.resolve(true))
+	checkConnectivity: vi.fn(() => Promise.resolve(networkMock.isOnline))
 }));
+
+// Reset the network to online before every test (offline tests flip it inside
+// the test body; this outer hook runs first for each test).
+beforeEach(() => {
+	networkMock.isOnline = true;
+});
 
 // Mock stores
 vi.mock('../stores', () => ({
@@ -38,7 +67,8 @@ vi.mock('../stores', () => ({
 		}
 	},
 	globalLogout: vi.fn(),
-	DATA_STALE_THRESHOLD: 300000
+	DATA_STALE_THRESHOLD: 300000,
+	ACTIVE_TIMER_VALIDITY_THRESHOLD: 4 * 60 * 60 * 1000
 }));
 
 describe('fetchWithRetry() - Success Path', () => {
@@ -114,11 +144,15 @@ describe('fetchWithRetry() - Retry Logic', () => {
 			.mockResolvedValueOnce(new Response(JSON.stringify({ success: true })));
 
 		const { fetchWithRetry } = await import('../api');
-		const result = await fetchWithRetry(
+		const promise = fetchWithRetry(
 			() => fetch('http://localhost:3000/test').then((r) => r.json()),
 			3,
 			100
 		);
+
+		// Retry backoff is a fake timer — advance it so the retry fires.
+		await vi.advanceTimersByTimeAsync(100);
+		const result = await promise;
 
 		expect(result).toEqual({ success: true });
 		expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -134,11 +168,16 @@ describe('fetchWithRetry() - Retry Logic', () => {
 			.mockResolvedValueOnce(new Response(JSON.stringify({ success: true })));
 
 		const { fetchWithRetry } = await import('../api');
-		const result = await fetchWithRetry(
+		const promise = fetchWithRetry(
 			() => fetch('http://localhost:3000/test').then((r) => r.json()),
 			3,
 			100
 		);
+
+		// Backoffs: 100ms then 200ms (both fake timers).
+		await vi.advanceTimersByTimeAsync(100);
+		await vi.advanceTimersByTimeAsync(200);
+		const result = await promise;
 
 		expect(result).toEqual({ success: true });
 		expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -155,14 +194,21 @@ describe('fetchWithRetry() - Retry Logic', () => {
 			.mockResolvedValueOnce(new Response(JSON.stringify({ success: true })));
 
 		const { fetchWithRetry } = await import('../api');
-		const result = await fetchWithRetry(
+		// maxRetries=4 = 1 initial attempt + 3 retries (the test name says 3).
+		const promise = fetchWithRetry(
 			() => fetch('http://localhost:3000/test').then((r) => r.json()),
-			3,
+			4,
 			100
 		);
 
+		// Backoffs: 100ms, 200ms, then 400ms (all fake timers).
+		await vi.advanceTimersByTimeAsync(100);
+		await vi.advanceTimersByTimeAsync(200);
+		await vi.advanceTimersByTimeAsync(400);
+		const result = await promise;
+
 		expect(result).toEqual({ success: true });
-		expect(mockFetch).toHaveBeenCalledTimes(3);
+		expect(mockFetch).toHaveBeenCalledTimes(4);
 	});
 
 	it('fails after max retries exhausted', async () => {
@@ -175,11 +221,22 @@ describe('fetchWithRetry() - Retry Logic', () => {
 			.mockRejectedValueOnce(error500);
 
 		const { fetchWithRetry } = await import('../api');
+		const promise = fetchWithRetry(
+			() => fetch('http://localhost:3000/test').then((r) => r.json()),
+			3,
+			100
+		);
+		// Attach the rejection handler immediately so the rejection during timer
+		// advancement isn't treated as unhandled.
+		const assertion = expect(promise).rejects.toThrow('Server Error');
 
-		await expect(
-			fetchWithRetry(() => fetch('http://localhost:3000/test').then((r) => r.json()), 3, 100)
-		).rejects.toThrow('Server Error');
+		// Backoffs: 100ms, 200ms, then the final attempt's 400ms sleep before
+		// the loop throws (all fake timers).
+		await vi.advanceTimersByTimeAsync(100);
+		await vi.advanceTimersByTimeAsync(200);
+		await vi.advanceTimersByTimeAsync(400);
 
+		await assertion;
 		expect(mockFetch).toHaveBeenCalledTimes(3);
 	});
 
@@ -197,10 +254,22 @@ describe('fetchWithRetry() - Retry Logic', () => {
 			.mockRejectedValueOnce(error3);
 
 		const { fetchWithRetry } = await import('../api');
+		const promise = fetchWithRetry(
+			() => fetch('http://localhost:3000/test').then((r) => r.json()),
+			3,
+			100
+		);
+		// Attach the rejection handler immediately so the rejection during timer
+		// advancement isn't treated as unhandled.
+		const assertion = expect(promise).rejects.toThrow('Error 3');
 
-		await expect(
-			fetchWithRetry(() => fetch('http://localhost:3000/test').then((r) => r.json()), 3, 100)
-		).rejects.toThrow('Error 3');
+		// Backoffs: 100ms, 200ms, then the final attempt's 400ms sleep before
+		// the loop throws (all fake timers).
+		await vi.advanceTimersByTimeAsync(100);
+		await vi.advanceTimersByTimeAsync(200);
+		await vi.advanceTimersByTimeAsync(400);
+
+		await assertion;
 	});
 });
 
@@ -270,11 +339,15 @@ describe('fetchWithRetry() - Error Filtering', () => {
 			.mockResolvedValueOnce(new Response(JSON.stringify({ success: true })));
 
 		const { fetchWithRetry } = await import('../api');
-		const result = await fetchWithRetry(
+		const promise = fetchWithRetry(
 			() => fetch('http://localhost:3000/test').then((r) => r.json()),
 			3,
 			100
 		);
+
+		// Retry backoff is a fake timer — advance it so the retry fires.
+		await vi.advanceTimersByTimeAsync(100);
+		const result = await promise;
 
 		expect(result).toEqual({ success: true });
 		expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -289,11 +362,14 @@ describe('fetchWithRetry() - Error Filtering', () => {
 			.mockResolvedValueOnce(new Response(JSON.stringify({ success: true })));
 
 		const { fetchWithRetry } = await import('../api');
-		const result = await fetchWithRetry(
+		const promise = fetchWithRetry(
 			() => fetch('http://localhost:3000/test').then((r) => r.json()),
 			3,
 			100
 		);
+
+		await vi.advanceTimersByTimeAsync(100);
+		const result = await promise;
 
 		expect(result).toEqual({ success: true });
 		expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -308,11 +384,14 @@ describe('fetchWithRetry() - Error Filtering', () => {
 			.mockResolvedValueOnce(new Response(JSON.stringify({ success: true })));
 
 		const { fetchWithRetry } = await import('../api');
-		const result = await fetchWithRetry(
+		const promise = fetchWithRetry(
 			() => fetch('http://localhost:3000/test').then((r) => r.json()),
 			3,
 			100
 		);
+
+		await vi.advanceTimersByTimeAsync(100);
+		const result = await promise;
 
 		expect(result).toEqual({ success: true });
 		expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -327,11 +406,14 @@ describe('fetchWithRetry() - Error Filtering', () => {
 			.mockResolvedValueOnce(new Response(JSON.stringify({ success: true })));
 
 		const { fetchWithRetry } = await import('../api');
-		const result = await fetchWithRetry(
+		const promise = fetchWithRetry(
 			() => fetch('http://localhost:3000/test').then((r) => r.json()),
 			3,
 			100
 		);
+
+		await vi.advanceTimersByTimeAsync(100);
+		const result = await promise;
 
 		expect(result).toEqual({ success: true });
 		expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -345,11 +427,14 @@ describe('fetchWithRetry() - Error Filtering', () => {
 			.mockResolvedValueOnce(new Response(JSON.stringify({ success: true })));
 
 		const { fetchWithRetry } = await import('../api');
-		const result = await fetchWithRetry(
+		const promise = fetchWithRetry(
 			() => fetch('http://localhost:3000/test').then((r) => r.json()),
 			3,
 			100
 		);
+
+		await vi.advanceTimersByTimeAsync(100);
+		const result = await promise;
 
 		expect(result).toEqual({ success: true });
 		expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -382,17 +467,7 @@ describe('fetchWithRetry() - Network Awareness', () => {
 	});
 
 	it('throws immediately when offline', async () => {
-		// Temporarily override network mock
-		vi.doUnmock('../network');
-		vi.mock('../network', () => ({
-			network: {
-				subscribe: (callback: any) => {
-					callback({ isOnline: false });
-					return () => {};
-				}
-			},
-			checkConnectivity: vi.fn(() => Promise.resolve(false))
-		}));
+		networkMock.isOnline = false;
 
 		const { fetchWithRetry } = await import('../api');
 
@@ -480,9 +555,10 @@ describe('fetchWithRetry() - Backoff Timing', () => {
 			.mockResolvedValueOnce(new Response(JSON.stringify({})));
 
 		const { fetchWithRetry } = await import('../api');
+		// maxRetries=4 = 1 initial attempt + 3 retries (the test name says 3).
 		const promise = fetchWithRetry(
 			() => fetch('http://localhost:3000/test').then((r) => r.json()),
-			3,
+			4,
 			1000
 		);
 
@@ -517,6 +593,102 @@ describe('fetchWithRetry() - Backoff Timing', () => {
 		expect(mockFetch).toHaveBeenCalledTimes(2);
 
 		await promise;
+	});
+});
+
+describe('timeEntries.getCurrentActive()', () => {
+	const CACHE_KEY = 'time_entries:current_active';
+	const ACTIVE_ENTRY = {
+		id: 1,
+		title: 'Test timer',
+		description: '',
+		start_time: '2026-08-28T10:00:00+03:30',
+		end_time: null,
+		duration: null,
+		is_active: true,
+		user: 'tester',
+		project: 'Test Project',
+		tags: []
+	};
+
+	function seedCache(apiCacheMap: Map<string, any>, data: any, timestamp: number) {
+		apiCacheMap.set(CACHE_KEY, {
+			data,
+			timestamp,
+			ttl: 7 * 24 * 60 * 60 * 1000,
+			lastValidated: timestamp,
+			isStale: false
+		});
+	}
+
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		mockFetch.mockReset();
+		networkMock.isOnline = true;
+		const { apiCache } = await import('../api');
+		apiCache.clear();
+	});
+
+	it('returns the active entry when the server reports one', async () => {
+		mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ entry: ACTIVE_ENTRY })));
+
+		const { timeEntries } = await import('../api');
+		const result = await timeEntries.getCurrentActive();
+
+		expect(result).toEqual(ACTIVE_ENTRY);
+	});
+
+	it('returns null and clears the cache when the server reports no active entry', async () => {
+		mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ entry: null })));
+
+		const { timeEntries, apiCache } = await import('../api');
+		seedCache(apiCache, ACTIVE_ENTRY, Date.now());
+
+		const result = await timeEntries.getCurrentActive();
+
+		expect(result).toBeNull();
+		expect(apiCache.has(CACHE_KEY)).toBe(false);
+	});
+
+	it('rethrows on server error instead of serving a stale cached entry', async () => {
+		mockFetch.mockRejectedValueOnce(new Error('Network down'));
+
+		const { timeEntries, apiCache } = await import('../api');
+		seedCache(apiCache, ACTIVE_ENTRY, Date.now());
+
+		// Must reject (not resolve with the stale cached entry): the active timer
+		// is never silently served from cache when the server call fails.
+		await expect(timeEntries.getCurrentActive()).rejects.toThrow();
+	});
+
+	it('returns a fresh cached active entry while offline', async () => {
+		networkMock.isOnline = false;
+
+		const { timeEntries, apiCache } = await import('../api');
+		seedCache(apiCache, ACTIVE_ENTRY, Date.now());
+
+		const result = await timeEntries.getCurrentActive();
+		expect(result).toEqual(ACTIVE_ENTRY);
+	});
+
+	it('returns null while offline when the cached entry is older than 4 hours', async () => {
+		networkMock.isOnline = false;
+
+		const { timeEntries, apiCache } = await import('../api');
+		seedCache(apiCache, ACTIVE_ENTRY, Date.now() - 5 * 60 * 60 * 1000);
+
+		const result = await timeEntries.getCurrentActive();
+		expect(result).toBeNull();
+	});
+
+	it('returns null while offline when the cached entry is not active', async () => {
+		networkMock.isOnline = false;
+
+		const { timeEntries, apiCache } = await import('../api');
+		seedCache(apiCache, { ...ACTIVE_ENTRY, is_active: false }, Date.now());
+
+		const result = await timeEntries.getCurrentActive();
+		expect(result).toBeNull();
 	});
 });
 

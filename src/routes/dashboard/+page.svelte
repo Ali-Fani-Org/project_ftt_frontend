@@ -113,7 +113,10 @@
 				{
 					queryKey: queryKeys.timeEntries.active,
 					queryFn: () => timeEntriesApi.getCurrentActive(),
-					staleTime: 15_000,
+					// Always stale: the active timer must reflect the server, so every
+					// mount/focus/reconnect refetches it instead of trusting a cached
+					// (possibly synthetic or stale) entry.
+					staleTime: 0,
 					refetchInterval: refreshInterval()
 				}
 			]
