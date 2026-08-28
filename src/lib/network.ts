@@ -98,6 +98,12 @@ const createNetworkStore = () => {
 	const ONLINE_POLL_MS = 30000;
 	const OFFLINE_POLL_MS = 5000;
 	const FAILURES_BEFORE_OFFLINE = 2;
+	// Hysteresis on recovery: require this many consecutive good probes before
+	// flipping back online. Mirrors FAILURES_BEFORE_OFFLINE so the store cannot
+	// flap offline<->online around a flaky backend — every offline->online
+	// transition makes TanStack refetch EVERY mounted query (refetchOnReconnect),
+	// and a flap cycle turns that into a full API request storm.
+	const SUCCESS_BEFORE_ONLINE = 2;
 
 	// Retry configuration for probe
 	const PROBE_RETRIES = 3;
@@ -108,6 +114,9 @@ const createNetworkStore = () => {
 	const HEARTBEAT_DEBOUNCE_MS = 1000;
 
 	let consecutiveFailures = 0;
+	let consecutiveSuccesses = 0;
+	// Mirror of the store's isOnline for the recovery-hysteresis gate below.
+	let currentlyOnline = false;
 	let heartbeatIntervalId: number | null = null;
 	let heartbeatDebounceTimer: number | null = null;
 	let checkInFlight: Promise<boolean> | null = null;
@@ -182,6 +191,8 @@ const createNetworkStore = () => {
 	};
 
 	const applyConnectivityResult = (online: boolean) => {
+		currentlyOnline = online;
+		if (online) consecutiveSuccesses = 0;
 		const connectionInfo = getConnectionInfo();
 		const connectionQuality = getConnectionQuality(connectionInfo);
 
@@ -225,11 +236,20 @@ const createNetworkStore = () => {
 			
 			if (ok) {
 				consecutiveFailures = 0;
+				consecutiveSuccesses += 1;
+				// Recovery hysteresis: while considered offline, the first good
+				// probe is not enough — keep fast polling until the backend has
+				// proven stable (see SUCCESS_BEFORE_ONLINE).
+				if (!currentlyOnline && consecutiveSuccesses < SUCCESS_BEFORE_ONLINE) {
+					scheduleHeartbeat(OFFLINE_POLL_MS);
+					return false;
+				}
 				scheduleHeartbeat(ONLINE_POLL_MS);
 				applyConnectivityResult(true);
 				return true;
 			}
 
+			consecutiveSuccesses = 0;
 			consecutiveFailures += 1;
 			
 			// Only switch to fast polling and mark offline after reaching threshold
@@ -274,26 +294,6 @@ const createNetworkStore = () => {
 
 	// Initialize network detection
 	if (browser) {
-		// Check initial connection status
-		const checkInitialStatus = () => {
-			const connectionInfo = getConnectionInfo();
-			const connectionQuality = getConnectionQuality(connectionInfo);
-
-			set({
-				isOnline: navigator.onLine,
-				isChecking: true,
-				lastChecked: new Date(),
-				lastOnline: navigator.onLine ? new Date() : null,
-				connectionType: navigator.onLine ? 'online' : 'offline',
-				connectionQuality,
-				connectionInfo: connectionInfo || null,
-				retryCount: 0
-			});
-
-			runActiveCheck();
-			scheduleHeartbeat(navigator.onLine ? ONLINE_POLL_MS : OFFLINE_POLL_MS);
-		};
-
 		// Event listeners for connection changes
 		const handleOnline = () => {
 			consecutiveFailures = 0;
@@ -303,6 +303,8 @@ const createNetworkStore = () => {
 
 		const handleOffline = () => {
 			consecutiveFailures = FAILURES_BEFORE_OFFLINE;
+			consecutiveSuccesses = 0;
+			currentlyOnline = false;
 			scheduleHeartbeat(OFFLINE_POLL_MS);
 			update((status) => ({
 				...status,
@@ -339,7 +341,22 @@ const createNetworkStore = () => {
 		}
 
 		// Check initial status
-		checkInitialStatus();
+		const initialOnline = navigator.onLine;
+		currentlyOnline = initialOnline;
+		consecutiveSuccesses = 0;
+		set({
+			isOnline: initialOnline,
+			isChecking: true,
+			lastChecked: new Date(),
+			lastOnline: initialOnline ? new Date() : null,
+			connectionType: initialOnline ? 'online' : 'offline',
+			connectionQuality: getConnectionQuality(getConnectionInfo()),
+			connectionInfo: getConnectionInfo() || null,
+			retryCount: 0
+		});
+
+		runActiveCheck();
+		scheduleHeartbeat(initialOnline ? ONLINE_POLL_MS : OFFLINE_POLL_MS);
 		
 		// Update cached value when baseUrl changes
 		baseUrl.subscribe((newUrl: string) => {

@@ -52,6 +52,9 @@ const HEARTBEAT_INTERVAL = 15_000;
 const HEARTBEAT_TIMEOUT = 45_000;
 const MAX_DISPLAY_ATTEMPTS = 3;
 const TICKET_FETCH_TIMEOUT_MS = 10_000;
+// Minimum gap between full time-entry cache invalidations triggered by
+// time_entry_changed bursts (see invalidateTimeEntryCache below).
+const INVALIDATION_MIN_INTERVAL_MS = 5_000;
 
 class TauriNotificationService implements NotificationService {
 	private socket: WebSocket | null = null;
@@ -66,6 +69,8 @@ class TauriNotificationService implements NotificationService {
 	private readonly recentIds = new Set<string>();
 	private readonly pendingAcks = new Set<string>();
 	private readonly deliveryFailures = new Map<string, number>();
+	private lastGlobalInvalidation = 0;
+	private invalidationTimer: ReturnType<typeof setTimeout> | null = null;
 	private readonly serviceId = Math.random().toString(36).slice(2, 11);
 	private connectionId: string | null = null;
 	isConnecting = false;
@@ -75,9 +80,24 @@ class TauriNotificationService implements NotificationService {
 			throw new Error('NotificationService can only be used in browser environment');
 		}
 
+		let previousOnline: boolean | null = null;
 		this.unsubscribeNetwork = network.subscribe((status) => {
+			// The store updates on every heartbeat/focus/visibility probe — react
+			// to genuine offline->online transitions, not to every update.
+			const transitionedOnline = previousOnline === false && status.isOnline;
+			previousOnline = status.isOnline;
+
 			if (status.isOnline && !this.connected && !this.manuallyDisconnected && get(authToken)) {
-				this.reconnectAttempts = 0;
+				if (transitionedOnline) {
+					// Fresh connectivity: drop the accumulated backoff so the first
+					// reconnect attempt is immediate.
+					this.reconnectAttempts = 0;
+					this.clearReconnectTimer();
+				}
+				// A pending backoff timer already schedules the next attempt —
+				// calling connect() on every store update would bypass the backoff
+				// and hammer the server while it is struggling.
+				if (this.reconnectTimer || this.isConnecting) return;
 				void this.connect();
 			}
 			if (!status.isOnline) {
@@ -206,7 +226,7 @@ class TauriNotificationService implements NotificationService {
 			if (message.active_entry !== undefined) {
 				queryClient.setQueryData(queryKeys.timeEntries.active, message.active_entry);
 			}
-			void queryClient.invalidateQueries({ queryKey: queryKeys.timeEntries.all });
+			this.invalidateTimeEntryCache();
 			return;
 		}
 		if (message.type === 'notification') {
@@ -258,6 +278,38 @@ class TauriNotificationService implements NotificationService {
 	private queueAck(id: string): void {
 		this.pendingAcks.add(id);
 		this.flushAcks();
+	}
+
+	/**
+	 * Invalidate the whole time-entry cache, throttled.
+	 *
+	 * Every invalidation refetches EVERY mounted time-entry query (lists,
+	 * report, today, charts). A burst of time_entry_changed events — a
+	 * reconnect+replay, several rapid edits, or a server event storm — used to
+	 * fire one full invalidation per message and hammer the API. This
+	 * coalesces the burst: at most one invalidation per
+	 * INVALIDATION_MIN_INTERVAL_MS, with a trailing run so the state after the
+	 * last event still lands.
+	 */
+	private invalidateTimeEntryCache(): void {
+		const run = () => {
+			this.lastGlobalInvalidation = Date.now();
+			this.invalidationTimer = null;
+			void queryClient.invalidateQueries({ queryKey: queryKeys.timeEntries.all });
+		};
+
+		const elapsed = Date.now() - this.lastGlobalInvalidation;
+		if (elapsed >= INVALIDATION_MIN_INTERVAL_MS) {
+			if (this.invalidationTimer) {
+				clearTimeout(this.invalidationTimer);
+				this.invalidationTimer = null;
+			}
+			run();
+			return;
+		}
+
+		if (this.invalidationTimer) return;
+		this.invalidationTimer = setTimeout(run, INVALIDATION_MIN_INTERVAL_MS - elapsed);
 	}
 
 	private flushAcks(): void {
