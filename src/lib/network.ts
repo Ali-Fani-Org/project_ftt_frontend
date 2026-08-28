@@ -18,10 +18,13 @@ export interface NetworkStatus {
 const createProbeUrl = (baseUrlValue: string): string | null => {
 	try {
 		const url = new URL(baseUrlValue);
-		// Host nginx serves this without touching Django workers.
-		url.pathname = `${url.pathname.replace(/\/$/, '')}/__ping`;
+		// Probe the API root itself: the backend's ping view answers GET / with
+		// {"status": "ok"} (health_check app, mounted at the Django root, and
+		// nginx proxies / to it). The old /__ping probe was nginx-only and is
+		// no longer needed. No cache-buster param — every probe fetch uses
+		// cache: 'no-store'.
+		url.pathname = `${url.pathname.replace(/\/+$/, '')}/`;
 		url.search = '';
-		url.searchParams.set('__ping', String(Date.now()));
 		return url.toString();
 	} catch (error) {
 		console.warn('Invalid base URL for network probe:', baseUrlValue);
