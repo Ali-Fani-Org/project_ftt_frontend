@@ -70,11 +70,13 @@ export function prefetchRoute(path: string): void {
 		case '/timer': {
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.projects,
-				queryFn: () => projects.listFresh()
+				queryFn: () => projects.listFresh(),
+				meta: { prefetch: true }
 			});
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.timeEntries.active,
-				queryFn: () => timeEntries.getCurrentActive()
+				queryFn: () => timeEntries.getCurrentActive(),
+				meta: { prefetch: true }
 			});
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.timeEntries.today(getTehranToday()),
@@ -109,11 +111,13 @@ export function prefetchRoute(path: string): void {
 		case '/settings':
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.tags.list(),
-				queryFn: () => tags.list()
+				queryFn: () => tags.list(),
+				meta: { prefetch: true }
 			});
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.projects,
-				queryFn: () => projects.listFresh()
+				queryFn: () => projects.listFresh(),
+				meta: { prefetch: true }
 			});
 			break;
 
@@ -137,7 +141,8 @@ export function prefetchRoute(path: string): void {
 			});
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.timeEntries.filtered({ limit: 10 }),
-				queryFn: () => timeEntries.listWithFilters({ limit: 10 })
+				queryFn: () => timeEntries.listWithFilters({ limit: 10 }),
+				meta: { prefetch: true }
 			});
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.timeEntries.filtered({
@@ -152,11 +157,13 @@ export function prefetchRoute(path: string): void {
 			});
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.tags.list(),
-				queryFn: () => tags.list()
+				queryFn: () => tags.list(),
+				meta: { prefetch: true }
 			});
 			void queryClient.prefetchQuery({
 				queryKey: queryKeys.timeEntries.active,
-				queryFn: () => timeEntries.getCurrentActive()
+				queryFn: () => timeEntries.getCurrentActive(),
+				meta: { prefetch: true }
 			});
 			break;
 		}

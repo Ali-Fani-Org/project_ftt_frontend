@@ -612,6 +612,9 @@
 						onclick={() => navigate(item.href)}
 						onmouseenter={() => prefetchRoute(item.href)}
 						onfocus={() => prefetchRoute(item.href)}
+						onkeydown={(event) => {
+							if (event.key === 'Enter' || event.key === ' ') prefetchRoute(item.href);
+						}}
 						title={effectiveCollapsed ? item.name : ''}
 						aria-label={item.name}
 					>
@@ -649,6 +652,9 @@
 					onclick={() => navigate('/settings')}
 					onmouseenter={() => prefetchRoute('/settings')}
 					onfocus={() => prefetchRoute('/settings')}
+					onkeydown={(event) => {
+						if (event.key === 'Enter' || event.key === ' ') prefetchRoute('/settings');
+					}}
 					title={effectiveCollapsed ? 'Settings' : ''}
 					aria-label="Settings"
 				>

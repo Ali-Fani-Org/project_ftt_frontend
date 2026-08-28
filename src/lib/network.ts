@@ -18,6 +18,9 @@ export interface NetworkStatus {
 const createProbeUrl = (baseUrlValue: string): string | null => {
 	try {
 		const url = new URL(baseUrlValue);
+		// Host nginx serves this without touching Django workers.
+		url.pathname = `${url.pathname.replace(/\/$/, '')}/__ping`;
+		url.search = '';
 		url.searchParams.set('__ping', String(Date.now()));
 		return url.toString();
 	} catch (error) {
@@ -57,12 +60,12 @@ export async function pingBaseUrl(
 	const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 	const start = performance.now();
 	try {
-		await fetch(probeUrl, {
+		const response = await fetch(probeUrl, {
 			method: 'GET',
-			mode: 'no-cors',
 			cache: 'no-store',
 			signal: controller.signal
 		});
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
 		const pingMs = Math.max(0, Math.round(performance.now() - start));
 		return { ok: true, pingMs, checkedAt, error: null };
