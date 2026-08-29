@@ -25,7 +25,8 @@
 	import { createHotkey } from '@tanstack/svelte-hotkeys';
 	import {
 		useInfiniteTimeEntries,
-		useAllFilteredTimeEntries,
+		useEntryStats,
+		fetchAllFilteredEntries,
 		useProjects,
 		type TimeEntryFilters
 	} from '$lib/queries/timeEntries';
@@ -132,15 +133,25 @@
 		};
 	}
 
+	// Stats are order-independent — stripping `ordering` from the key keeps a
+	// sort change from triggering another stats request.
+	function getStatsFilters(): Omit<TimeEntryFilters, 'ordering'> {
+		const { start_date_after_tz, start_date_before_tz, project, search, tags } =
+			getCurrentFilters();
+		return { start_date_after_tz, start_date_before_tz, project, search, tags };
+	}
+
 	// Cursor-paginated list (the journal). Pages accumulate under one key so
 	// prev/next navigation never refetches pages already loaded.
 	const entriesQuery = useInfiniteTimeEntries(getCurrentFilters, () => ({
 		keepPreviousData: true
 	}));
 
-	// Every entry matching the filters, paged through once — drives the exact
-	// totals in the stats strip and the CSV export. Cached per filter set.
-	const allFilteredQuery = useAllFilteredTimeEntries(getCurrentFilters, () => ({
+	// Stats strip: one aggregated DB request per filter set (api
+	// /entry_stats/) — the old path paged through EVERY matching entry (dozens
+	// of 200-row requests on the All/Year ranges) on every mount, filter
+	// change, focus, and WS invalidation.
+	const statsQuery = useEntryStats(getStatsFilters, () => ({
 		keepPreviousData: true
 	}));
 
@@ -172,21 +183,14 @@
 	);
 
 	// ---------------------------------------------------------------------------
-	// Stats (from the full filtered dataset — exact, filter-aware)
+	// Stats (server-aggregated — exact, filter-aware)
 	// ---------------------------------------------------------------------------
 
-	const statsEntries = $derived(allFilteredQuery.data ?? []);
-
-	const totalSeconds = $derived(
-		statsEntries.reduce((sum, e) => sum + (parseFloat(e.duration ?? '') || 0), 0)
+	const stats = $derived(statsQuery.data);
+	const avgPerDaySeconds = $derived(
+		stats && stats.distinct_days > 0 ? stats.total_seconds / stats.distinct_days : 0
 	);
-	const entryCount = $derived(statsEntries.length);
-	const activeCount = $derived(statsEntries.filter((e) => e.is_active).length);
-	const distinctDays = $derived(
-		new Set(statsEntries.map((e) => dayKey(new Date(e.start_time)))).size
-	);
-	const avgPerDaySeconds = $derived(distinctDays > 0 ? totalSeconds / distinctDays : 0);
-	const statsLoading = $derived(allFilteredQuery.isPending && statsEntries.length === 0);
+	const statsLoading = $derived(statsQuery.isPending && stats == null);
 
 	// ---------------------------------------------------------------------------
 	// Day grouping — the journal
@@ -396,42 +400,48 @@
 		selectedEntry = updatedEntry;
 	}
 
-	// CSV export of the full filtered dataset (exact, not just loaded pages).
+	// CSV export of the full filtered dataset — fetched ON DEMAND. The old
+	// implementation rode on an always-mounted query that paged through every
+	// matching entry; now the full fetch only happens when the user exports.
 	let exporting = $state(false);
 
-	function exportCSV() {
-		const entries = allFilteredQuery.data ?? [];
-		if (entries.length === 0) return;
+	async function exportCSV() {
+		if (exporting) return;
 		exporting = true;
+		try {
+			const entries = await fetchAllFilteredEntries(getCurrentFilters());
+			if (entries.length === 0) return;
 
-		// Flush synchronously — this is small (personal tracker dataset).
-		const rows = [
-			['Title', 'Project', 'Start', 'End', 'Duration (h:m:s)', 'Tags'].join(','),
-			...entries.map((e) =>
-				[
-					`"${(e.title || '').replace(/"/g, '""')}"`,
-					`"${(e.project || '').replace(/"/g, '""')}"`,
-					new Date(e.start_time).toISOString(),
-					e.end_time ? new Date(e.end_time).toISOString() : '',
-					formatDurationCSV(parseFloat(e.duration ?? '') || 0),
-					`"${(e.tags || []).map((t) => (typeof t === 'string' ? t : t.title)).join('; ')}"`
-				].join(',')
-			)
-		];
+			// Flush synchronously — this is small (personal tracker dataset).
+			const rows = [
+				['Title', 'Project', 'Start', 'End', 'Duration (h:m:s)', 'Tags'].join(','),
+				...entries.map((e) =>
+					[
+						`"${(e.title || '').replace(/"/g, '""')}"`,
+						`"${(e.project || '').replace(/"/g, '""')}"`,
+						new Date(e.start_time).toISOString(),
+						e.end_time ? new Date(e.end_time).toISOString() : '',
+						formatDurationCSV(parseFloat(e.duration ?? '') || 0),
+						`"${(e.tags || []).map((t) => (typeof t === 'string' ? t : t.title)).join('; ')}"`
+					].join(',')
+				)
+			];
 
-		const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		const slug = getTimeRangeDisplay(selectedTimeRange)
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, '-');
-		a.href = url;
-		a.download = `time-entries-${slug || 'all'}.csv`;
-		a.click();
-		URL.revokeObjectURL(url);
-		setTimeout(() => {
-			exporting = false;
-		}, 600);
+			const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			const slug = getTimeRangeDisplay(selectedTimeRange)
+				.toLowerCase()
+				.replace(/[^a-z0-9]+/g, '-');
+			a.href = url;
+			a.download = `time-entries-${slug || 'all'}.csv`;
+			a.click();
+			URL.revokeObjectURL(url);
+		} finally {
+			setTimeout(() => {
+				exporting = false;
+			}, 600);
+		}
 	}
 
 	// Keep the sort control label in sync with programmatic sort changes.
@@ -490,7 +500,7 @@
 							{#if statsLoading}
 								<span class="loading loading-spinner loading-xs text-primary"></span>
 							{:else}
-								{formatDurationShort(totalSeconds)}
+								{formatDurationShort(stats?.total_seconds ?? 0)}
 							{/if}
 						</div>
 					</div>
@@ -507,7 +517,7 @@
 					</span>
 					<div class="min-w-0">
 						<div class="text-xs text-base-content/60">Entries</div>
-						<div class="text-lg font-bold leading-tight">{entryCount}</div>
+						<div class="text-lg font-bold leading-tight">{stats?.entry_count ?? 0}</div>
 					</div>
 				</div>
 			</div>
@@ -523,10 +533,10 @@
 					<div class="min-w-0">
 						<div class="text-xs text-base-content/60">Active now</div>
 						<div class="text-lg font-bold leading-tight">
-							{#if activeCount > 0}
+							{#if (stats?.active_count ?? 0) > 0}
 								<span class="inline-flex items-center gap-1.5 text-success">
 									<span class="h-2 w-2 animate-pulse rounded-full bg-success"></span>
-									{activeCount}
+									{stats?.active_count}
 								</span>
 							{:else}
 								0
@@ -685,8 +695,8 @@
 					<button
 						type="button"
 						class="btn btn-ghost btn-sm gap-1.5 text-base-content/70 hover:bg-base-200"
-						onclick={exportCSV}
-						disabled={exporting || allFilteredQuery.data?.length === 0}
+						onclick={() => void exportCSV()}
+						disabled={exporting}
 						title="Export the current view as CSV"
 					>
 						{#if exporting}

@@ -214,6 +214,15 @@ export interface ReportData {
 	previous: ReportWindowSummary;
 }
 
+// --- Aggregated entry stats (api/time_entries/entry_stats/) --------------------
+
+export interface EntryStats {
+	total_seconds: number;
+	entry_count: number;
+	active_count: number;
+	distinct_days: number;
+}
+
 export interface RegistrationStatus {
 	public_registration: boolean;
 }
@@ -892,6 +901,39 @@ export const timeEntries = {
 
 		const result = await fetchWithCache(cacheKey, () => api.get(url).json<ReportData>());
 		return result.data || null;
+	},
+	/**
+	 * Aggregated entries-page stats (see api/time_entries/entry_stats/):
+	 * total seconds, entry count, active count, distinct active days for the
+	 * given filters — one tiny request instead of paging through every
+	 * matching row (which the Year/All views paid for with ~60 requests).
+	 */
+	entryStats: async (filters: {
+		start_date_after_tz?: string;
+		start_date_before_tz?: string;
+		project?: number;
+		search?: string;
+		tags?: string;
+	}): Promise<EntryStats> => {
+		const params = new URLSearchParams();
+		if (filters.start_date_after_tz) params.append('start_date_after_tz', filters.start_date_after_tz);
+		if (filters.start_date_before_tz)
+			params.append('start_date_before_tz', filters.start_date_before_tz);
+		if (filters.project) params.append('project', filters.project.toString());
+		if (filters.search) params.append('search', filters.search);
+		if (filters.tags) params.append('tags', filters.tags);
+		const url = `api/time_entries/entry_stats/?${params.toString()}`;
+		const cacheKey = `time_entries:entry_stats:${url}`;
+
+		if (!get(network).isOnline) {
+			const cached = getCached<EntryStats>(cacheKey);
+			if (cached) return cached;
+			console.warn(`Offline: no cached entry stats for ${cacheKey}`);
+			return { total_seconds: 0, entry_count: 0, active_count: 0, distinct_days: 0 };
+		}
+
+		const result = await fetchWithCache(cacheKey, () => api.get(url).json<EntryStats>());
+		return result.data ?? { total_seconds: 0, entry_count: 0, active_count: 0, distinct_days: 0 };
 	}
 };
 

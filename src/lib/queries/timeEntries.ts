@@ -8,6 +8,7 @@ import {
 import {
 	projects,
 	timeEntries as timeEntriesApi,
+	type EntryStats,
 	type PaginatedTimeEntries,
 	type TimeEntry
 } from '$lib/api';
@@ -222,42 +223,54 @@ export function useInfiniteTimeEntries(
 }
 
 /**
- * Fetch EVERY page of time entries matching the given filters (used by the
- * entries page for exact range totals and CSV export). Cached per filter set;
- * invalidated by queryKeys.timeEntries.all like every other time-entry query.
+ * Aggregated stats strip for the entries page (api/time_entries/entry_stats/).
+ * One tiny DB-aggregated request per filter set — replaces the old
+ * useAllFilteredTimeEntries, which paged through EVERY matching entry (dozens
+ * of 200-row requests on the All/Year ranges) just to compute four numbers.
  */
-export function useAllFilteredTimeEntries(
-	filters: () => Omit<TimeEntryFilters, 'cursor'>,
+export function useEntryStats(
+	filters: () => Omit<TimeEntryFilters, 'cursor' | 'limit' | 'ordering'>,
 	options?: () => FilteredTimeEntriesOptions
 ) {
-	return createQuery(() => {
+	return createQuery<EntryStats>(() => {
 		const opts = options?.() ?? {};
 		return {
-			queryKey: queryKeys.timeEntries.filteredAll(filters()),
-			queryFn: async () => {
-				const all: TimeEntry[] = [];
-				let cursor: string | undefined;
-				let hasMore = true;
-				while (hasMore) {
-					const page = await timeEntriesApi.listWithFilters({
-						...filters(),
-						limit: 200,
-						cursor
-					});
-					all.push(...page.results);
-					if (page.next) {
-						cursor = new URL(page.next).searchParams.get('cursor') ?? undefined;
-						hasMore = !!cursor;
-					} else {
-						hasMore = false;
-					}
-				}
-				return all;
-			},
+			queryKey: queryKeys.timeEntries.stats(filters()),
+			queryFn: () => timeEntriesApi.entryStats(filters()),
 			placeholderData: opts.keepPreviousData ? keepPreviousData : undefined,
 			refetchInterval: opts.refetchInterval ?? false
 		};
 	});
+}
+
+/**
+ * Fetch EVERY page of time entries matching the given filters — ON DEMAND.
+ * Used by the entries-page CSV export (the only consumer that truly needs the
+ * full row set). Never call this on mount: with a large dataset it is dozens
+ * of sequential 200-row requests. Cached rows come from the api layer's
+ * fetchWithCache; writes invalidate via queryKeys.timeEntries.all.
+ */
+export async function fetchAllFilteredEntries(
+	filters: TimeEntryFilters
+): Promise<TimeEntry[]> {
+	const all: TimeEntry[] = [];
+	let cursor: string | undefined;
+	let hasMore = true;
+	while (hasMore) {
+		const page = await timeEntriesApi.listWithFilters({
+			...filters,
+			limit: 200,
+			cursor
+		});
+		all.push(...page.results);
+		if (page.next) {
+			cursor = new URL(page.next).searchParams.get('cursor') ?? undefined;
+			hasMore = !!cursor;
+		} else {
+			hasMore = false;
+		}
+	}
+	return all;
 }
 
 /** Extract the `cursor` query param from a pagination URL like the backend's next/previous links. */
