@@ -201,7 +201,7 @@
 					<input
 						id="baseUrl"
 						type="text"
-						placeholder="http://localhost:8000"
+						placeholder="https://hr.alpharency.com"
 						class="input input-bordered"
 						name={field.name}
 						value={field.state.value}

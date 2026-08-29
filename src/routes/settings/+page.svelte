@@ -852,7 +852,7 @@
 							id="baseUrl"
 							type="url"
 							bind:value={localBaseUrl}
-							placeholder="http://127.0.0.1:8000"
+							placeholder="https://hr.alpharency.com"
 							class="input input-bordered input-sm join-item min-w-0 flex-1"
 						/>
 						<button class="btn btn-primary btn-sm join-item" onclick={saveBaseUrl}>Save</button>

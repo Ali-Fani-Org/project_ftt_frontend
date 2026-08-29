@@ -251,7 +251,7 @@ export const user = createPersistentStore<{
 /** True when the current user is staff — gates tag-management UI. */
 export const isAdmin = derived(user, ($user) => ($user?.is_staff ?? false) === true);
 
-export const baseUrl = createPersistentStore<string>('baseUrl', 'http://127.0.0.1:8000');
+export const baseUrl = createPersistentStore<string>('baseUrl', 'https://hr.alpharency.com');
 
 export type BaseUrlHistoryEntry = {
 	url: string;

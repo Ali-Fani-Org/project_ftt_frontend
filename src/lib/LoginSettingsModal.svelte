@@ -126,7 +126,7 @@
 					<input
 						id="baseUrl"
 						type="url"
-						placeholder="http://localhost:8000"
+						placeholder="https://hr.alpharency.com"
 						class="input input-bordered {field.state.meta.errors.length ? 'input-error' : ''}"
 						name={field.name}
 						value={field.state.value}
