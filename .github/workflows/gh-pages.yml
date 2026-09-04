@@ -39,10 +39,20 @@ jobs:
 
       # adapter-static is configured with fallback 'index.html' (Tauri canonical).
       # GitHub Pages needs `404.html` for SPA deep-link fallback, so copy it here.
+      # The PWA manifest <link> is injected into both entry shells here too: it
+      # cannot live in src/app.html because the prerender crawler follows it and
+      # 404s in Tauri builds (which ship no manifest), failing `bun run build`.
       # Tauri builds are unaffected — they never run this step.
-      - name: Add Pages SPA fallback
+      - name: Add Pages SPA fallback + manifest link
+        env:
+          BASE_PATH: '/project_ftt_frontend'
         run: |
           cp build/index.html build/404.html
+          LINK="<link rel=\"manifest\" href=\"${BASE_PATH}/manifest.webmanifest\" />"
+          for f in build/index.html build/404.html; do
+            sed -i "s|</head>|  ${LINK}\n</head>|" "$f"
+          done
+          grep -q 'manifest.webmanifest' build/index.html && grep -q 'manifest.webmanifest' build/404.html
           touch build/.nojekyll
 
       - name: Upload Pages artifact

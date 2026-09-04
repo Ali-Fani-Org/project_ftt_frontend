@@ -26,7 +26,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
@@ -45,6 +45,30 @@ function check(name, ok, hint = '') {
 		failures += 1;
 		console.log(`  ❌ ${name}${hint ? ` — ${hint}` : ''}`);
 	}
+}
+
+/**
+ * Recursively list emitted files under a dir.
+ */
+function listFilesRecursive(dir, ext) {
+	const out = [];
+	if (!existsSync(dir)) return out;
+	for (const entry of readdirSync(dir)) {
+		const full = path.join(dir, entry);
+		if (statSync(full).isDirectory()) out.push(...listFilesRecursive(full, ext));
+		else if (full.endsWith(ext)) out.push(full);
+	}
+	return out;
+}
+
+/**
+ * True when every needle appears somewhere in the emitted _app JS chunks.
+ */
+function jsBundleContains(needles) {
+	const chunks = listFilesRecursive(path.join(buildDir, '_app'), '.js');
+	return needles.every((needle) =>
+		chunks.some((file) => readFileSync(file, 'utf8').includes(needle))
+	);
 }
 
 /** Recursively list source files under src/. */
@@ -98,15 +122,35 @@ if (mode === 'pages') {
 
 	run('bun run build', { BASE_PATH: REPO_BASE, ENABLE_PWA: 'true' });
 
-	// Pages SPA fallback (same step as the workflow)
+	// Pages SPA fallback (same step as the workflow) + PWA manifest <link>
+	// injection (same step as the workflow — the link cannot live in
+	// src/app.html: the prerender crawler follows it and 404s in Tauri
+	// builds, which ship no manifest).
 	copyFileSync(path.join(buildDir, 'index.html'), path.join(buildDir, '404.html'));
-	console.log('\nCreated build/404.html from build/index.html');
+	const manifestLink = `<link rel="manifest" href="${REPO_BASE}/manifest.webmanifest" />`;
+	for (const f of ['index.html', '404.html']) {
+		const p = path.join(buildDir, f);
+		writeFileSync(p, readFileSync(p, 'utf8').replace('</head>', `  ${manifestLink}\n</head>`));
+	}
+	console.log('\nCreated build/404.html from build/index.html (+ manifest link in both)');
 
 	console.log('\nAssertions (pages):');
 	const indexHtml = readFileSync(path.join(buildDir, 'index.html'), 'utf8');
 
 	check('build/index.html exists', existsSync(path.join(buildDir, 'index.html')));
 	check('build/404.html exists (Pages SPA fallback)', existsSync(path.join(buildDir, '404.html')));
+	check(
+		'index.html links the web manifest',
+		indexHtml.includes('manifest.webmanifest'),
+		'no <link rel=manifest> — browser will never associate the PWA'
+	);
+	// SW registration happens at runtime (PwaPrompt onMount), so it lives in
+	// the JS bundle, not inline HTML — scan the emitted chunks for it.
+	check(
+		'JS bundle registers the service worker',
+		jsBundleContains(['serviceWorker', 'sw.js']),
+		'no SW registration found in chunks — SvelteKitPWA does not inject it'
+	);
 
 	check(
 		'assets use Pages subpath',
@@ -189,6 +233,8 @@ if (mode === 'pages') {
 	if (existsSync(indexPath)) {
 		const html = readFileSync(indexPath, 'utf8');
 		check('no Pages subpath leaks into desktop build', !html.includes(REPO_BASE));
+		// NOTE: the manifest <link> is intentionally present (app.html is
+		// shared); the file itself is absent so Tauri never registers anything.
 	}
 	check('no sw.js in desktop build (PWA skipped)', !existsSync(path.join(buildDir, 'sw.js')));
 	check(

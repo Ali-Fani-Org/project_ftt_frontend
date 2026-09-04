@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
 	import logger from '$lib/logger';
 
 	/**
@@ -32,6 +33,17 @@
 
 	onMount(() => {
 		if (isTauri()) return;
+
+		// Register the service worker (exists only in ENABLE_PWA builds —
+		// __PWA_ENABLED__ is false in Tauri/dev builds, so this whole block
+		// is tree-shaken out of the desktop bundle).
+		if (__PWA_ENABLED__ && 'serviceWorker' in navigator) {
+			const scope = `${base}/`;
+			navigator.serviceWorker
+				.register(`${base}/sw.js`, { scope })
+				.then((reg) => logger.debug('Service worker registered', reg.scope))
+				.catch((err) => logger.warn('Service worker registration failed', err));
+		}
 
 		// Already running as the installed app — nothing to offer.
 		isStandalone =

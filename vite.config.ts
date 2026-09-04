@@ -21,7 +21,10 @@ const pwaScope = BASE_PATH ? `${BASE_PATH}/` : '/';
 export default defineConfig(() => {
 	return {
 		define: {
-			__APP_VERSION__: JSON.stringify(pkg.version)
+			__APP_VERSION__: JSON.stringify(pkg.version),
+			// Compile-time gate so web-only PWA wiring (manifest link, SW
+			// registration) is tree-shaken out of Tauri builds entirely.
+			__PWA_ENABLED__: JSON.stringify(ENABLE_PWA)
 		},
 		plugins: [
 			sveltekit(),
