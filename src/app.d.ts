@@ -8,6 +8,10 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	// Injected via vite.config.ts `define` from package.json version.
+	// Available in both Tauri and web (PWA) builds.
+	const __APP_VERSION__: string;
 }
 
 export {};

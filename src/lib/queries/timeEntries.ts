@@ -273,8 +273,13 @@ export async function fetchAllFilteredEntries(
 	return all;
 }
 
-/** Extract the `cursor` query param from a pagination URL like the backend's next/previous links. */
-function extractCursor(url: string): string | undefined {
+/**
+ * Extract the `cursor` query param from a pagination URL like the backend's
+ * next/previous links. Returns `undefined` for relative/unparseable URLs so
+ * callers fall back to on-demand fetching instead of sending the whole URL
+ * back as the cursor value (the backend 404s on that).
+ */
+export function extractCursor(url: string): string | undefined {
 	try {
 		return new URL(url).searchParams.get('cursor') ?? undefined;
 	} catch {

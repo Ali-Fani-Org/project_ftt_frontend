@@ -3,11 +3,20 @@ import { defineConfig } from 'vite';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { readFileSync } from 'fs';
+import { SvelteKitPWA } from '@vite-pwa/sveltekit';
 
 // Read version from package.json
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 const host = process.env.TAURI_DEV_HOST;
+
+// SvelteKit owns `base` (kit.paths.base in svelte.config.js) and overrides any
+// Vite `base`, so asset subpaths are driven from there. The PWA plugin gets the
+// same value passed explicitly via its own `base`/`scope` options.
+const BASE_PATH = process.env.BASE_PATH ?? '';
+const ENABLE_PWA = process.env.ENABLE_PWA === 'true';
+const appBase = BASE_PATH ? `${BASE_PATH}/` : '/';
+const pwaScope = BASE_PATH ? `${BASE_PATH}/` : '/';
 
 export default defineConfig(() => {
 	return {
@@ -16,6 +25,63 @@ export default defineConfig(() => {
 		},
 		plugins: [
 			sveltekit(),
+			// PWA only for the web (GitHub Pages) target. Excluded from Tauri builds.
+			...(ENABLE_PWA
+				? [
+						SvelteKitPWA({
+							strategies: 'generateSW',
+							registerType: 'autoUpdate',
+							includeAssets: [
+								'favicon.png',
+								'apple-touch-icon.png',
+								'pwa-192x192.png',
+								'pwa-512x512.png',
+								'maskable-icon.png'
+							],
+							base: appBase,
+							scope: pwaScope,
+							manifest: {
+								name: 'Time Tracker',
+								short_name: 'TimeTracker',
+								description: 'Track time, manage tasks and stay in flow.',
+								theme_color: '#e11d48',
+								background_color: '#ffffff',
+								display: 'standalone',
+								orientation: 'any',
+								scope: pwaScope,
+								start_url: pwaScope,
+								icons: [
+									{
+										src: 'pwa-192x192.png',
+										sizes: '192x192',
+										type: 'image/png'
+									},
+									{
+										src: 'pwa-512x512.png',
+										sizes: '512x512',
+										type: 'image/png'
+									},
+									{
+										src: 'pwa-512x512.png',
+										sizes: '512x512',
+										type: 'image/png',
+										purpose: 'any maskable'
+									}
+								]
+							},
+							workbox: {
+								navigateFallback: pwaScope,
+								globPatterns: [
+									'**/*.{js,css,html,ico,png,svg,webmanifest,woff,woff2}'
+								]
+							},
+							devOptions: {
+								enabled: false
+							},
+							kit: {}
+						})
+					]
+				: []),
 			// Enable bundle visualizer when ANALYZE env var is set to 'true'
 			...(process.env.ANALYZE === 'true'
 				? [visualizer({ filename: 'dist/stats.html', open: false })]

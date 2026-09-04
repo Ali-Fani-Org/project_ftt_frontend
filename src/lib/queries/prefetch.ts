@@ -1,7 +1,7 @@
 import { queryClient } from '$lib/queryClient';
 import { queryKeys } from './keys';
 import { projects, tags, timeEntries } from '$lib/api';
-import { getTehranToday } from './timeEntries';
+import { getTehranToday, extractCursor } from './timeEntries';
 import { buildReportFilters } from './report';
 import { getTimeRangeDates, getPreviousRange } from '$lib/reports/analytics';
 
@@ -233,17 +233,23 @@ export function prefetchNextEntriesPage(filters: Record<string, unknown>): void 
 	const data = queryClient.getQueryData<InfiniteEntriesData>(queryKey);
 	if (!data || data.pages.length !== 1 || !data.pages[0].next) return;
 
-	const nextCursor = data.pages[0].next;
+	const nextUrl = data.pages[0].next;
+	// The backend's `next` is a FULL URL (e.g. http://host/api/...?cursor=...).
+	// Only the opaque `cursor` value may be sent back — passing the whole URL
+	// as `cursor` makes the backend 404 (and poisons the persisted pageParams).
+	const cursor = extractCursor(nextUrl);
+	if (!cursor) return;
+
 	void timeEntries
 		.listWithFilters({
 			...filters,
-			cursor: nextCursor
+			cursor
 		} as Parameters<typeof timeEntries.listWithFilters>[0])
 		.then((page) => {
 			queryClient.setQueryData<InfiniteEntriesData>(queryKey, (old) => {
 				// Only merge if page 1 is still alone and still ends at the same cursor.
-				if (!old || old.pages.length !== 1 || old.pages[0].next !== nextCursor) return old;
-				return { pages: [...old.pages, page], pageParams: [...old.pageParams, nextCursor] };
+				if (!old || old.pages.length !== 1 || old.pages[0].next !== nextUrl) return old;
+				return { pages: [...old.pages, page], pageParams: [...old.pageParams, cursor] };
 			});
 		})
 		.catch(() => {
