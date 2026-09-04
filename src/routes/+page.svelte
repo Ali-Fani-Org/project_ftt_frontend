@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { gotoApp } from '$lib/navigation';
 	import { getAuthContext } from '$lib/auth-context';
 	import { auth, publicStatus } from '$lib/api';
 	import { logoutAlert, minimizeToTray, closeToTray } from '$lib/stores';
@@ -264,12 +264,12 @@
 			if (isLogin) {
 				result = await authStore.login(username, password, rememberMe);
 				if (result.success) {
-					goto('/dashboard');
+					gotoApp('/dashboard');
 				}
 			} else {
 				result = await authStore.register(username, password, firstName, lastName);
 				if (result.success) {
-					goto('/dashboard');
+					gotoApp('/dashboard');
 				}
 			}
 
@@ -330,7 +330,7 @@
 		try {
 			const result = await authStore.loginWithPasskey(username, rememberMe);
 			if (result.success) {
-				goto('/dashboard');
+				gotoApp('/dashboard');
 			} else if (!result.success) {
 				error = result.error || 'Passkey login failed';
 			}

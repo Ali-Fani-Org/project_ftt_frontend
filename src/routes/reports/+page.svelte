@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { TimeEntry } from '$lib/api';
 	import { network } from '$lib/network';
-	import { goto } from '$app/navigation';
+	import { gotoApp } from '$lib/navigation';
 	import { slide } from 'svelte/transition';
 	import {
 		Clock,
@@ -453,7 +453,7 @@
 							Start a timer and this page lights up with trends, your weekly rhythm, and where the
 							hours went.
 						</p>
-						<button class="btn btn-primary mt-2" onclick={() => goto('/timer')}>
+						<button class="btn btn-primary mt-2" onclick={() => gotoApp('/timer')}>
 							<Play class="w-4 h-4" />
 							Start tracking
 						</button>

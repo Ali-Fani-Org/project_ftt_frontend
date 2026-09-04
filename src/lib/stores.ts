@@ -1,6 +1,6 @@
 import { derived, writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
-import { goto } from '$app/navigation';
+import { gotoApp } from '$lib/navigation';
 import logger from '$lib/logger';
 
 // Data staleness threshold (milliseconds)
@@ -401,7 +401,7 @@ export function globalLogout(autoLogout = false, customMessage?: string) {
 	});
 
 	// Redirect to login page
-	goto('/');
+	gotoApp('/');
 }
 
 export const logout = () => globalLogout(false);

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
-	import { goto } from '$app/navigation';
+	import { gotoApp } from '$lib/navigation';
 	import PageHeader from '$lib/PageHeader.svelte';
 	import { Square } from '@lucide/svelte';
 	import { Play, Pencil, ChartColumn, ListChecks } from '@jis3r/icons';
@@ -243,7 +243,7 @@
 			showTasksModal = true;
 			return;
 		}
-		goto('/entries');
+		gotoApp('/entries');
 	};
 
 	function getGreeting(): string {
@@ -463,7 +463,7 @@
 							{#each recentEntries as entry}
 								<button
 									class="flex w-full items-center gap-3 p-3 bg-base-200 rounded-lg text-left border-0 cursor-pointer transition-colors hover:bg-base-300 focus-visible:ring-2 focus-visible:ring-primary/40"
-									onclick={() => goto('/entries')}
+									onclick={() => gotoApp('/entries')}
 								>
 									<span class="w-2 h-2 rounded-full shrink-0 {projectDotClass(entry.project)}"
 									></span>
@@ -571,7 +571,7 @@
 							<button
 								class="btn btn-primary btn-block justify-start"
 								onmouseenter={() => prefetchRoute('/timer')}
-								onclick={() => goto('/timer')}
+								onclick={() => gotoApp('/timer')}
 							>
 								<span class="mr-2 shrink-0" aria-hidden="true">
 									<Play size={20} />
@@ -594,7 +594,7 @@
 						<button
 							class="btn btn-outline btn-block justify-start"
 							onmouseenter={() => prefetchRoute('/reports')}
-							onclick={() => goto('/reports')}
+							onclick={() => gotoApp('/reports')}
 						>
 							<span class="mr-2 shrink-0" aria-hidden="true">
 								<ChartColumn size={20} />
@@ -628,7 +628,7 @@
 						<button
 							class="btn btn-secondary"
 							onmouseenter={() => prefetchRoute('/timer')}
-							onclick={() => goto('/timer')}
+							onclick={() => gotoApp('/timer')}
 						>
 							View in Timer
 						</button>

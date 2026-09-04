@@ -3,7 +3,7 @@ import { writable, get } from 'svelte/store';
 import { authToken, user, globalLogout } from './stores';
 import { auth, passkeys } from './api';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
-import { goto } from '$app/navigation';
+import { gotoApp } from './navigation';
 import { browser } from '$app/environment';
 import { network } from './network';
 
@@ -389,7 +389,7 @@ export function createAuthStore(): AuthStore {
 					}));
 
 					// 5. Redirect to dashboard with offline flag
-					goto('/dashboard?offline=true');
+					gotoApp('/dashboard?offline=true');
 					return true;
 				} catch (error) {
 					console.error('Failed to load cached auth data:', error);

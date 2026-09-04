@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { goto } from '$app/navigation';
+	import { gotoApp } from '$lib/navigation';
 	import type { PaginatedTimeEntries, TimeEntry } from '$lib/api';
 	import TimeEntryDetailModal from '$lib/TimeEntryDetailModal.svelte';
 	import { network } from '$lib/network';
@@ -822,7 +822,7 @@
 						<button
 							type="button"
 							class="btn btn-primary btn-sm mt-4 gap-2"
-							onclick={() => goto('/timer')}
+							onclick={() => gotoApp('/timer')}
 						>
 							<span aria-hidden="true"><Play size={15} /></span>
 							Start a timer

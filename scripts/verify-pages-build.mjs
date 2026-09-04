@@ -26,7 +26,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
@@ -45,6 +45,37 @@ function check(name, ok, hint = '') {
 		failures += 1;
 		console.log(`  ❌ ${name}${hint ? ` — ${hint}` : ''}`);
 	}
+}
+
+/** Recursively list source files under src/. */
+function listSrcFiles(dir) {
+	const out = [];
+	for (const entry of readdirSync(dir)) {
+		const full = path.join(dir, entry);
+		if (statSync(full).isDirectory()) out.push(...listSrcFiles(full));
+		else if (/\.(svelte|ts|js)$/.test(entry)) out.push(full);
+	}
+	return out;
+}
+
+/**
+ * Find bare goto('/...') calls outside src/lib/navigation.ts. gotoApp() does
+ * not match (no `goto(` substring). Test files are exempt (they only mention
+ * goto in comments/strings and never ship to the browser).
+ */
+function findBareGotos() {
+	const hits = [];
+	const navHelper = path.join(root, 'src', 'lib', 'navigation.ts');
+	for (const file of listSrcFiles(path.join(root, 'src'))) {
+		if (file === navHelper || file.includes('__tests__')) continue;
+		const lines = readFileSync(file, 'utf8').split('\n');
+		lines.forEach((line, i) => {
+			if (/(?<![A-Za-z])goto\(\s*['"`/]/.test(line)) {
+				hits.push(`${path.relative(root, file)}:${i + 1}`);
+			}
+		});
+	}
+	return hits;
 }
 
 function run(cmd, env) {
@@ -114,6 +145,13 @@ if (mode === 'pages') {
 	for (const icon of ['pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png']) {
 		check(`static/${icon} bundled`, existsSync(path.join(buildDir, icon)));
 	}
+
+	// Bare goto('/...') resolves against the DOMAIN ROOT and escapes the app
+	// under the Pages subpath — all in-app navigation must use gotoApp().
+	// (src/lib/navigation.ts itself is exempt: it wraps goto.)
+	const bareGotos = findBareGotos();
+	check('no bare goto() outside $lib/navigation', bareGotos.length === 0,
+		bareGotos.slice(0, 5).join('; '));
 
 	if (failures > 0) {
 		console.error(`\n${failures} pages assertion(s) failed.`);

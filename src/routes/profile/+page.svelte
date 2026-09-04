@@ -7,7 +7,7 @@
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/api';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { gotoApp } from '$lib/navigation';
 	import { network } from '$lib/network';
 	import { addToast } from '$lib/toast';
 	import PasskeyManager from '$lib/PasskeyManager.svelte';
@@ -154,7 +154,7 @@
 
 	function doLogout() {
 		logout();
-		goto('/login');
+		gotoApp('/login');
 	}
 
 	function confirmLogout() {

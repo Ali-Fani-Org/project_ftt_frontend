@@ -8,6 +8,7 @@
 	import { minimizeToTray, closeToTray } from '$lib/stores';
 	import { queryClient } from '$lib/queryClient';
 	import logger from '$lib/logger';
+	import { stripBase } from '$lib/navigation';
 
 	// ------------------------------------------------------------------
 	// Unified app bar — one 56px bar in both the browser and the Tauri
@@ -28,7 +29,9 @@
 		'/profile': 'Profile'
 	};
 
-	let currentTitle = $derived(pageTitles[$page.url.pathname] || 'Time Tracker');
+	// $page.url.pathname includes the deployment base path (if any) — strip
+	// it before looking up the app-relative title.
+	let currentTitle = $derived(pageTitles[stripBase($page.url.pathname)] || 'Time Tracker');
 
 	// --- Tauri window plumbing -----------------------------------------
 	let isTauri = $state(false);

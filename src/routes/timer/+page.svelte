@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { goto } from '$app/navigation';
+	import { gotoApp, appPath } from '$lib/navigation';
 	import PageHeader from '$lib/PageHeader.svelte';
 	import SettingToggle from '$lib/settings/SettingToggle.svelte';
 	import { Timer as TimerIcon } from '@jis3r/icons';
@@ -396,7 +396,7 @@
 		void (async () => {
 			const token = get(authToken);
 			if (!token) {
-				goto('/');
+				gotoApp('/');
 				return;
 			}
 
@@ -688,7 +688,7 @@
 				useCustomTitlebar = false;
 			}
 			const webview = new WebviewWindow('time-entries', {
-				url: `${window.location.origin}/entries`,
+				url: `${window.location.origin}${appPath('/entries')}`,
 				title: 'Time Entries',
 				width: 1000,
 				height: 700,
@@ -700,7 +700,7 @@
 			console.log('WebviewWindow created:', webview);
 		} catch {
 			console.log('Web environment, opening new tab');
-			window.open('/entries', '_blank');
+			window.open(appPath('/entries'), '_blank');
 		}
 	};
 </script>

@@ -3,7 +3,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { dev, version } from '$app/environment';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { gotoApp, appPath } from '$lib/navigation';
 	import {
 		authToken,
 		user,
@@ -138,15 +138,16 @@
 
 		if ($authToken === null) {
 			// Only redirect if we're not already on the login page
-			if ($page.url.pathname !== '/') {
-				goto('/');
+			// ($page.url.pathname includes the deployment base path, if any)
+			if ($page.url.pathname !== appPath('/')) {
+				gotoApp('/');
 			}
 			return;
 		}
 
 		// If authenticated and still on login page, go to dashboard
-		if ($page.url.pathname === '/') {
-			goto('/dashboard');
+		if ($page.url.pathname === appPath('/')) {
+			gotoApp('/dashboard');
 		}
 	});
 
@@ -173,7 +174,7 @@
 	}
 
 	// Check if current page is login page
-	const isLoginPage = $derived($page.url.pathname === '/');
+	const isLoginPage = $derived($page.url.pathname === appPath('/'));
 
 	// Helper function to format last online time
 	function formatLastOnline(date: Date | null): string {

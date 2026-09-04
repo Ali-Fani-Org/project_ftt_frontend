@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { gotoApp } from '$lib/navigation';
 
 	// Redirect to the new entries page
 	onMount(() => {
-		goto('/entries');
+		gotoApp('/entries');
 	});
 </script>
 

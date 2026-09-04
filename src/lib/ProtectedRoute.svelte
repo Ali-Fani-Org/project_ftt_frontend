@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { authToken } from './stores';
-	import { goto } from '$app/navigation';
+	import { gotoApp, appPath } from '$lib/navigation';
 	import { page } from '$app/stores';
 
 	interface Props {
@@ -23,8 +23,9 @@
 			isChecking = false;
 
 			// Redirect if not authenticated and we're on a protected route
-			if (!isAuthenticated && $page.url.pathname !== redirectTo) {
-				goto(redirectTo);
+			// ($page.url.pathname includes the deployment base path, if any)
+			if (!isAuthenticated && $page.url.pathname !== appPath(redirectTo)) {
+				gotoApp(redirectTo);
 			}
 		});
 

@@ -12,7 +12,7 @@
 	import { Heart, Shield } from '@lucide/svelte';
 	import { user, theme, sidebarCollapsed } from '$lib/stores';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { gotoApp, appPath } from '$lib/navigation';
 	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import { generateDicebearAvatar } from './utils';
@@ -445,9 +445,11 @@
 
 	function isActivePath(href: string) {
 		const cp = normalizePath(currentPath || '');
-		const h = normalizePath(href);
+		// currentPath includes the deployment base path (if any), so compare
+		// against the base-prefixed href.
+		const h = normalizePath(appPath(href));
 		if (cp === h) return true;
-		return h !== '/' && cp.startsWith(h + '/');
+		return h !== appPath('/') && cp.startsWith(h + '/');
 	}
 
 	function navigate(href: string) {
@@ -455,7 +457,7 @@
 			const drawer = document.getElementById('app-drawer') as HTMLInputElement | null;
 			if (drawer) drawer.checked = false;
 		}
-		goto(href);
+		gotoApp(href);
 	}
 
 	// Generate Dicebear avatar SVG for user with theme-aware background
@@ -499,7 +501,7 @@
 			const drawer = document.getElementById('app-drawer') as HTMLInputElement | null;
 			if (drawer) drawer.checked = false;
 		}
-		goto('/profile');
+		gotoApp('/profile');
 	}
 </script>
 
