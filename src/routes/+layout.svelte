@@ -28,6 +28,7 @@
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import SyncIndicator from '$lib/SyncIndicator.svelte';
 	import PwaPrompt from '$lib/PwaPrompt.svelte';
+	import { syncThemeColorMeta } from '$lib/themeMeta';
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -117,6 +118,8 @@
 	$effect(() => {
 		if (typeof document !== 'undefined') {
 			applyTheme($theme);
+			// Browser chrome (PWA status bar / tab strip) follows the theme.
+			syncThemeColorMeta();
 
 			// Emit theme change event to other windows
 			if (isTauri) {
