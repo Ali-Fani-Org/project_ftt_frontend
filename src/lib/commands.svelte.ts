@@ -1,5 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
-
 export const preventDefault = <T extends Event>(fn: (e: T) => void): ((e: T) => void) => {
 	return (e: T) => {
 		e.preventDefault();
@@ -27,6 +25,10 @@ export class GlobalState {
 	}
 
 	async submit() {
+		if (typeof window === 'undefined' || !(window as any).__TAURI__) {
+			throw new Error('Tauri command unavailable in web build');
+		}
+		const { invoke } = await import('@tauri-apps/api/core');
 		this.greet = await invoke('greet', { name: this.name });
 	}
 

@@ -10,10 +10,8 @@
 		backgroundAnimationEnabled
 	} from './stores';
 
-	import { enable, disable } from '@tauri-apps/plugin-autostart';
 	import { createEventDispatcher } from 'svelte';
 	import { onMount } from 'svelte';
-	import { getVersion } from '@tauri-apps/api/app';
 	import { createForm } from '@tanstack/svelte-form';
 
 	const dispatch = createEventDispatcher();
@@ -38,11 +36,30 @@
 
 	let appVersion = $state('');
 	let showLogoutConfirm = $state(false);
+	let isTauriApp = $state(false);
 
 	const formValues = form.useSelector((state) => state.values);
 
+	function checkIsTauri(): boolean {
+		return (
+			typeof window !== 'undefined' &&
+			Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__)
+		);
+	}
+
 	onMount(async () => {
-		appVersion = await getVersion();
+		isTauriApp = checkIsTauri();
+		if (isTauriApp) {
+			try {
+				const { getVersion } = await import('@tauri-apps/api/app');
+				appVersion = await getVersion();
+			} catch {
+				appVersion = __APP_VERSION__;
+			}
+		} else {
+			// Web (PWA) build: show the bundled web app version.
+			appVersion = __APP_VERSION__;
+		}
 	});
 
 	const builtInThemes = [
@@ -137,6 +154,12 @@
 		autostart.set(v.autostart);
 		backgroundAnimationEnabled.set(v.backgroundAnimation);
 		try {
+			if (!isTauriApp) {
+				// Web (PWA) build: autostart is a desktop-only feature; persist the
+				// preference in the store and skip the native call.
+				return;
+			}
+			const { enable, disable } = await import('@tauri-apps/plugin-autostart');
 			if (v.autostart) {
 				await enable();
 			} else {
@@ -277,12 +300,16 @@
 				</form.Field>
 				<form.Field name="autostart">
 					{#snippet children(field)}
-						<label class="label cursor-pointer">
-							<span class="label-text">Autostart on boot</span>
+						<label class="label cursor-pointer" title={isTauriApp ? '' : 'Desktop app only'}>
+							<span class="label-text"
+								>Autostart on boot{#if !isTauriApp} <span class="opacity-60">(desktop only)</span
+									>{/if}</span
+							>
 							<input
 								type="checkbox"
 								class="checkbox"
 								checked={field.state.value}
+								disabled={!isTauriApp}
 								onchange={(e) => field.handleChange(e.currentTarget.checked)}
 							/>
 						</label>
