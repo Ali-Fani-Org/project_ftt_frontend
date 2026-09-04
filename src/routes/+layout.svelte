@@ -27,6 +27,7 @@
 	import { auth } from '$lib/api';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import SyncIndicator from '$lib/SyncIndicator.svelte';
+	import PwaPrompt from '$lib/PwaPrompt.svelte';
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -328,6 +329,9 @@
 
 	<!-- Toast notifications - visible on all pages -->
 	<ToastContainer />
+
+	<!-- PWA install banner (web builds only; no-op in Tauri) -->
+	<PwaPrompt />
 </PersistQueryClientProvider>
 
 <style>

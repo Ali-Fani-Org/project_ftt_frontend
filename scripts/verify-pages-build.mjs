@@ -142,7 +142,7 @@ if (mode === 'pages') {
 		!existsSync(swPath) || readFileSync(swPath, 'utf8').length > 0,
 		'sw.js is empty'
 	);
-	for (const icon of ['pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png']) {
+	for (const icon of ['pwa-192x192.png', 'pwa-512x512.png', 'maskable-icon.png', 'apple-touch-icon.png']) {
 		check(`static/${icon} bundled`, existsSync(path.join(buildDir, icon)));
 	}
 
