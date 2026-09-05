@@ -1,6 +1,5 @@
 <script lang="ts">
 	import {
-		Clock,
 		LayoutDashboard,
 		ListChecks,
 		Settings,
@@ -9,6 +8,7 @@
 		ChartColumn,
 		Timer
 	} from '@jis3r/icons';
+	import BrandMark from '$lib/BrandMark.svelte';
 	import { Heart, Shield } from '@lucide/svelte';
 	import { user, theme, sidebarCollapsed } from '$lib/stores';
 	import { page } from '$app/stores';
@@ -506,7 +506,7 @@
 </script>
 
 <!-- Drawer side content -->
-<div class="drawer-side">
+<div class="drawer-side max-lg:hidden">
 	<!-- Overlay for closing drawer -->
 	<label for="app-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
 
@@ -532,30 +532,16 @@
 						title="Expand sidebar"
 						aria-label="Expand sidebar"
 					>
-						<span
-							class="brand-clock inline-flex items-center {isTimerRunning
-								? 'clock-hands-spin'
-								: ''}"
-							aria-hidden="true"
-						>
-							<Clock size={24} />
-						</span>
+						<BrandMark size={40} running={isTimerRunning} />
 					</button>
 				{:else}
 					<div
-						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary {partyMode
+						class="flex h-10 w-10 shrink-0 items-center justify-center {partyMode
 							? 'party-tile'
 							: ''}"
-						title="Time Tracker"
+						title={isTimerRunning ? 'Timer running' : 'Time Tracker'}
 					>
-						<span
-							class="brand-clock inline-flex items-center {isTimerRunning
-								? 'clock-hands-spin'
-								: ''}"
-							aria-hidden="true"
-						>
-							<Clock size={24} />
-						</span>
+						<BrandMark size={40} running={isTimerRunning} />
 					</div>
 				{/if}
 				<p
@@ -766,39 +752,6 @@
 {/if}
 
 <style>
-	/* The icon component wraps its svg in an inline-block div; the inline svg
-	sits on the text baseline and adds a descender gap below it, which pushes
-	the glyph up inside the tile. Display block centers it properly. */
-	.brand-clock :global(svg) {
-		display: block;
-	}
-
-	/* While a timer runs, the brand clock's hands turn like a real clock: the
-	long hand sweeps fast (seconds), the short hand turns slowly (hours),
-	both pivoting around the clock center. */
-	@keyframes clock-hand-slow {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-	@keyframes clock-hand-fast {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-	.clock-hands-spin :global(.minute-hand) {
-		animation: clock-hand-fast 0.75s linear infinite;
-	}
-	.clock-hands-spin :global(.hour-hand) {
-		animation: clock-hand-slow 9s linear infinite;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.clock-hands-spin :global(.minute-hand),
-		.clock-hands-spin :global(.hour-hand) {
-			animation: none;
-		}
-	}
-
 	/* Ensure drawer side is properly positioned */
 	.drawer-side {
 		z-index: 30;

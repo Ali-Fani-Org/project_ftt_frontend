@@ -1,4 +1,9 @@
 /// <reference types="vite-plugin-pwa/svelte" />
+
+declare module '*.svg?raw' {
+	const src: string;
+	export default src;
+}
 // See https://svelte.dev/docs/kit/types#app
 // for information about these interfaces
 declare global {

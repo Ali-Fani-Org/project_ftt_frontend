@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount, onDestroy } from 'svelte';
-	import { Clock, Minus, Minimize, Maximize, X, PinOff } from '@jis3r/icons';
+	import { Minus, Minimize, Maximize, X, PinOff } from '@jis3r/icons';
 	import { Pin } from '@lucide/svelte';
 	import DataFreshnessIndicator from '$lib/DataFreshnessIndicator.svelte';
+	import BrandMark from '$lib/BrandMark.svelte';
+	import { useActiveTimer } from '$lib/queries/timeEntries';
 	import { network } from '$lib/network';
 	import { minimizeToTray, closeToTray } from '$lib/stores';
 	import { queryClient } from '$lib/queryClient';
@@ -32,6 +34,8 @@
 	// $page.url.pathname includes the deployment base path (if any) — strip
 	// it before looking up the app-relative title.
 	let currentTitle = $derived(pageTitles[stripBase($page.url.pathname)] || 'Time Tracker');
+	const activeTimerQuery = useActiveTimer();
+	const isTimerRunning = $derived(!!activeTimerQuery.data);
 
 	// --- Tauri window plumbing -----------------------------------------
 	let isTauri = $state(false);
@@ -192,30 +196,13 @@
 	onmousedown={handleBarMouseDown}
 	ondblclick={handleBarDoubleClick}
 >
-	<!-- Left: hamburger (mobile only) + brand + page title -->
+	<!-- Left: brand + page title (hamburger is desktop-only via the sidebar) -->
 	<div class="flex min-w-0 items-center gap-2.5">
-		<!-- Sidebar toggle (mobile only) -->
-		<label
-			for="app-drawer"
-			aria-label="open sidebar"
-			class="btn btn-square btn-ghost mr-0.5 min-h-11 min-w-11 hover:bg-base-200 lg:hidden"
-		>
-			<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M4 6h16M4 12h16M4 18h16"
-				></path>
-			</svg>
-		</label>
-
-		<!-- Brand mark: the app's clock tile (matches the sidebar brand) -->
 		<div
-			class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"
-			title="Time Tracker"
+			class="flex h-9 w-9 shrink-0 items-center justify-center overflow-visible"
+			title={isTimerRunning ? 'Timer running' : 'Time Tracker'}
 		>
-			<span class="inline-flex" aria-hidden="true"><Clock size={20} /></span>
+			<BrandMark size={36} running={isTimerRunning} />
 		</div>
 
 		<!-- Current page name (in Tauri this replaces the static window title) -->

@@ -1,0 +1,398 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1408" height="768" viewBox="0 0 1408 768" fill="none">
+  <title>Luminous performance clock — vector recreation</title>
+  <desc>
+    Vector recreation with a navy background, rounded glass tile,
+    luminous clock ring, rising arrow, dial marks and chart bars.
+    No embedded bitmap images. Lighting and texture are approximations.
+  </desc>
+
+  <defs>
+    <radialGradient id="background" cx="50%" cy="47%" r="70%">
+      <stop stop-color="#12243d"/>
+      <stop offset=".43" stop-color="#0e1c30"/>
+      <stop offset="1" stop-color="#091522"/>
+    </radialGradient>
+
+    <radialGradient id="ambient">
+      <stop stop-color="#26486c" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#1a3756" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="tile" x1="648" y1="136" x2="750" y2="633"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#293e59"/>
+      <stop offset=".27" stop-color="#1a2c44"/>
+      <stop offset=".67" stop-color="#0e1c32"/>
+      <stop offset="1" stop-color="#091529"/>
+    </linearGradient>
+
+    <radialGradient id="tileLight" cx=".44" cy=".12" r=".84">
+      <stop stop-color="#48627f" stop-opacity=".2"/>
+      <stop offset=".6" stop-color="#254568" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#061021" stop-opacity=".2"/>
+    </radialGradient>
+
+    <linearGradient id="tileEdge" x1="704" y1="133" x2="704" y2="636"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#59718d" stop-opacity=".77"/>
+      <stop offset=".28" stop-color="#476080" stop-opacity=".62"/>
+      <stop offset=".75" stop-color="#273b59" stop-opacity=".48"/>
+      <stop offset="1" stop-color="#24344e" stop-opacity=".58"/>
+    </linearGradient>
+
+    <linearGradient id="ring" x1="665" y1="211" x2="701" y2="563"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e0efba"/>
+      <stop offset=".12" stop-color="#a7f4d4"/>
+      <stop offset=".3" stop-color="#6beae9"/>
+      <stop offset=".61" stop-color="#3dcced"/>
+      <stop offset=".84" stop-color="#33a7e4"/>
+      <stop offset="1" stop-color="#1871be"/>
+    </linearGradient>
+
+    <linearGradient id="ringRight" x1="811" y1="378" x2="774" y2="546"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d6f5c9"/>
+      <stop offset=".24" stop-color="#92eee0"/>
+      <stop offset=".65" stop-color="#55d8e9"/>
+      <stop offset="1" stop-color="#329cdf"/>
+    </linearGradient>
+
+    <linearGradient id="ringBevel" x1="625" y1="215" x2="722" y2="561"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffd8" stop-opacity=".65"/>
+      <stop offset=".34" stop-color="#bbffff" stop-opacity=".5"/>
+      <stop offset=".69" stop-color="#66e3f7" stop-opacity=".25"/>
+      <stop offset="1" stop-color="#5eb9ee" stop-opacity=".22"/>
+    </linearGradient>
+
+    <linearGradient id="arrow" x1="675" y1="391" x2="878" y2="208"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#309bd4"/>
+      <stop offset=".19" stop-color="#76dbe4"/>
+      <stop offset=".43" stop-color="#c7e7b1"/>
+      <stop offset=".7" stop-color="#f7df86"/>
+      <stop offset="1" stop-color="#ffec9c"/>
+    </linearGradient>
+
+    <linearGradient id="arrowFace" x1="678" y1="385" x2="869" y2="219"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4bbcdf"/>
+      <stop offset=".21" stop-color="#9be9de"/>
+      <stop offset=".48" stop-color="#e9f4b5"/>
+      <stop offset=".77" stop-color="#fff6b5"/>
+      <stop offset="1" stop-color="#fff5b6"/>
+    </linearGradient>
+
+    <linearGradient id="leftHand" x1="643" y1="321" x2="705" y2="400"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b3fff0"/>
+      <stop offset=".4" stop-color="#84eee9"/>
+      <stop offset="1" stop-color="#42b9de" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="goldBevel" x1="892" y1="212" x2="787" y2="324"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f0bf57"/>
+      <stop offset=".45" stop-color="#dfb563"/>
+      <stop offset="1" stop-color="#a6c7a8"/>
+    </linearGradient>
+
+    <linearGradient id="ticks" x1="721" y1="205" x2="873" y2="367"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a6dfc4"/>
+      <stop offset=".35" stop-color="#e6d88b"/>
+      <stop offset=".53" stop-color="#b6b67f"/>
+      <stop offset=".78" stop-color="#5997a7"/>
+      <stop offset="1" stop-color="#337c9f"/>
+    </linearGradient>
+
+    <linearGradient id="dotTop" x1="699" y1="256" x2="709" y2="281"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#cbf7d1"/>
+      <stop offset="1" stop-color="#6bd1d0"/>
+    </linearGradient>
+
+    <linearGradient id="dotLeft" x1="583" y1="373" x2="593" y2="398"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#89fff2"/>
+      <stop offset="1" stop-color="#32aada"/>
+    </linearGradient>
+
+    <linearGradient id="barBlue" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#97fff2"/>
+      <stop offset=".28" stop-color="#5de5ec"/>
+      <stop offset=".72" stop-color="#27addb"/>
+      <stop offset="1" stop-color="#247bb6"/>
+    </linearGradient>
+
+    <linearGradient id="barGold" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#fff2b0"/>
+      <stop offset=".24" stop-color="#e3ecad"/>
+      <stop offset=".57" stop-color="#76d9d5"/>
+      <stop offset="1" stop-color="#2788b9"/>
+    </linearGradient>
+
+    <linearGradient id="barShine" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#c9ffff" stop-opacity=".2"/>
+      <stop offset=".4" stop-color="#b6fffa" stop-opacity=".04"/>
+      <stop offset="1" stop-color="#05234b" stop-opacity=".15"/>
+    </linearGradient>
+
+    <filter id="wideGlow" x="-60%" y="-60%" width="220%" height="220%"
+            color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="19"/>
+    </filter>
+
+    <filter id="softGlow" x="-35%" y="-35%" width="170%" height="170%"
+            color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+
+    <filter id="smallGlow" x="-110%" y="-70%" width="320%" height="240%"
+            color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+
+    <filter id="tileShadow" x="-35%" y="-30%" width="170%" height="180%"
+            color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+
+    <filter id="grain" x="0" y="0" width="100%" height="100%"
+            color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency=".74"
+                    numOctaves="3" stitchTiles="stitch" seed="19"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncR type="linear" slope=".34" intercept=".2"/>
+        <feFuncG type="linear" slope=".4" intercept=".23"/>
+        <feFuncB type="linear" slope=".5" intercept=".28"/>
+        <feFuncA type="linear" slope=".045"/>
+      </feComponentTransfer>
+    </filter>
+
+    <clipPath id="tileClip">
+      <rect x="459" y="139" width="490" height="490" rx="105"/>
+    </clipPath>
+
+    <path id="arc"
+          d="M699 220
+             C611 222 540 294 540 384
+             C540 475 613 548 704 548
+             C793 548 864 479 867 391"/>
+
+    <path id="arcRight"
+          d="M704 548 C793 548 864 479 867 391"/>
+
+    <path id="arrowShape"
+          d="M636 319
+             C642 313 652 314 659 321
+             L693 356
+             C701 364 707 365 716 356
+             L833 238 L808 212 L896 196
+             L881 283 L857 260 L729 389
+             C725 401 716 408 704 408
+             C692 408 683 401 680 389
+             L636 344
+             C629 337 630 325 636 319 Z"/>
+
+    <g id="dialTicks">
+      <path d="M728 206 L738 208 L733 238 L724 236 Z"/>
+      <path d="M752 211 L761 214 L752 244 L743 241 Z"/>
+      <path d="M775 219 L784 223 L771 250 L763 246 Z"/>
+      <path d="M796 230 L804 236 L787 261 L780 255 Z"/>
+      <path d="M829 303 L854 287 L860 296 L835 312 Z"/>
+      <path d="M839 321 L867 309 L871 317 L843 329 Z"/>
+      <path d="M846 338 L875 330 L878 339 L849 347 Z"/>
+      <path d="M850 357 L881 353 L882 362 L851 366 Z"/>
+    </g>
+
+    <g id="bars">
+      <rect x="693.5" y="457.5" width="20" height="54.5"
+            rx="10" fill="url(#barBlue)"/>
+      <rect x="734" y="433" width="20.5" height="71.5"
+            rx="10.25" fill="url(#barBlue)"/>
+      <rect x="774.5" y="389.5" width="20.5" height="90"
+            rx="10.25" fill="url(#barGold)"/>
+    </g>
+  </defs>
+
+  <!-- Dark navy background and subtle procedural texture -->
+  <g id="background-layer">
+    <rect width="1408" height="768" fill="url(#background)"/>
+    <ellipse cx="704" cy="368" rx="477" ry="384"
+             fill="url(#ambient)"/>
+    <rect width="1408" height="768"
+          filter="url(#grain)" opacity=".6"/>
+  </g>
+
+  <!-- Rounded glass tile -->
+  <g id="tile-layer">
+    <rect x="462" y="163" width="484" height="485" rx="106"
+          fill="#000916" opacity=".82" filter="url(#tileShadow)"/>
+    <rect x="456" y="136" width="496" height="496" rx="108"
+          fill="url(#tile)"/>
+    <rect x="459" y="139" width="490" height="490" rx="105"
+          fill="url(#tileLight)"/>
+
+    <g clip-path="url(#tileClip)">
+      <ellipse cx="672" cy="319" rx="206" ry="168"
+               fill="url(#ambient)"/>
+      <rect x="456" y="136" width="496" height="496"
+            filter="url(#grain)" opacity=".8"/>
+    </g>
+
+    <rect x="456" y="136" width="496" height="496" rx="108"
+          stroke="url(#tileEdge)" stroke-width="6"/>
+    <path d="M461 245
+             C461 187 506 139 565 139
+             H843
+             C901 139 948 185 949 244"
+          stroke="#7e98ad" stroke-opacity=".09" stroke-width="1.2"/>
+  </g>
+
+  <!-- Broad cyan and gold light spill -->
+  <g id="ambient-icon-glow" opacity=".55">
+    <use xlink:href="#arc"
+         stroke="#18b6ee" stroke-width="44" stroke-linecap="round"
+         filter="url(#wideGlow)" opacity=".58"/>
+    <path d="M555 318 C581 261 638 221 699 220"
+          stroke="#59fbe4" stroke-width="38" stroke-linecap="round"
+          filter="url(#wideGlow)" opacity=".57"/>
+    <use xlink:href="#arrowShape"
+         fill="url(#arrow)" filter="url(#wideGlow)" opacity=".75"/>
+    <path d="M794 271 L872 216"
+          stroke="#ffd36e" stroke-width="34"
+          filter="url(#wideGlow)" opacity=".65"/>
+  </g>
+
+  <!-- Eight individual dial marks -->
+  <g id="dial-ticks-layer">
+    <use xlink:href="#dialTicks" fill="url(#ticks)"
+         opacity=".17" filter="url(#softGlow)"/>
+    <use xlink:href="#dialTicks" fill="url(#ticks)" opacity=".83"/>
+    <use xlink:href="#dialTicks" stroke="#d1e6c7"
+         stroke-width=".55" opacity=".12"/>
+  </g>
+
+  <!-- Open clock ring, with inner and outer bevel highlights -->
+  <g id="clock-ring-layer" stroke-linecap="round">
+    <use xlink:href="#arc" stroke="url(#ring)"
+         stroke-width="38" opacity=".35" filter="url(#softGlow)"/>
+    <use xlink:href="#arc" stroke="url(#ring)" stroke-width="34"/>
+    <use xlink:href="#arcRight"
+         stroke="url(#ringRight)" stroke-width="34"/>
+
+    <path d="M699 212
+             C606 215 532 291 532 384
+             C532 479 609 556 704 556
+             C797 556 872 483 875 391"
+          stroke="url(#ringBevel)" stroke-width="3" opacity=".56"/>
+
+    <path d="M699 227
+             C615 230 548 298 548 384
+             C548 470 618 540 704 540
+             C789 540 856 475 859 391"
+          stroke="#126faa" stroke-width="4" opacity=".14"/>
+
+    <path d="M696 219
+             C611 223 542 296 542 382
+             C542 471 615 545 703 545
+             C790 545 862 475 865 393"
+          stroke="url(#ringBevel)" stroke-width="8" opacity=".34"/>
+  </g>
+
+  <!-- Two luminous clock dots -->
+  <g id="dial-dots-layer">
+    <ellipse cx="704" cy="268.5" rx="14" ry="14"
+             fill="#8eefd6" opacity=".32" filter="url(#smallGlow)"/>
+    <ellipse cx="588.5" cy="384.5" rx="14" ry="14"
+             fill="#44eafa" opacity=".3" filter="url(#smallGlow)"/>
+
+    <ellipse cx="704" cy="268.5" rx="12" ry="12.5"
+             fill="url(#dotTop)"/>
+    <ellipse cx="588.5" cy="384.5" rx="12" ry="12.5"
+             fill="url(#dotLeft)"/>
+
+    <path d="M694 266 C695 259 700 256 706 258
+             M579 382 C580 376 585 373 591 375"
+          stroke="#d1ffe7" stroke-width="1.2"
+          stroke-linecap="round" opacity=".3"/>
+  </g>
+
+  <!-- Clock hand / rising arrow with faceted gold arrowhead -->
+  <g id="rising-arrow-layer">
+    <use xlink:href="#arrowShape" fill="url(#arrow)"
+         opacity=".5" filter="url(#softGlow)"/>
+    <use xlink:href="#arrowShape" fill="url(#arrow)"/>
+
+    <path d="M636 319
+             C642 313 652 314 659 321
+             L693 356
+             C701 364 707 365 716 356
+             L732 340 L720 378
+             C708 406 690 401 680 389
+             L636 344
+             C629 337 630 325 636 319 Z"
+          fill="url(#leftHand)"/>
+
+    <path d="M896 196
+             L881 283 L857 260 L729 389
+             C725 401 716 408 704 408
+             C694 408 686 403 682 395
+             C699 411 715 393 721 382
+             L855 249 L877 273 Z"
+          fill="url(#goldBevel)" opacity=".65"/>
+
+    <path d="M644 323
+             C648 321 652 323 656 327
+             L692 366
+             Q704 378 718 364
+             L845 237 L820 216 L888 201
+             L853 241 L716 379
+             Q705 394 693 381
+             L640 334
+             Q637 327 644 323 Z"
+          fill="url(#arrowFace)" opacity=".7"/>
+
+    <path d="M640 320
+             C645 316 652 318 657 323
+             L694 360
+             Q704 370 716 359
+             L835 238 L810 213 L895 197"
+          stroke="#f0ffe0" stroke-width="2"
+          stroke-linejoin="round" opacity=".47"/>
+
+    <path d="M895 199 L881 281 L857 258 L727 389"
+          stroke="#ffdc87" stroke-width="1.8"
+          stroke-linejoin="round" opacity=".47"/>
+
+    <path d="M642 331 L691 380
+             Q705 398 719 379
+             L847 249"
+          stroke="#c1fff0" stroke-width="3.5"
+          stroke-linecap="round" opacity=".14"/>
+  </g>
+
+  <!-- Three rounded chart bars with glow and edge reflections -->
+  <g id="chart-bars-layer">
+    <use xlink:href="#bars" opacity=".63" filter="url(#smallGlow)"/>
+    <use xlink:href="#bars"/>
+
+    <rect x="693.5" y="457.5" width="20" height="54.5"
+          rx="10" fill="url(#barShine)"/>
+    <rect x="734" y="433" width="20.5" height="71.5"
+          rx="10.25" fill="url(#barShine)"/>
+    <rect x="774.5" y="389.5" width="20.5" height="90"
+          rx="10.25" fill="url(#barShine)"/>
+
+    <path d="M696 500 V469 Q696 460 703 460
+             M736.5 492 V444 Q736.5 436 743 436
+             M777 467 V401 Q777 393 784 392"
+          stroke="#c2fff1" stroke-width="1.2"
+          stroke-linecap="round" opacity=".23"/>
+  </g>
+</svg>

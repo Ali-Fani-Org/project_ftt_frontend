@@ -333,7 +333,7 @@
 
 				<!-- Subtle global sync indicator while any query is fetching -->
 				<SyncIndicator />
-				<MobileTabBar drawerCheckbox={drawerCheckbox} />
+				<MobileTabBar />
 			</div>
 
 			<!-- Drawer side (sidebar) -->

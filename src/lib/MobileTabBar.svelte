@@ -1,43 +1,28 @@
 <script lang="ts">
-	import { Timer, LayoutDashboard, ListChecks, ChartColumn } from '@jis3r/icons';
+	import { Timer, LayoutDashboard, ListChecks, ChartColumn, Settings } from '@jis3r/icons';
 	import { page } from '$app/stores';
 	import { gotoApp, stripBase } from '$lib/navigation';
 	import { prefetchRoute } from '$lib/queries/prefetch';
-
-	let { drawerCheckbox }: { drawerCheckbox?: HTMLInputElement } = $props();
+	import { useActiveTimer } from '$lib/queries/timeEntries';
 
 	const tabs = [
 		{ name: 'Timer', href: '/timer', icon: Timer },
 		{ name: 'Dash', href: '/dashboard', icon: LayoutDashboard },
 		{ name: 'Entries', href: '/entries', icon: ListChecks },
-		{ name: 'Reports', href: '/reports', icon: ChartColumn }
+		{ name: 'Reports', href: '/reports', icon: ChartColumn },
+		{ name: 'Settings', href: '/settings', icon: Settings }
 	] as const;
 
 	const current = $derived(stripBase($page.url.pathname));
-	const moreActive = $derived(current === '/settings' || current === '/profile');
+	const activeTimerQuery = useActiveTimer();
+	const isTimerRunning = $derived(!!activeTimerQuery.data);
 
 	function isActive(href: string) {
 		return current === href || (href !== '/' && current.startsWith(`${href}/`));
 	}
 
-	function drawer(): HTMLInputElement | null {
-		return (
-			drawerCheckbox ??
-			(typeof document !== 'undefined'
-				? (document.getElementById('app-drawer') as HTMLInputElement | null)
-				: null)
-		);
-	}
-
 	function go(href: string) {
-		const el = drawer();
-		if (el) el.checked = false;
 		gotoApp(href);
-	}
-
-	function openMore() {
-		const el = drawer();
-		if (el) el.checked = true;
 	}
 </script>
 
@@ -50,7 +35,7 @@
 			<li class="min-w-0">
 				<button
 					type="button"
-					class="flex h-full w-full min-h-11 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium leading-none whitespace-nowrap {isActive(
+					class="relative flex h-full w-full min-h-11 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium leading-none whitespace-nowrap {isActive(
 						tab.href
 					)
 						? 'text-primary'
@@ -60,29 +45,39 @@
 					onmouseenter={() => prefetchRoute(tab.href)}
 					onfocus={() => prefetchRoute(tab.href)}
 				>
-					<span class="inline-flex" aria-hidden="true"><tab.icon size={20} /></span>
+					<span class="relative inline-flex" aria-hidden="true">
+						<tab.icon
+							size={20}
+							class={tab.href === '/timer' && isTimerRunning ? 'tab-timer-running' : ''}
+						/>
+						{#if tab.href === '/timer' && isTimerRunning}
+							<span class="absolute -right-0.5 -top-0.5 flex h-2 w-2">
+								<span
+									class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75"
+								></span>
+								<span class="relative inline-flex h-2 w-2 rounded-full bg-success"></span>
+							</span>
+						{/if}
+					</span>
 					{tab.name}
 				</button>
 			</li>
 		{/each}
-		<li class="min-w-0">
-			<button
-				type="button"
-				class="flex h-full w-full min-h-11 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium leading-none whitespace-nowrap {moreActive
-					? 'text-primary'
-					: 'text-base-content/60'}"
-				aria-label="More"
-				onclick={openMore}
-			>
-				<span class="inline-flex h-5 w-5 items-center justify-center" aria-hidden="true">
-					<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5">
-						<circle cx="6" cy="12" r="1.7" />
-						<circle cx="12" cy="12" r="1.7" />
-						<circle cx="18" cy="12" r="1.7" />
-					</svg>
-				</span>
-				More
-			</button>
-		</li>
 	</ul>
 </nav>
+
+<style>
+	:global(.tab-timer-running) {
+		animation: tab-timer-spin 6s linear infinite;
+	}
+	@keyframes tab-timer-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		:global(.tab-timer-running) {
+			animation: none;
+		}
+	}
+</style>

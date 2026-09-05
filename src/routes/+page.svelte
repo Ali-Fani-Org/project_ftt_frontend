@@ -6,6 +6,7 @@
 	import { logoutAlert, minimizeToTray, closeToTray } from '$lib/stores';
 	import LoginSettingsModal from '$lib/LoginSettingsModal.svelte';
 	import { network } from '$lib/network';
+	import BrandMark from '$lib/BrandMark.svelte';
 	import {
 		Clock,
 		ChartColumn,
@@ -349,10 +350,8 @@
 		<div
 			class="w-full max-w-sm rounded-2xl border border-base-300/60 bg-base-100/70 p-10 text-center shadow-2xl backdrop-blur-xl"
 		>
-			<div
-				class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"
-			>
-				<span class="inline-flex" aria-hidden="true"><Clock size={28} /></span>
+			<div class="mx-auto flex h-14 w-14 items-center justify-center">
+				<BrandMark size={56} framed />
 			</div>
 			<div class="mt-6 flex items-center justify-center gap-2">
 				<span class="loading loading-spinner loading-sm text-primary"></span>
@@ -458,10 +457,8 @@
 				>
 					<!-- Brand -->
 					<div class="flex items-center gap-3">
-						<div
-							class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"
-						>
-							<span class="inline-flex" aria-hidden="true"><Clock size={24} /></span>
+						<div class="flex h-11 w-11 shrink-0 items-center justify-center">
+							<BrandMark size={44} framed />
 						</div>
 						<div>
 							<p class="text-lg font-bold tracking-tight">Time Tracker</p>
@@ -546,10 +543,8 @@
 
 					<!-- Compact brand (mobile only) -->
 					<div class="mb-6 flex items-center gap-3 lg:hidden">
-						<div
-							class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"
-						>
-							<span class="inline-flex" aria-hidden="true"><Clock size={22} /></span>
+						<div class="flex h-10 w-10 shrink-0 items-center justify-center">
+							<BrandMark size={40} framed />
 						</div>
 						<p class="text-lg font-bold tracking-tight">Time Tracker</p>
 					</div>

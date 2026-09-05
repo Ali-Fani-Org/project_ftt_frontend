@@ -26,8 +26,10 @@
 		Wifi,
 		Activity,
 		ChevronDown,
-		Check
+		Check,
+		UserRound
 	} from '@lucide/svelte';
+	import { gotoApp } from '$lib/navigation';
 	import { Settings as SettingsIcon } from '@jis3r/icons';
 	import {
 		baseUrl,
@@ -1069,6 +1071,11 @@
 			description="App information and your workspace"
 		>
 			<div class="divide-y divide-base-200">
+				<SettingRow icon={UserRound} title="Profile" description="Name, avatar and passkeys">
+					<button type="button" class="btn btn-sm btn-ghost" onclick={() => gotoApp('/profile')}
+						>Open</button
+					>
+				</SettingRow>
 				<SettingRow icon={Info} title="Version" description="App release you are running">
 					<span class="text-sm font-medium text-base-content/70">
 						{appVersion || 'dev build'}{versionSource === 'desktop'
