@@ -33,11 +33,10 @@
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<meta name="apple-mobile-web-app-title" content="TimeTracker" />
-		<!-- NOTE: the PWA manifest <link> is injected post-build by the Pages
-		     workflow (.github/workflows/gh-pages.yml) and mirrored in
-		     scripts/verify-pages-build.mjs. It must NOT live here: the
-		     prerender crawler follows it and 404s in Tauri builds (which ship
-		     no manifest), failing `bun run build`. -->
+		<!-- Manifest <link> is emitted from +layout.svelte via virtual:pwa-info
+		     (PWA builds only) and backfilled into every HTML file by the Pages
+		     workflow. It must NOT live here: the prerender crawler follows it
+		     and 404s in Tauri builds, which ship no manifest. -->
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

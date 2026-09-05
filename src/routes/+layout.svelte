@@ -30,6 +30,15 @@
 	import PwaPrompt from '$lib/PwaPrompt.svelte';
 	import MobileTabBar from '$lib/MobileTabBar.svelte';
 	import { syncThemeColorMeta } from '$lib/themeMeta';
+	import { pwaInfo } from 'virtual:pwa-info';
+	import { base } from '$app/paths';
+
+	const manifestHref = $derived.by(() => {
+		const href = pwaInfo?.webManifest?.href;
+		if (href && (href.startsWith('/') || href.startsWith('http'))) return href;
+		const prefix = base.endsWith('/') ? base : `${base}/`;
+		return `${prefix}manifest.webmanifest`;
+	});
 
 	let { children } = $props();
 	let isTauri = $state(false);
@@ -259,6 +268,12 @@
 		}
 	}
 </script>
+
+<svelte:head>
+	{#if pwaInfo}
+		<link rel="manifest" href={manifestHref} />
+	{/if}
+</svelte:head>
 
 <PersistQueryClientProvider client={queryClient} persistOptions={queryPersistOptions}>
 	{#if $backgroundAnimationEnabled}

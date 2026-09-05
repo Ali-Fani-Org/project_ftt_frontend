@@ -1,5 +1,8 @@
 import adapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { readFileSync } from 'node:fs';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -29,6 +32,13 @@ const config = {
 		// Pin this off so SvelteKit never double-registers a worker.
 		serviceWorker: {
 			register: false
+		},
+		// Unique per CI build so `_app/version.json` changes on every Pages
+		// deploy. The client polls this (bypassing the SW cache) to notice
+		// updates even when GitHub's CDN still has the old `sw.js`.
+		version: {
+			name: `${pkg.version}-${Date.now()}`,
+			pollInterval: 20000
 		}
 	}
 };

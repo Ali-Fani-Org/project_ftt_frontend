@@ -132,11 +132,16 @@ if (mode === 'pages') {
 	// builds, which ship no manifest).
 	copyFileSync(path.join(buildDir, 'index.html'), path.join(buildDir, '404.html'));
 	const manifestLink = `<link rel="manifest" href="${REPO_BASE}/manifest.webmanifest" />`;
-	for (const f of ['index.html', '404.html']) {
-		const p = path.join(buildDir, f);
-		writeFileSync(p, readFileSync(p, 'utf8').replace('</head>', `  ${manifestLink}\n</head>`));
+	function injectManifestLink(file) {
+		const html = readFileSync(file, 'utf8');
+		if (html.includes('manifest.webmanifest')) return;
+		if (!html.includes('</head>')) return;
+		writeFileSync(file, html.replace('</head>', `  ${manifestLink}\n</head>`));
 	}
-	console.log('\nCreated build/404.html from build/index.html (+ manifest link in both)');
+	for (const file of listFilesRecursive(buildDir, '.html')) {
+		injectManifestLink(file);
+	}
+	console.log('\nCreated build/404.html and ensured every HTML file links the manifest');
 
 	console.log('\nAssertions (pages):');
 	const indexHtml = readFileSync(path.join(buildDir, 'index.html'), 'utf8');
@@ -147,6 +152,15 @@ if (mode === 'pages') {
 		'index.html links the web manifest',
 		indexHtml.includes('manifest.webmanifest'),
 		'no <link rel=manifest> — browser will never associate the PWA'
+	);
+	const htmlFiles = listFilesRecursive(buildDir, '.html');
+	const htmlMissingManifest = htmlFiles.filter(
+		(f) => !readFileSync(f, 'utf8').includes('manifest.webmanifest')
+	);
+	check(
+		'every prerendered HTML file links the manifest',
+		htmlMissingManifest.length === 0,
+		htmlMissingManifest.slice(0, 5).map((f) => path.relative(buildDir, f)).join(', ')
 	);
 	// SW registration happens at runtime (PwaPrompt onMount), so it lives in
 	// the JS bundle, not inline HTML — scan the emitted chunks for it.

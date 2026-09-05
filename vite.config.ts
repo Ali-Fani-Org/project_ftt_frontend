@@ -110,9 +110,13 @@ export default defineConfig(() => {
 								globPatterns: [
 									'**/*.{js,css,html,ico,png,svg,webmanifest,woff,woff2}'
 								],
-								// Prompt mode: the new worker waits until Workbox
-								// messageSkipWaiting() (the Reload button). Then it
-								// claims open clients so the reload picks it up.
+								globIgnores: ['**/version.json'],
+								runtimeCaching: [
+									{
+										urlPattern: /\/_app\/version\.json/i,
+										handler: 'NetworkOnly'
+									}
+								],
 								skipWaiting: false,
 								clientsClaim: true,
 								cleanupOutdatedCaches: true
@@ -121,7 +125,10 @@ export default defineConfig(() => {
 								enabled: false
 							},
 							kit: {
-								includeVersionFile: true
+								// Do NOT precache version.json — the client polls it
+								// with cache: 'no-store' to notice GitHub Pages deploys
+								// while the old service worker is still in control.
+								includeVersionFile: false
 							}
 						})
 					]

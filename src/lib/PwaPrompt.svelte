@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { version } from '$app/environment';
+	import { updated } from '$app/stores';
+	import { base } from '$app/paths';
 	import { pwaInfo } from 'virtual:pwa-info';
 	import logger from '$lib/logger';
 	import {
@@ -44,8 +47,43 @@
 
 	let installed = $state(false);
 
-	const canUpdate = $derived(needRefresh && !dismissedUpdate);
+	const canUpdate = $derived((needRefresh || $updated) && !dismissedUpdate);
 	const canInstall = $derived(!installed && !canUpdate && (nativeInstall || manualInstall));
+
+	$effect(() => {
+		if ($updated) markNeedsRefresh();
+	});
+
+	function markNeedsRefresh() {
+		needRefresh = true;
+		dismissedUpdate = false;
+		pwaNeedRefresh.set(true);
+	}
+
+	/** GitHub Pages CDNs cache `sw.js` for minutes. version.json is NetworkOnly
+	 *  and fetched with cache: 'no-store' so we notice a new deploy anyway. */
+	async function checkDeployedVersion() {
+		if (typeof window === 'undefined' || !navigator.onLine) return false;
+		try {
+			const url = `${base}/_app/version.json?t=${Date.now()}`;
+			const res = await fetch(url, { cache: 'no-store', headers: { pragma: 'no-cache' } });
+			if (!res.ok) return false;
+			const remote = (await res.json()) as { version?: string };
+			if (remote.version && remote.version !== version) {
+				logger.info('New deploy detected', { local: version, remote: remote.version });
+				markNeedsRefresh();
+				return true;
+			}
+		} catch (err) {
+			logger.debug('version.json check failed', err);
+		}
+		try {
+			await updated.check();
+		} catch {
+			/* ignore */
+		}
+		return false;
+	}
 
 	function isTauri(): boolean {
 		return (
@@ -108,6 +146,7 @@
 		};
 
 		void refreshInstallState();
+		void checkDeployedVersion();
 
 		const onUserInstall = () => void install();
 		const onUserReload = () => void reloadForUpdate();
@@ -150,9 +189,7 @@
 					updateServiceWorker = registerSW({
 						immediate: true,
 						onNeedRefresh() {
-							needRefresh = true;
-							dismissedUpdate = false;
-							pwaNeedRefresh.set(true);
+							markNeedsRefresh();
 							logger.info('PWA update waiting — showing reload prompt');
 						},
 						onOfflineReady() {
@@ -165,9 +202,7 @@
 							if (!registration) return;
 
 							if (registration.waiting && navigator.serviceWorker.controller) {
-								needRefresh = true;
-								dismissedUpdate = false;
-								pwaNeedRefresh.set(true);
+								markNeedsRefresh();
 							}
 
 							registration.addEventListener('updatefound', () => {
@@ -178,21 +213,19 @@
 										installing.state === 'installed' &&
 										navigator.serviceWorker.controller
 									) {
-										needRefresh = true;
-										dismissedUpdate = false;
-										pwaNeedRefresh.set(true);
+										markNeedsRefresh();
 									}
 								});
 							});
 
 							const check = () => {
+								void checkDeployedVersion();
 								if (registration.installing || !navigator.onLine) return;
-								void registration.update().catch((err) => {
-									logger.debug('SW update check failed', err);
-								});
+								void fetch(`${swUrl}?t=${Date.now()}`, { cache: 'no-store' })
+									.then(() => registration.update())
+									.catch((err) => logger.debug('SW update check failed', err));
 								if (registration.waiting && navigator.serviceWorker.controller) {
-									needRefresh = true;
-									pwaNeedRefresh.set(true);
+									markNeedsRefresh();
 								}
 							};
 
@@ -208,8 +241,8 @@
 							};
 							document.addEventListener('visibilitychange', onVisible);
 							window.addEventListener('focus', onFocus);
-							setTimeout(check, 3_000);
-							poll = setInterval(check, 2 * 60 * 1000);
+							void check();
+							poll = setInterval(check, 20_000);
 
 							// Chrome fires beforeinstallprompt after the SW is
 							// installed. Give it several seconds before falling
@@ -286,9 +319,21 @@
 		try {
 			await updateServiceWorker?.(true);
 		} catch (err) {
-			logger.warn('PWA update failed', err);
-			window.location.reload();
+			logger.warn('PWA skipWaiting failed', err);
 		}
+		try {
+			if ('serviceWorker' in navigator) {
+				const regs = await navigator.serviceWorker.getRegistrations();
+				await Promise.all(regs.map((r) => r.unregister()));
+			}
+			if (typeof caches !== 'undefined') {
+				const keys = await caches.keys();
+				await Promise.all(keys.map((k) => caches.delete(k)));
+			}
+		} catch (err) {
+			logger.warn('PWA cache clear failed', err);
+		}
+		window.location.reload();
 	}
 </script>
 
