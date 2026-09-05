@@ -53,6 +53,7 @@
 
 	import { network, pingBaseUrl, type BaseUrlPingResult } from '$lib/network';
 	import { addToast } from '$lib/toast';
+	import { pwaNeedRefresh, pwaNativeInstall, pwaManualInstall } from '$lib/pwa/availability';
 	import { dev } from '$app/environment';
 
 	import { onMount, untrack } from 'svelte';
@@ -1071,6 +1072,31 @@
 			description="App information and your workspace"
 		>
 			<div class="divide-y divide-base-200">
+				{#if $pwaNeedRefresh}
+					<SettingRow
+						icon={RefreshCw}
+						title="App update"
+						description="A new version is ready to load"
+					>
+						<button
+							type="button"
+							class="btn btn-sm btn-primary"
+							onclick={() => window.dispatchEvent(new Event('pwa-user-reload'))}>Reload</button
+						>
+					</SettingRow>
+				{:else if $pwaNativeInstall || $pwaManualInstall}
+					<SettingRow
+						icon={CloudDownload}
+						title="Install app"
+						description="Add Time Tracker to your home screen"
+					>
+						<button
+							type="button"
+							class="btn btn-sm btn-primary"
+							onclick={() => window.dispatchEvent(new Event('pwa-user-install'))}>Install</button
+						>
+					</SettingRow>
+				{/if}
 				<SettingRow icon={UserRound} title="Profile" description="Name, avatar and passkeys">
 					<button type="button" class="btn btn-sm btn-ghost" onclick={() => gotoApp('/profile')}
 						>Open</button

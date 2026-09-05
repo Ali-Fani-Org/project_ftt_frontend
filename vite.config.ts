@@ -40,7 +40,9 @@ export default defineConfig(() => {
 								'apple-touch-icon.png',
 								'pwa-192x192.png',
 								'pwa-512x512.png',
-								'maskable-icon.png'
+								'maskable-icon.png',
+								'screenshot-narrow.png',
+								'screenshot-wide.png'
 							],
 							base: appBase,
 							scope: pwaScope,
@@ -72,6 +74,22 @@ export default defineConfig(() => {
 										sizes: '512x512',
 										type: 'image/png',
 										purpose: 'maskable'
+									}
+								],
+								screenshots: [
+									{
+										src: 'screenshot-narrow.png',
+										sizes: '540x720',
+										type: 'image/png',
+										form_factor: 'narrow',
+										label: 'Timer on a phone'
+									},
+									{
+										src: 'screenshot-wide.png',
+										sizes: '1280x720',
+										type: 'image/png',
+										form_factor: 'wide',
+										label: 'Time Tracker on desktop'
 									}
 								]
 							},

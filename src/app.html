@@ -9,6 +9,19 @@
 			} catch (e) {
 				console.warn('Theme preload failed', e);
 			}
+			// Chrome on Android fires beforeinstallprompt as soon as the page is
+			// installable — often BEFORE Svelte mounts. Capture it here or the
+			// in-app Install banner never sees the event.
+			window.__pwa = window.__pwa || {};
+			window.addEventListener('beforeinstallprompt', function (e) {
+				e.preventDefault();
+				window.__pwa.deferredPrompt = e;
+				window.dispatchEvent(new Event('pwa-install-available'));
+			});
+			window.addEventListener('appinstalled', function () {
+				window.__pwa.deferredPrompt = null;
+				window.dispatchEvent(new Event('pwa-installed'));
+			});
 		</script>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" />

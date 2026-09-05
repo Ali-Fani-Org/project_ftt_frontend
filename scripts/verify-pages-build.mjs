@@ -179,6 +179,17 @@ if (mode === 'pages') {
 				manifest.start_url === `${REPO_BASE}/`,
 				`got "${manifest.start_url}"`
 			);
+			const shots = Array.isArray(manifest.screenshots) ? manifest.screenshots : [];
+			check(
+				'manifest has a non-wide screenshot (mobile richer install UI)',
+				shots.some((s) => s && s.form_factor !== 'wide'),
+				'add a screenshot with form_factor omitted or set to narrow'
+			);
+			check(
+				'manifest has a wide screenshot (desktop richer install UI)',
+				shots.some((s) => s && s.form_factor === 'wide'),
+				'add a screenshot with form_factor wide'
+			);
 		} catch (e) {
 			check('manifest.webmanifest is valid JSON', false, String(e));
 		}
@@ -191,7 +202,14 @@ if (mode === 'pages') {
 		!existsSync(swPath) || readFileSync(swPath, 'utf8').length > 0,
 		'sw.js is empty'
 	);
-	for (const icon of ['pwa-192x192.png', 'pwa-512x512.png', 'maskable-icon.png', 'apple-touch-icon.png']) {
+	for (const icon of [
+		'pwa-192x192.png',
+		'pwa-512x512.png',
+		'maskable-icon.png',
+		'apple-touch-icon.png',
+		'screenshot-narrow.png',
+		'screenshot-wide.png'
+	]) {
 		check(`static/${icon} bundled`, existsSync(path.join(buildDir, icon)));
 	}
 

@@ -49,6 +49,9 @@ await (await raster(32)).toFile(favicon);
 await (await raster(256)).toFile(inApp);
 await (await raster(512)).toFile(TAURI_ICON);
 
+console.log('PWA screenshots:');
+await import(pathToFileURL(path.join(root, 'scripts', 'generate-pwa-screenshots.mjs')).href);
+
 console.log('PWA icons written to static/:');
 for (const f of [pwa192, pwa512, maskable, apple, favicon, inApp, TAURI_ICON]) {
 	const m = await sharp(f).metadata();

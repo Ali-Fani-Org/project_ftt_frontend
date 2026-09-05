@@ -11,6 +11,7 @@
 	import { queryClient } from '$lib/queryClient';
 	import logger from '$lib/logger';
 	import { stripBase } from '$lib/navigation';
+	import { pwaNeedRefresh, pwaNativeInstall, pwaManualInstall } from '$lib/pwa/availability';
 
 	// ------------------------------------------------------------------
 	// Unified app bar — one 56px bar in both the browser and the Tauri
@@ -226,6 +227,27 @@
 			<span class="h-2 w-2 shrink-0 rounded-full {netDotClass}"></span>
 			<span class="hidden text-xs font-medium text-base-content/70 md:inline">{netLabel}</span>
 		</span>
+
+		<!-- PWA update / install — always in the top bar so Android/iOS chrome
+		     cannot cover the bottom banner. PwaPrompt owns the click handlers
+		     via CustomEvents. -->
+		{#if $pwaNeedRefresh}
+			<button
+				type="button"
+				class="btn btn-primary btn-xs h-8 min-h-8"
+				onclick={() => window.dispatchEvent(new Event('pwa-user-reload'))}
+			>
+				Update
+			</button>
+		{:else if $pwaNativeInstall || $pwaManualInstall}
+			<button
+				type="button"
+				class="btn btn-ghost btn-xs h-8 min-h-8"
+				onclick={() => window.dispatchEvent(new Event('pwa-user-install'))}
+			>
+				Install
+			</button>
+		{/if}
 
 		<!-- Global data freshness ring -->
 		<DataFreshnessIndicator onRefresh={refreshAll} />

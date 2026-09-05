@@ -28,6 +28,12 @@ declare global {
 	// True only for web builds with ENABLE_PWA=true (GitHub Pages).
 	// Lets components strip all PWA wiring from Tauri builds at compile time.
 	const __PWA_ENABLED__: boolean;
+
+	interface Window {
+		__pwa?: {
+			deferredPrompt?: Event | null;
+		};
+	}
 }
 
 export {};
