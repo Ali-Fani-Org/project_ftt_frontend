@@ -6,11 +6,13 @@
 		pwaNativeInstall,
 		pwaManualInstall,
 		pwaNeedRefresh,
+		pwaIsInstalled,
 		isStandalone,
 		isIosDevice,
 		isAndroidDevice,
 		installHintDismissed,
-		dismissInstallHint
+		dismissInstallHint,
+		checkInstalled
 	} from '$lib/pwa/availability';
 
 	/**
@@ -40,8 +42,10 @@
 	let manualInstall = $state(false);
 	let updateServiceWorker = $state<((reloadPage?: boolean) => Promise<void>) | null>(null);
 
+	let installed = $state(false);
+
 	const canUpdate = $derived(needRefresh && !dismissedUpdate);
-	const canInstall = $derived(!canUpdate && (nativeInstall || manualInstall));
+	const canInstall = $derived(!installed && !canUpdate && (nativeInstall || manualInstall));
 
 	function isTauri(): boolean {
 		return (
@@ -72,15 +76,38 @@
 			pwaManualInstall.set(false);
 			return;
 		}
-		manualInstall = isIosDevice() || isAndroidDevice();
+		// iOS has no beforeinstallprompt. Android does — wait for it so we
+		// don't send people to "Add to Home screen" (that only makes a shortcut).
+		manualInstall = isIosDevice();
 		pwaManualInstall.set(manualInstall);
+	}
+
+	function offerAndroidFallback() {
+		if (isStandalone() || nativeInstall || installHintDismissed() || !isAndroidDevice()) {
+			return;
+		}
+		manualInstall = true;
+		pwaManualInstall.set(true);
 	}
 
 	onMount(() => {
 		if (isTauri()) return;
 
-		syncNativeFromWindow();
-		if (!nativeInstall) offerManualInstall();
+		const refreshInstallState = async () => {
+			installed = await checkInstalled();
+			pwaIsInstalled.set(installed);
+			if (installed) {
+				nativeInstall = false;
+				manualInstall = false;
+				pwaNativeInstall.set(false);
+				pwaManualInstall.set(false);
+				return;
+			}
+			syncNativeFromWindow();
+			if (isIosDevice() && !nativeInstall) offerManualInstall();
+		};
+
+		void refreshInstallState();
 
 		const onUserInstall = () => void install();
 		const onUserReload = () => void reloadForUpdate();
@@ -88,8 +115,10 @@
 		const onAvailable = () => syncNativeFromWindow();
 		const onInstalled = () => {
 			pwaHolder().deferredPrompt = null;
+			installed = true;
 			nativeInstall = false;
 			manualInstall = false;
+			pwaIsInstalled.set(true);
 			pwaNativeInstall.set(false);
 			pwaManualInstall.set(false);
 		};
@@ -99,6 +128,15 @@
 		window.addEventListener('appinstalled', onInstalled);
 		window.addEventListener('pwa-user-install', onUserInstall);
 		window.addEventListener('pwa-user-reload', onUserReload);
+
+		const onDisplayMode = () => {
+			void refreshInstallState();
+		};
+		const standaloneMq =
+			typeof window.matchMedia === 'function'
+				? window.matchMedia('(display-mode: standalone), (display-mode: window-controls-overlay)')
+				: null;
+		standaloneMq?.addEventListener?.('change', onDisplayMode);
 
 		let poll: ReturnType<typeof setInterval> | undefined;
 		let cancelled = false;
@@ -119,7 +157,8 @@
 						},
 						onOfflineReady() {
 							logger.debug('PWA ready to work offline');
-							if (!nativeInstall) offerManualInstall();
+							syncNativeFromWindow();
+							if (isIosDevice() && !nativeInstall) offerManualInstall();
 						},
 						onRegisteredSW(swUrl, registration) {
 							logger.info('Service worker registered', swUrl);
@@ -158,25 +197,44 @@
 							};
 
 							onVisible = () => {
-								if (document.visibilityState === 'visible') check();
+								if (document.visibilityState === 'visible') {
+									check();
+									void refreshInstallState();
+								}
 							};
-							onFocus = check;
+							onFocus = () => {
+								check();
+								void refreshInstallState();
+							};
 							document.addEventListener('visibilitychange', onVisible);
 							window.addEventListener('focus', onFocus);
 							setTimeout(check, 3_000);
 							poll = setInterval(check, 2 * 60 * 1000);
 
-							if (!nativeInstall) offerManualInstall();
+							// Chrome fires beforeinstallprompt after the SW is
+							// installed. Give it several seconds before falling
+							// back to menu instructions.
+							setTimeout(async () => {
+								if (await checkInstalled()) return;
+								syncNativeFromWindow();
+								if (!nativeInstall) offerAndroidFallback();
+							}, 10_000);
 						},
 						onRegisterError(error) {
 							logger.warn('Service worker registration failed', error);
-							if (!nativeInstall) offerManualInstall();
+							if (isIosDevice()) offerManualInstall();
+							else setTimeout(() => offerAndroidFallback(), 10_000);
 						}
 					});
 				})
 				.catch((err) => logger.warn('PWA register module failed', err));
-		} else if (!nativeInstall) {
+		} else if (isIosDevice() && !nativeInstall) {
 			offerManualInstall();
+		} else if (!nativeInstall) {
+			setTimeout(() => {
+				syncNativeFromWindow();
+				if (!nativeInstall) offerAndroidFallback();
+			}, 10_000);
 		}
 
 		return () => {
@@ -189,6 +247,7 @@
 			window.removeEventListener('pwa-user-reload', onUserReload);
 			if (onVisible) document.removeEventListener('visibilitychange', onVisible);
 			if (onFocus) window.removeEventListener('focus', onFocus);
+			standaloneMq?.removeEventListener?.('change', onDisplayMode);
 			if (poll) clearInterval(poll);
 		};
 	});
@@ -262,7 +321,7 @@
 					{:else if isIosDevice()}
 						On iPhone: tap Share, then Add to Home Screen.
 					{:else}
-						On Android: tap the browser menu, then Install app.
+						Use Chrome’s Install app — not Add to Home screen (that only makes a shortcut).
 					{/if}
 				</p>
 			</div>
@@ -297,11 +356,19 @@
 	<div class="modal modal-open">
 		<div class="modal-box">
 			<h3 class="font-bold text-lg">Install the app</h3>
+			<p class="mt-2 text-sm opacity-80">
+				Do not tap <strong>Add to Home screen</strong> — that only creates a bookmark shortcut.
+				You want <strong>Install app</strong>, which installs Time Tracker as a real app.
+			</p>
 			<ol class="mt-3 list-decimal space-y-2 pl-5 text-sm">
 				<li>Tap the <strong>⋮</strong> menu in the top-right of Chrome.</li>
-				<li>Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+				<li>Tap <strong>Install app</strong> (not Add to Home screen).</li>
 				<li>Confirm <strong>Install</strong>.</li>
 			</ol>
+			<p class="mt-3 text-xs opacity-70">
+				If you already added a shortcut, remove it from the home screen, then install from this
+				banner or Chrome’s Install app item.
+			</p>
 			<div class="modal-action">
 				<button class="btn btn-primary" onclick={() => (showAndroidHowTo = false)}>Got it</button>
 			</div>

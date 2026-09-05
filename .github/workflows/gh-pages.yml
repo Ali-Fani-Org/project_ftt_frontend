@@ -43,6 +43,7 @@ jobs:
         env:
           BASE_PATH: '/project_ftt_frontend'
           ENABLE_PWA: 'true'
+          PWA_ORIGIN: 'https://ali-fani.github.io'
         run: bun run build
 
       # adapter-static is configured with fallback 'index.html' (Tauri canonical).

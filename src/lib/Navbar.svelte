@@ -11,7 +11,12 @@
 	import { queryClient } from '$lib/queryClient';
 	import logger from '$lib/logger';
 	import { stripBase } from '$lib/navigation';
-	import { pwaNeedRefresh, pwaNativeInstall, pwaManualInstall } from '$lib/pwa/availability';
+	import {
+		pwaNeedRefresh,
+		pwaNativeInstall,
+		pwaManualInstall,
+		pwaIsInstalled
+	} from '$lib/pwa/availability';
 
 	// ------------------------------------------------------------------
 	// Unified app bar — one 56px bar in both the browser and the Tauri
@@ -192,7 +197,7 @@
 -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <nav
-	class="sticky top-0 z-40 flex min-h-14 w-full items-center gap-2 border-b border-base-300/60 bg-base-100 px-3 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md lg:px-4"
+	class="app-bar sticky top-0 z-40 flex min-h-14 w-full items-center gap-2 border-b border-base-300/60 bg-base-100 px-3 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md lg:px-4"
 	data-tauri-drag-region={useCustomTitlebar || undefined}
 	onmousedown={handleBarMouseDown}
 	ondblclick={handleBarDoubleClick}
@@ -239,7 +244,7 @@
 			>
 				Update
 			</button>
-		{:else if $pwaNativeInstall || $pwaManualInstall}
+		{:else if !$pwaIsInstalled && ($pwaNativeInstall || $pwaManualInstall)}
 			<button
 				type="button"
 				class="btn btn-ghost btn-xs h-8 min-h-8"

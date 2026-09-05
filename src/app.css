@@ -67,3 +67,38 @@ body {
 *[data-tauri-drag-region] {
 	app-region: drag;
 }
+
+/* Installed desktop PWA with Window Controls Overlay: the OS draws min/max/close
+   on top of our page. Put the app bar in the leftover titlebar area and make it
+   a drag region. Interactive controls opt out. */
+@media (display-mode: window-controls-overlay) {
+	:root {
+		--app-bar-height: max(3.5rem, env(titlebar-area-height, 3.5rem));
+	}
+
+	.app-bar {
+		position: fixed;
+		left: env(titlebar-area-x, 0px);
+		top: env(titlebar-area-y, 0px);
+		width: env(titlebar-area-width, 100%);
+		height: env(titlebar-area-height, 3.5rem);
+		min-height: env(titlebar-area-height, 3.5rem);
+		padding-top: 0;
+		app-region: drag;
+		-webkit-app-region: drag;
+	}
+
+	.app-bar button,
+	.app-bar a,
+	.app-bar input,
+	.app-bar select,
+	.app-bar label,
+	.app-bar [role='button'] {
+		app-region: no-drag;
+		-webkit-app-region: no-drag;
+	}
+
+	.drawer-content {
+		padding-top: env(titlebar-area-height, 3.5rem);
+	}
+}

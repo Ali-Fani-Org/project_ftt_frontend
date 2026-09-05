@@ -17,6 +17,8 @@ const BASE_PATH = process.env.BASE_PATH ?? '';
 const ENABLE_PWA = process.env.ENABLE_PWA === 'true';
 const appBase = BASE_PATH ? `${BASE_PATH}/` : '/';
 const pwaScope = BASE_PATH ? `${BASE_PATH}/` : '/';
+const pwaOrigin = (process.env.PWA_ORIGIN ?? '').replace(/\/$/, '');
+const manifestAbs = pwaOrigin ? `${pwaOrigin}${pwaScope}manifest.webmanifest` : '';
 
 export default defineConfig(() => {
 	return {
@@ -47,15 +49,25 @@ export default defineConfig(() => {
 							base: appBase,
 							scope: pwaScope,
 							manifest: {
+								id: pwaScope,
 								name: 'Time Tracker',
 								short_name: 'TimeTracker',
 								description: 'Track time, manage tasks and stay in flow.',
 								theme_color: '#392117',
 								background_color: '#392117',
 								display: 'standalone',
+								display_override: ['window-controls-overlay', 'standalone'],
 								orientation: 'any',
 								scope: pwaScope,
 								start_url: pwaScope,
+								prefer_related_applications: false,
+								...(manifestAbs
+									? {
+											related_applications: [
+												{ platform: 'webapp', url: manifestAbs }
+											]
+										}
+									: {}),
 								icons: [
 									{
 										src: 'pwa-192x192.png',

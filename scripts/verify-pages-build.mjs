@@ -120,7 +120,11 @@ if (mode === 'pages') {
 	console.log('Mode: pages (web/PWA target, mirrors gh-pages.yml)');
 	rmSync(buildDir, { recursive: true, force: true });
 
-	run('bun run build', { BASE_PATH: REPO_BASE, ENABLE_PWA: 'true' });
+	run('bun run build', {
+		BASE_PATH: REPO_BASE,
+		ENABLE_PWA: 'true',
+		PWA_ORIGIN: 'https://ali-fani.github.io'
+	});
 
 	// Pages SPA fallback (same step as the workflow) + PWA manifest <link>
 	// injection (same step as the workflow — the link cannot live in
@@ -189,6 +193,12 @@ if (mode === 'pages') {
 				'manifest has a wide screenshot (desktop richer install UI)',
 				shots.some((s) => s && s.form_factor === 'wide'),
 				'add a screenshot with form_factor wide'
+			);
+			const overrides = Array.isArray(manifest.display_override) ? manifest.display_override : [];
+			check(
+				'manifest display_override includes window-controls-overlay',
+				overrides.includes('window-controls-overlay'),
+				'add display_override: ["window-controls-overlay", "standalone"]'
 			);
 		} catch (e) {
 			check('manifest.webmanifest is valid JSON', false, String(e));
