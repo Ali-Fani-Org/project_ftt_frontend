@@ -26,6 +26,20 @@ describe('pickThemeColor', () => {
 		expect(pickThemeColor((n) => ({ '--color-base-100': '#fff' })[n] ?? '')).toBe('#fff');
 		expect(pickThemeColor(() => '')).toBeNull();
 	});
+
+	it('resolves DaisyUI v4 built-in theme vars (--p / --b1, bare channels)', () => {
+		// getComputedStyle returns the specified value verbatim, e.g. dark theme:
+		expect(pickThemeColor((n) => ({ '--p': '65.69% 0.196 275.75' })[n] ?? '')).toBe(
+			'oklch(65.69% 0.196 275.75)'
+		);
+		// v5 names win when both exist; v4 base works as last resort.
+		expect(
+			pickThemeColor(
+				(n) => ({ '--color-primary': '#e11d48', '--p': '65.69% 0.196 275.75' })[n] ?? ''
+			)
+		).toBe('#e11d48');
+		expect(pickThemeColor((n) => ({ '--b1': '100% 0 0' })[n] ?? '')).toBe('oklch(100% 0 0)');
+	});
 });
 
 function stubDocument() {

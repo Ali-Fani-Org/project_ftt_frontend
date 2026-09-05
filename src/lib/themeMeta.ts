@@ -10,7 +10,15 @@
  * fallback `<meta>` in app.html stay as-is — only one theme can be baked in.
  */
 
-const CANDIDATE_VARS = ['--color-primary', '--color-base-100'] as const;
+const CANDIDATE_VARS = [
+	// DaisyUI v5 names (custom @theme blocks, e.g. our web3hub theme)
+	'--color-primary',
+	// DaisyUI v4 names (all built-in themes: dark, cupcake, valentine, ...)
+	// — bare oklch channel lists, wrapped into oklch() by normalizeColorVar.
+	'--p',
+	'--color-base-100',
+	'--b1'
+] as const;
 
 /** Minimal shape of what we need from getComputedStyle() — stubbed in tests. */
 export interface StyleReader {
