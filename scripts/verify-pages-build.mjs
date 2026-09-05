@@ -152,9 +152,9 @@ if (mode === 'pages') {
 		'no SW registration found in chunks — virtual:pwa-register was not bundled'
 	);
 	check(
-		'JS bundle includes the PWA update prompt wiring',
-		jsBundleContains(['needRefresh']) || jsBundleContains(['updateServiceWorker']),
-		'no updater (needRefresh / updateServiceWorker) in chunks — PwaPrompt is not using virtual:pwa-register'
+		'JS bundle includes Workbox window (PWA updater)',
+		jsBundleContains(['workbox-window']) || jsBundleContains(['messageSkipWaiting']),
+		'workbox-window not in chunks — virtual:pwa-register did not bundle the updater'
 	);
 
 	check(

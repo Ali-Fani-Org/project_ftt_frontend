@@ -1,6 +1,13 @@
+/// <reference types="vite-plugin-pwa/client" />
+/// <reference types="vite-plugin-pwa/info" />
 /// <reference types="vite-plugin-pwa/svelte" />
 
 declare module '*.svg?raw' {
+	const src: string;
+	export default src;
+}
+
+declare module '*.png' {
 	const src: string;
 	export default src;
 }

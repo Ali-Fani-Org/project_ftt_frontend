@@ -525,7 +525,7 @@
 			<div class="flex min-w-0 items-center {effectiveCollapsed ? 'gap-0' : 'gap-2.5'}">
 				{#if effectiveCollapsed}
 					<button
-						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors hover:bg-primary/20 {partyMode
+						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors hover:bg-base-300/40 {partyMode
 							? 'party-tile'
 							: ''}"
 						onclick={toggleSidebar}

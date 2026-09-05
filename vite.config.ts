@@ -79,7 +79,13 @@ export default defineConfig(() => {
 								navigateFallback: pwaScope,
 								globPatterns: [
 									'**/*.{js,css,html,ico,png,svg,webmanifest,woff,woff2}'
-								]
+								],
+								// Prompt mode: the new worker waits until Workbox
+								// messageSkipWaiting() (the Reload button). Then it
+								// claims open clients so the reload picks it up.
+								skipWaiting: false,
+								clientsClaim: true,
+								cleanupOutdatedCaches: true
 							},
 							devOptions: {
 								enabled: false
@@ -113,7 +119,18 @@ export default defineConfig(() => {
 		},
 		resolve: {
 			alias: {
-				$lib: path.resolve('./src/lib')
+				$lib: path.resolve('./src/lib'),
+				// Tauri / non-PWA builds don't load SvelteKitPWA, so the
+				// virtual modules don't exist. Point them at no-op stubs.
+				...(!ENABLE_PWA
+					? {
+							'virtual:pwa-register': path.resolve('./src/lib/pwa/virtual-stubs.ts'),
+							'virtual:pwa-register/svelte': path.resolve(
+								'./src/lib/pwa/virtual-stubs.ts'
+							),
+							'virtual:pwa-info': path.resolve('./src/lib/pwa/virtual-stubs.ts')
+						}
+					: {})
 			}
 		}
 	};

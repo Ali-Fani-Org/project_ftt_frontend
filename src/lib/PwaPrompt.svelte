@@ -1,15 +1,18 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { base } from '$app/paths';
+	import { pwaInfo } from 'virtual:pwa-info';
 	import logger from '$lib/logger';
 
 	/**
-	 * PWA install + update prompt (web builds only — never rendered in Tauri).
+	 * PWA install + update prompt (web builds only).
 	 *
-	 * Registration goes through `virtual:pwa-register/svelte` so skipWaiting /
-	 * clientsClaim / needRefresh stay wired. A raw `navigator.serviceWorker.register`
-	 * bypasses the updater. `__PWA_ENABLED__` is compile-time false in Tauri
-	 * builds, so this module tree-shakes out of the desktop bundle.
+	 * Updates go through Workbox (`workbox-window`, wrapped by
+	 * `virtual:pwa-register`) — the SvelteKit-documented path. A raw
+	 * `navigator.serviceWorker.register` never fires `waiting` / skipWaiting,
+	 * so the reload banner never appears.
+	 *
+	 * `virtual:pwa-info` / `virtual:pwa-register` are real plugin modules in
+	 * ENABLE_PWA builds, and stubbed for Tauri via vite aliases.
 	 */
 
 	interface BeforeInstallPromptEvent extends Event {
@@ -53,40 +56,51 @@
 		window.addEventListener('beforeinstallprompt', onBeforeInstall);
 		window.addEventListener('appinstalled', onInstalled);
 
-		let unsubRefresh: (() => void) | undefined;
 		let poll: ReturnType<typeof setInterval> | undefined;
 		let cancelled = false;
+		let onVisible: (() => void) | undefined;
+		let onFocus: (() => void) | undefined;
 
-		if (__PWA_ENABLED__) {
-			void import('virtual:pwa-register/svelte')
-				.then(({ useRegisterSW }) => {
+		if (pwaInfo) {
+			void import('virtual:pwa-register')
+				.then(({ registerSW }) => {
 					if (cancelled) return;
-					const sw = useRegisterSW({
+					updateServiceWorker = registerSW({
 						immediate: true,
+						onNeedRefresh() {
+							needRefresh = true;
+							dismissedUpdate = false;
+							logger.info('PWA update waiting — showing reload prompt');
+						},
+						onOfflineReady() {
+							logger.debug('PWA ready to work offline');
+						},
 						onRegisteredSW(swUrl, registration) {
-							logger.debug('Service worker registered', swUrl, `${base}/`);
+							logger.info('Service worker registered', swUrl);
 							if (!registration) return;
-							poll = setInterval(async () => {
+
+							const check = () => {
 								if (registration.installing || !navigator.onLine) return;
-								try {
-									const resp = await fetch(swUrl, {
-										cache: 'no-store',
-										headers: { 'cache-control': 'no-cache' }
-									});
-									if (resp?.status === 200) await registration.update();
-								} catch {
-									// offline or transient — try again next hour
-								}
-							}, 60 * 60 * 1000);
+								void registration.update().catch((err) => {
+									logger.debug('SW update check failed', err);
+								});
+							};
+
+							// Workbox only re-fetches sw.js on navigation or update().
+							// A long-lived timer PWA barely navigates, so check on
+							// focus / visibility and every few minutes.
+							onVisible = () => {
+								if (document.visibilityState === 'visible') check();
+							};
+							onFocus = check;
+							document.addEventListener('visibilitychange', onVisible);
+							window.addEventListener('focus', onFocus);
+							setTimeout(check, 8_000);
+							poll = setInterval(check, 5 * 60 * 1000);
 						},
 						onRegisterError(error) {
 							logger.warn('Service worker registration failed', error);
 						}
-					});
-					updateServiceWorker = sw.updateServiceWorker;
-					unsubRefresh = sw.needRefresh.subscribe((value) => {
-						needRefresh = value;
-						if (value) dismissedUpdate = false;
 					});
 				})
 				.catch((err) => logger.warn('PWA register module failed', err));
@@ -96,7 +110,8 @@
 			cancelled = true;
 			window.removeEventListener('beforeinstallprompt', onBeforeInstall);
 			window.removeEventListener('appinstalled', onInstalled);
-			unsubRefresh?.();
+			if (onVisible) document.removeEventListener('visibilitychange', onVisible);
+			if (onFocus) window.removeEventListener('focus', onFocus);
 			if (poll) clearInterval(poll);
 		};
 	});
@@ -119,7 +134,7 @@
 			await updateServiceWorker?.(true);
 		} catch (err) {
 			logger.warn('PWA update failed', err);
-			dismissedUpdate = true;
+			window.location.reload();
 		}
 	}
 </script>

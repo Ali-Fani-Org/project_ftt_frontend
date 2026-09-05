@@ -124,15 +124,15 @@
     <linearGradient id="barBlue" x1="0" y1="0" x2="0" y2="1">
       <stop stop-color="#97fff2"/>
       <stop offset=".28" stop-color="#5de5ec"/>
-      <stop offset=".72" stop-color="#27addb"/>
-      <stop offset="1" stop-color="#247bb6"/>
+      <stop offset=".72" stop-color="#3ec4ea"/>
+      <stop offset="1" stop-color="#6beae9"/>
     </linearGradient>
 
     <linearGradient id="barGold" x1="0" y1="0" x2="0" y2="1">
       <stop stop-color="#fff2b0"/>
       <stop offset=".24" stop-color="#e3ecad"/>
       <stop offset=".57" stop-color="#76d9d5"/>
-      <stop offset="1" stop-color="#2788b9"/>
+      <stop offset="1" stop-color="#8ef0c8"/>
     </linearGradient>
 
     <linearGradient id="barShine" x1="0" y1="0" x2="1" y2="0">
@@ -140,6 +140,13 @@
       <stop offset=".4" stop-color="#b6fffa" stop-opacity=".04"/>
       <stop offset="1" stop-color="#05234b" stop-opacity=".15"/>
     </linearGradient>
+
+    <radialGradient id="underGlow" cx="50%" cy="50%" r="50%">
+      <stop stop-color="#9ffff6" stop-opacity=".7"/>
+      <stop offset=".35" stop-color="#5de5ec" stop-opacity=".42"/>
+      <stop offset=".7" stop-color="#3dcced" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#1871be" stop-opacity="0"/>
+    </radialGradient>
 
     <filter id="wideGlow" x="-60%" y="-60%" width="220%" height="220%"
             color-interpolation-filters="sRGB">
@@ -244,6 +251,14 @@
              H843
              C901 139 948 185 949 244"
           stroke="#7e98ad" stroke-opacity=".09" stroke-width="1.2"/>
+  </g>
+
+  <!-- Floor light so the open ring and bars lift off the chrome behind them -->
+  <g id="underglow-layer">
+    <ellipse cx="720" cy="548" rx="240" ry="120"
+             fill="url(#underGlow)" filter="url(#wideGlow)" opacity=".9"/>
+    <ellipse cx="750" cy="500" rx="130" ry="70"
+             fill="#9ffff6" opacity=".28" filter="url(#softGlow)"/>
   </g>
 
   <!-- Broad cyan and gold light spill -->

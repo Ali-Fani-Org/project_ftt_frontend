@@ -39,16 +39,18 @@ const pwa512 = path.join(STATIC, 'pwa-512x512.png');
 const maskable = path.join(STATIC, 'maskable-icon.png');
 const apple = path.join(STATIC, 'apple-touch-icon.png');
 const favicon = path.join(STATIC, 'favicon.png');
+const inApp = path.join(root, 'src', 'lib', 'assets', 'brand-mark.png');
 
 await (await raster(192)).toFile(pwa192);
 await (await raster(512)).toFile(pwa512);
 await (await raster(512, { flatten: true })).toFile(maskable);
 await (await raster(180, { flatten: true })).toFile(apple);
 await (await raster(32)).toFile(favicon);
+await (await raster(256)).toFile(inApp);
 await (await raster(512)).toFile(TAURI_ICON);
 
 console.log('PWA icons written to static/:');
-for (const f of [pwa192, pwa512, maskable, apple, favicon, TAURI_ICON]) {
+for (const f of [pwa192, pwa512, maskable, apple, favicon, inApp, TAURI_ICON]) {
 	const m = await sharp(f).metadata();
 	console.log(`  ${path.relative(root, f)}: ${m.width}x${m.height} alpha=${m.hasAlpha}`);
 }
