@@ -33,7 +33,7 @@
 	// Active timer — when a timer is running, the brand clock spins slowly.
 	const activeTimerQuery = useActiveTimer();
 	const isTimerRunning = $derived(!!activeTimerQuery.data);
-	let isMobile = $state(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+	let isMobile = $state(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
 	let effectiveCollapsed = $derived(isMobile ? false : isCollapsed);
 
 	// Easter egg cheat codes (GTA San Andreas style) — definitions live below
@@ -79,7 +79,7 @@
 
 	onMount(() => {
 		const checkMobile = () => {
-			isMobile = window.innerWidth < 768; // md breakpoint
+			isMobile = window.innerWidth < 1024; // lg: drawer becomes a persistent sidebar
 			// Auto-expand on mobile if collapsed
 			if (isMobile && isCollapsed) {
 				sidebarCollapsed.set(false);

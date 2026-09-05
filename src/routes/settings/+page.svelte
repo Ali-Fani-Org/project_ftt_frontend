@@ -104,7 +104,8 @@
 		localRefreshOnlyWhenVisible = $refreshOnlyWhenVisible;
 	});
 
-	let appVersion = $state('');
+	let appVersion = $state(typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '');
+	let versionSource = $state<'pending' | 'web' | 'desktop'>('pending');
 	let showLogoutConfirm = $state(false);
 	let isTauriApp = $state(false);
 	let updateStatus = $state<
@@ -291,12 +292,20 @@
 			// Not running in Tauri — keep the synchronous detection result.
 		}
 		detectPlatform();
-		// Try to get app version, but don't fail if offline
-		try {
-			if (getVersionFn) appVersion = await getVersionFn();
-		} catch (err) {
-			console.log('Could not get app version:', err);
-			appVersion = 'unknown';
+		// Desktop: Tauri's bundled version. Web: compile-time __APP_VERSION__
+		// from package.json (vite.config.ts define). Never show "unknown".
+		if (isTauriApp && getVersionFn) {
+			try {
+				appVersion = await getVersionFn();
+				versionSource = 'desktop';
+			} catch (err) {
+				console.log('Could not get Tauri app version:', err);
+				appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : appVersion;
+				versionSource = 'desktop';
+			}
+		} else {
+			appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : appVersion;
+			versionSource = 'web';
 		}
 		if (typeof window !== 'undefined') {
 			updateProxyUrl = localStorage.getItem('updateProxyUrl') ?? '';
@@ -583,7 +592,13 @@
 <div class="mx-auto max-w-4xl" style="padding-bottom: max(24px, calc(100vh - 780px))">
 	<!-- Page Header -->
 	<div class="mb-6">
-		<PageHeader icon={SettingsIcon} title="Settings" subtitle={`Version ${appVersion}`} />
+		<PageHeader
+			icon={SettingsIcon}
+			title="Settings"
+			subtitle={`Version ${appVersion || '…'}${
+				versionSource === 'desktop' ? ' (desktop)' : versionSource === 'web' ? ' (web)' : ''
+			}`}
+		/>
 	</div>
 
 	<!-- Offline Warning -->
@@ -609,7 +624,7 @@
 	<!-- Sticky section navigation: pins below the unified 56px app bar -->
 	<nav
 		class="sticky z-30 mb-6 flex gap-1.5 overflow-x-auto rounded-2xl border border-base-300/70 bg-base-100/80 p-1.5 shadow-sm backdrop-blur-md"
-		style="top: 56px"
+		style="top: var(--app-bar-height, 3.5rem)"
 		aria-label="Settings sections"
 	>
 		{#each sections as s (s.id)}
@@ -1056,7 +1071,11 @@
 			<div class="divide-y divide-base-200">
 				<SettingRow icon={Info} title="Version" description="App release you are running">
 					<span class="text-sm font-medium text-base-content/70">
-						{appVersion || 'dev build'}
+						{appVersion || 'dev build'}{versionSource === 'desktop'
+							? ' (desktop)'
+							: versionSource === 'web'
+								? ' (web)'
+								: ''}
 					</span>
 				</SettingRow>
 				<SettingRow icon={Monitor} title="Platform" description="Operating system and app shell">

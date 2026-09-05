@@ -48,6 +48,18 @@ div[role='img'] > svg {
 	display: block;
 }
 
+html,
+body {
+	overflow-x: clip;
+	min-height: 100dvh;
+	background-color: var(--color-base-100, oklch(var(--b1)));
+}
+
+:root {
+	--app-bar-height: calc(3.5rem + env(safe-area-inset-top, 0px));
+	--tab-bar-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+}
+
 /* Enable touch/pen drag on the app bar in Windows (custom titlebar only).
    app-region is a Tauri/WinUI-specific property, so it lives in this global
    stylesheet instead of a component <style> block — the CSS language service

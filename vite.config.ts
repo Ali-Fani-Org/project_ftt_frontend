@@ -33,7 +33,8 @@ export default defineConfig(() => {
 				? [
 						SvelteKitPWA({
 							strategies: 'generateSW',
-							registerType: 'autoUpdate',
+							registerType: 'prompt',
+							injectRegister: false,
 							includeAssets: [
 								'favicon.png',
 								'apple-touch-icon.png',
@@ -47,8 +48,8 @@ export default defineConfig(() => {
 								name: 'Time Tracker',
 								short_name: 'TimeTracker',
 								description: 'Track time, manage tasks and stay in flow.',
-								theme_color: '#e11d48',
-								background_color: '#ffffff',
+								theme_color: '#392117',
+								background_color: '#392117',
 								display: 'standalone',
 								orientation: 'any',
 								scope: pwaScope,
@@ -83,7 +84,9 @@ export default defineConfig(() => {
 							devOptions: {
 								enabled: false
 							},
-							kit: {}
+							kit: {
+								includeVersionFile: true
+							}
 						})
 					]
 				: []),

@@ -871,7 +871,7 @@
 
 									<!-- Duration -->
 									<div
-										class="w-20 shrink-0 text-right font-mono text-sm font-semibold {entry.is_active
+										class="w-16 shrink-0 text-right font-mono text-sm font-semibold sm:w-20 {entry.is_active
 											? 'text-success'
 											: 'text-base-content'}"
 									>

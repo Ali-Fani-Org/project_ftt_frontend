@@ -82,6 +82,18 @@ bun run tauri build
 
 This will create a native executable in the `src-tauri/target/release/bundle/` directory.
 
+### CI tokens
+
+Commit message, PR title, or PR body can target one pipeline. These are **not** GitHub’s `[skip ci]` (that skips everything).
+
+| Token | Web (GitHub Pages) | Desktop (Tauri check / release) |
+| --- | --- | --- |
+| *(none)* | deploys from `main` and `v*.*.*` tags | runs as usual |
+| `[WEB ONLY]` | runs | skipped |
+| `[DESKTOP ONLY]` | skipped | runs |
+
+`workflow_dispatch` always runs the workflow you triggered. `[WEB ONLY]` does **not** deploy Pages from a feature branch — production Pages still only ship from `main`, version tags, or a manual dispatch.
+
 ## 📖 Usage
 
 ### First Time Setup

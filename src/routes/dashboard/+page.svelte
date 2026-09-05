@@ -412,10 +412,10 @@
 			class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3 mb-4 items-stretch auto-rows-fr"
 		>
 			<!-- Last 7 Days Chart -->
-			<div class="h-full min-h-[420px]"><Last7DaysChart /></div>
+			<div class="h-full min-h-[240px] lg:min-h-[420px]"><Last7DaysChart /></div>
 
 			<!-- Calendar Heatmap -->
-			<div class="h-full min-h-[420px]"><CalendarHeatmap /></div>
+			<div class="h-full min-h-[240px] lg:min-h-[420px]"><CalendarHeatmap /></div>
 		</div>
 
 		<!-- Recent Activity & Quick Actions -->

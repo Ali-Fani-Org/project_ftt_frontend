@@ -148,8 +148,13 @@ if (mode === 'pages') {
 	// the JS bundle, not inline HTML — scan the emitted chunks for it.
 	check(
 		'JS bundle registers the service worker',
-		jsBundleContains(['serviceWorker', 'sw.js']),
-		'no SW registration found in chunks — SvelteKitPWA does not inject it'
+		jsBundleContains(['serviceWorker']),
+		'no SW registration found in chunks — virtual:pwa-register was not bundled'
+	);
+	check(
+		'JS bundle includes the PWA update prompt wiring',
+		jsBundleContains(['needRefresh']) || jsBundleContains(['updateServiceWorker']),
+		'no updater (needRefresh / updateServiceWorker) in chunks — PwaPrompt is not using virtual:pwa-register'
 	);
 
 	check(

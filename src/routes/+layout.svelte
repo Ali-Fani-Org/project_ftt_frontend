@@ -28,6 +28,7 @@
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import SyncIndicator from '$lib/SyncIndicator.svelte';
 	import PwaPrompt from '$lib/PwaPrompt.svelte';
+	import MobileTabBar from '$lib/MobileTabBar.svelte';
 	import { syncThemeColorMeta } from '$lib/themeMeta';
 
 	let { children } = $props();
@@ -119,7 +120,15 @@
 		if (typeof document !== 'undefined') {
 			applyTheme($theme);
 			// Browser chrome (PWA status bar / tab strip) follows the theme.
+			// Immediate pass + double rAF so DaisyUI vars have settled on
+			// getComputedStyle before we paint hex into <meta name="theme-color">.
 			syncThemeColorMeta();
+			let cancelled = false;
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					if (!cancelled) syncThemeColorMeta();
+				});
+			});
 
 			// Emit theme change event to other windows
 			if (isTauri) {
@@ -133,6 +142,10 @@
 					})
 					.catch((err) => logger.error('Failed to emit theme change event:', err));
 			}
+
+			return () => {
+				cancelled = true;
+			};
 		}
 	});
 
@@ -264,7 +277,7 @@
 
 	{#if !authInitialized}
 		<!-- Loading screen during auth initialization -->
-		<div class="min-h-screen flex items-center justify-center bg-base-200">
+		<div class="min-h-dvh flex items-center justify-center bg-base-200">
 			<div class="text-center">
 				<span class="loading loading-spinner loading-lg text-primary"></span>
 				<p class="mt-4 text-base-content/70">Loading...</p>
@@ -272,7 +285,7 @@
 		</div>
 	{:else if showMainLayout}
 		<!-- Main authenticated layout using DaisyUI Drawer -->
-		<div class="drawer lg:drawer-open min-h-screen">
+		<div class="drawer lg:drawer-open min-h-dvh">
 			<!-- Drawer toggle input -->
 			<input id="app-drawer" type="checkbox" class="drawer-toggle" bind:this={drawerCheckbox} />
 
@@ -312,12 +325,15 @@
 					</div>
 				{/if}
 				<!-- Main page content -->
-				<main class="flex-1 p-4 lg:p-6">
+				<main
+					class="flex-1 p-4 lg:p-6 pb-[calc(1rem+var(--tab-bar-height))] lg:pb-6"
+				>
 					{@render children()}
 				</main>
 
 				<!-- Subtle global sync indicator while any query is fetching -->
 				<SyncIndicator />
+				<MobileTabBar drawerCheckbox={drawerCheckbox} />
 			</div>
 
 			<!-- Drawer side (sidebar) -->
@@ -325,7 +341,7 @@
 		</div>
 	{:else}
 		<!-- Login page or other non-authenticated content -->
-		<div class="min-h-screen">
+		<div class="min-h-dvh">
 			{@render children()}
 		</div>
 	{/if}

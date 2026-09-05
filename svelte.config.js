@@ -24,6 +24,11 @@ const config = {
 			// Tauri builds leave BASE_PATH unset -> '' (identical to previous behavior).
 			// GitHub Pages workflow sets BASE_PATH='/project_ftt_frontend'.
 			base: process.argv.includes('dev') ? '' : (process.env.BASE_PATH ?? '')
+		},
+		// PWA registration is owned by virtual:pwa-register/svelte (PwaPrompt).
+		// Pin this off so SvelteKit never double-registers a worker.
+		serviceWorker: {
+			register: false
 		}
 	}
 };

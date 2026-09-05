@@ -12,6 +12,11 @@ concurrency:
 
 jobs:
   create-release:
+    # [WEB ONLY] on the tagged commit skips the desktop release matrix.
+    # workflow_dispatch always runs a full publish.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      !contains(github.event.head_commit.message, '[WEB ONLY]')
     permissions:
       contents: write
     runs-on: ubuntu-22.04

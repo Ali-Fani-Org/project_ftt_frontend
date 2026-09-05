@@ -19,6 +19,14 @@ concurrency:
 
 jobs:
   build:
+    # [DESKTOP ONLY] skips the Pages build/deploy. workflow_dispatch always runs.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        !contains(github.event.head_commit.message, '[DESKTOP ONLY]') &&
+        !contains(github.event.pull_request.title, '[DESKTOP ONLY]') &&
+        !contains(github.event.pull_request.body, '[DESKTOP ONLY]')
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

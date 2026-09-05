@@ -187,7 +187,7 @@
 -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <nav
-	class="sticky top-0 z-40 flex h-14 w-full items-center gap-2 border-b border-base-300/60 bg-base-100/85 px-3 backdrop-blur-md lg:px-4"
+	class="sticky top-0 z-40 flex min-h-14 w-full items-center gap-2 border-b border-base-300/60 bg-base-100 px-3 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md lg:px-4"
 	data-tauri-drag-region={useCustomTitlebar || undefined}
 	onmousedown={handleBarMouseDown}
 	ondblclick={handleBarDoubleClick}
@@ -198,7 +198,7 @@
 		<label
 			for="app-drawer"
 			aria-label="open sidebar"
-			class="btn btn-square btn-ghost mr-0.5 hover:bg-base-200 lg:hidden"
+			class="btn btn-square btn-ghost mr-0.5 min-h-11 min-w-11 hover:bg-base-200 lg:hidden"
 		>
 			<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path
@@ -219,7 +219,7 @@
 		</div>
 
 		<!-- Current page name (in Tauri this replaces the static window title) -->
-		<div class="hidden min-w-0 sm:block">
+		<div class="min-w-0">
 			<h1 class="truncate text-base font-semibold tracking-tight text-base-content">
 				{currentTitle}
 			</h1>
