@@ -7,6 +7,7 @@
 	import LoginSettingsModal from '$lib/LoginSettingsModal.svelte';
 	import { network } from '$lib/network';
 	import BrandMark from '$lib/BrandMark.svelte';
+	import { passkeysEnabled } from '$lib/passkeyGate';
 	import {
 		Clock,
 		ChartColumn,
@@ -48,6 +49,12 @@
 	let confirmPassword = $state('');
 	let email = $state(''); // Added for email validation support
 	let passkeyLoading = $state(false);
+
+	// TEMPORARY (custom-domain move): WebAuthn ceremonies fail in browsers
+	// until the backend RP ID migration happens. Gray out passkey sign-in on
+	// web; the Tauri desktop shell (sync __TAURI_* detection, no flash) keeps
+	// it enabled. See src/lib/passkeyGate.ts to re-enable.
+	const passkeysAvailable = passkeysEnabled();
 
 	// Validation state
 	let validationErrors = $state<{ [key: string]: string }>({});
@@ -320,6 +327,10 @@
 
 	// Handle passkey login
 	async function handlePasskeyLogin() {
+		if (!passkeysAvailable) {
+			error = 'Passkey sign-in is temporarily unavailable on web. Please sign in with your password.';
+			return;
+		}
 		if (!username.trim()) {
 			error = 'Please enter your username to sign in with a passkey';
 			return;
@@ -835,7 +846,10 @@
 								<button
 									type="button"
 									class="btn btn-outline btn-primary w-full gap-2"
-									disabled={passkeyLoading || loading}
+									disabled={passkeyLoading || loading || !passkeysAvailable}
+									title={passkeysAvailable
+										? 'Sign in with your passkey'
+										: 'Passkey sign-in is temporarily unavailable on web — please use your password'}
 									onclick={handlePasskeyLogin}
 								>
 									{#if passkeyLoading}

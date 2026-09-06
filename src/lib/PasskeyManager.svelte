@@ -1,5 +1,13 @@
 <script lang="ts">
 	import { authStore } from './auth-context';
+	import { passkeysEnabled } from './passkeyGate';
+
+	// TEMPORARY (custom-domain move): WebAuthn ceremonies fail in browsers
+	// until the backend RP ID migration happens. Gray out management on web;
+	// the Tauri desktop shell keeps it enabled. See ./passkeyGate.ts.
+	const available = passkeysEnabled();
+	const unavailableHint =
+		'Passkeys are temporarily unavailable on web — they still work in the desktop app';
 
 	interface PasskeyInfo {
 		id: number;
@@ -27,6 +35,10 @@
 	}
 
 	async function handleRegister() {
+		if (!available) {
+			error = unavailableHint;
+			return;
+		}
 		registering = true;
 		error = '';
 		success = '';
@@ -46,6 +58,10 @@
 	}
 
 	async function handleDelete(id: number) {
+		if (!available) {
+			error = unavailableHint;
+			return;
+		}
 		error = '';
 		success = '';
 
@@ -78,6 +94,10 @@
 <div class="passkey-manager">
 	<h3>Passkeys</h3>
 
+	{#if !available}
+		<p class="notice" role="note">{unavailableHint}.</p>
+	{/if}
+
 	{#if error}
 		<div class="error" role="alert">{error}</div>
 	{/if}
@@ -92,9 +112,13 @@
 			type="text"
 			bind:value={deviceName}
 			placeholder="Device name (optional)"
-			disabled={registering}
+			disabled={registering || !available}
 		/>
-		<button onclick={handleRegister} disabled={registering}>
+		<button
+			onclick={handleRegister}
+			disabled={registering || !available}
+			title={!available ? unavailableHint : 'Register a new passkey'}
+		>
 			{registering ? 'Registering...' : '+ Add Passkey'}
 		</button>
 	</div>
@@ -115,7 +139,12 @@
 							· Last used {formatDate(pk.last_used_at)}
 						</span>
 					</div>
-					<button class="delete-btn" onclick={() => handleDelete(pk.id)}>Remove</button>
+					<button
+						class="delete-btn"
+						onclick={() => handleDelete(pk.id)}
+						disabled={!available}
+						title={!available ? unavailableHint : 'Remove this passkey'}>Remove</button
+					>
 				</li>
 			{/each}
 		</ul>
@@ -165,6 +194,15 @@
 	.error {
 		color: #dc2626;
 		background: #fef2f2;
+		padding: 0.5rem 0.75rem;
+		border-radius: 0.375rem;
+		margin-bottom: 0.75rem;
+		font-size: 0.875rem;
+	}
+
+	.notice {
+		color: #92600a;
+		background: #fef9e7;
 		padding: 0.5rem 0.75rem;
 		border-radius: 0.375rem;
 		margin-bottom: 0.75rem;
@@ -223,5 +261,10 @@
 
 	.delete-btn:hover {
 		background: #fef2f2;
+	}
+
+	.delete-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 </style>
