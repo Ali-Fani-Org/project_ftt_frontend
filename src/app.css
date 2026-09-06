@@ -70,10 +70,15 @@ body {
 
 /* Installed desktop PWA with Window Controls Overlay: the OS draws min/max/close
    on top of our page. Put the app bar in the leftover titlebar area and make it
-   a drag region. Interactive controls opt out. */
+   a drag region. Interactive controls opt out.
+   The OS titlebar height (often ~33-48px on Windows) is usually SHORTER than
+   the bar's 56px content, so --wco-chrome takes the max: the bar, the content
+   padding, and the sidebar offset below all use this one value and can never
+   drift apart (drift = content/sidebar sliding under the fixed bar). */
 @media (display-mode: window-controls-overlay) {
 	:root {
 		--app-bar-height: max(3.5rem, env(titlebar-area-height, 3.5rem));
+		--wco-chrome: max(3.5rem, env(titlebar-area-height, 3.5rem));
 	}
 
 	.app-bar {
@@ -81,8 +86,8 @@ body {
 		left: env(titlebar-area-x, 0px);
 		top: env(titlebar-area-y, 0px);
 		width: env(titlebar-area-width, 100%);
-		height: env(titlebar-area-height, 3.5rem);
-		min-height: env(titlebar-area-height, 3.5rem);
+		height: var(--wco-chrome);
+		min-height: var(--wco-chrome);
 		padding-top: 0;
 		app-region: drag;
 		-webkit-app-region: drag;
@@ -99,6 +104,12 @@ body {
 	}
 
 	.drawer-content {
-		padding-top: env(titlebar-area-height, 3.5rem);
+		padding-top: var(--wco-chrome);
+	}
+
+	/* The fixed bar spans the full viewport width, including above the
+	   sidebar — without this the sidebar's brand header hides under it. */
+	.drawer-side {
+		padding-top: var(--wco-chrome);
 	}
 }
