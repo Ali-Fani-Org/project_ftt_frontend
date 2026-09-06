@@ -1,6 +1,6 @@
 {
   "name": "time-tracker",
-  "version": "1.7.16",
+  "version": "1.7.17",
   "type": "module",
   "license": "MIT",
   "scripts": {
