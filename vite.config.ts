@@ -53,8 +53,14 @@ export default defineConfig(() => {
 								name: 'Time Tracker',
 								short_name: 'TimeTracker',
 								description: 'Track time, manage tasks and stay in flow.',
-								theme_color: '#392117',
-								background_color: '#392117',
+								// WCO caption-button zone: Chromium paints the window
+								// controls overlay with the manifest theme_color, so
+								// it must match the app bar (Valentine base-100).
+								// The static meta default in app.html matches too;
+								// syncThemeColorMeta() keeps the meta in sync with
+								// the active theme at runtime afterwards.
+								theme_color: '#fae7f4',
+								background_color: '#fae7f4',
 								display: 'standalone',
 								display_override: ['window-controls-overlay', 'standalone'],
 								orientation: 'any',
