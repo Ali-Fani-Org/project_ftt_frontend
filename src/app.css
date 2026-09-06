@@ -92,8 +92,25 @@ body {
 		/* NOTE: full-bleed (right:0 + caption clearance padding) was tried in
 		   v1.7.15 and regressed — reverted. The caption-button zone keeps the
 		   manifest splash theme_color; see commit history before retrying. */
+		/* The divider must run the full window width (under the caption
+		   buttons too), but the bar itself stays confined to the free rect —
+		   so the bar drops its own border and a pseudo-element draws one
+		   full-bleed line at the same y. Harmless if the caption zone ever
+		   paints opaque: the line just hides behind the buttons. */
+		border-bottom: none;
 		app-region: drag;
 		-webkit-app-region: drag;
+	}
+
+	.app-bar::after {
+		content: '';
+		position: absolute;
+		bottom: 0;
+		left: calc(-1 * env(titlebar-area-x, 0px));
+		width: 100vw;
+		border-bottom: 1px solid
+			color-mix(in oklab, var(--color-base-300, var(--b3)) 60%, transparent);
+		pointer-events: none;
 	}
 
 	.app-bar button,
