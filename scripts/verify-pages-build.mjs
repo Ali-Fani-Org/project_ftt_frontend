@@ -7,13 +7,13 @@
  *   node scripts/verify-pages-build.mjs --tauri             # desktop regression gate
  *
  * --pages replicates the Pages workflow 1:1:
- *   BASE_PATH=/project_ftt_frontend ENABLE_PWA=true bun run build
+ *   BASE_PATH='' ENABLE_PWA=true PWA_ORIGIN=https://time.alpharency.com bun run build
  *   cp build/index.html build/404.html
- *   + static assertions (subpath assets, manifest scope, SW, fallback)
+ *   + static assertions (root assets, manifest scope, SW, fallback)
  *
  * --tauri replicates what release.yml / test-build.yml do (no BASE_PATH, no
  * ENABLE_PWA) and asserts the desktop output is unchanged: no SW/manifest,
- * no Pages subpath leaks.
+ * no web subpath leaks.
  *
  * --serve (pages only) starts `vite preview` afterwards for the manual browser
  * checklist (DevTools → Application → Manifest/Service Workers, offline reload,
@@ -21,7 +21,7 @@
  * it opens the desktop window and can't run headless inside this script.
  *
  * Fidelity limits: localhost allows SW (good) but can't replicate the real
- * https://<user>.github.io/project_ftt_frontend/ origin, Pages 404 handling,
+ * https://time.alpharency.com/ origin, Pages 404 handling,
  * or production backend CORS. Local green + one draft Pages deploy = proof.
  */
 
@@ -31,7 +31,11 @@ import path from 'node:path';
 
 const root = process.cwd();
 const buildDir = path.join(root, 'build');
-const REPO_BASE = '/project_ftt_frontend';
+// Custom-domain deploy serves from the site ROOT (time.alpharency.com).
+// LEGACY_BASE is the old project-Pages subpath — builds must not reference it.
+const REPO_BASE = '';
+const LEGACY_BASE = '/project_ftt_frontend';
+const PWA_ORIGIN = 'https://time.alpharency.com';
 
 const args = new Set(process.argv.slice(2));
 const mode = args.has('--tauri') ? 'tauri' : 'pages';
@@ -123,7 +127,7 @@ if (mode === 'pages') {
 	run('bun run build', {
 		BASE_PATH: REPO_BASE,
 		ENABLE_PWA: 'true',
-		PWA_ORIGIN: 'https://ali-fani.github.io'
+		PWA_ORIGIN
 	});
 
 	// Pages SPA fallback (same step as the workflow) + PWA manifest <link>
@@ -131,7 +135,7 @@ if (mode === 'pages') {
 	// src/app.html: the prerender crawler follows it and 404s in Tauri
 	// builds, which ship no manifest).
 	copyFileSync(path.join(buildDir, 'index.html'), path.join(buildDir, '404.html'));
-	const manifestLink = `<link rel="manifest" href="${REPO_BASE}/manifest.webmanifest" />`;
+	const manifestLink = `<link rel="manifest" href="/manifest.webmanifest" />`;
 	function injectManifestLink(file) {
 		const html = readFileSync(file, 'utf8');
 		if (html.includes('manifest.webmanifest')) return;
@@ -176,14 +180,14 @@ if (mode === 'pages') {
 	);
 
 	check(
-		'assets use Pages subpath',
-		indexHtml.includes(`${REPO_BASE}/_app/`),
-		`expected "${REPO_BASE}/_app/" in build/index.html`
+		'assets use root path',
+		indexHtml.includes('/_app/'),
+		'expected "/_app/" in build/index.html'
 	);
 	check(
-		'no bare root-absolute /_app/ asset refs',
-		!/(["'])\/_app\//.test(indexHtml),
-		'found href="/_app/..." or src="/_app/..." which 404s on project Pages'
+		'no legacy subpath leaks',
+		!indexHtml.includes(LEGACY_BASE),
+		`found "${LEGACY_BASE}" which 404s on the root custom domain`
 	);
 
 	const manifestPath = path.join(buildDir, 'manifest.webmanifest');
@@ -191,10 +195,10 @@ if (mode === 'pages') {
 	if (existsSync(manifestPath)) {
 		try {
 			const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-			check('manifest.scope matches subpath', manifest.scope === `${REPO_BASE}/`, `got "${manifest.scope}"`);
+			check('manifest.scope matches root', manifest.scope === '/', `got "${manifest.scope}"`);
 			check(
-				'manifest.start_url matches subpath',
-				manifest.start_url === `${REPO_BASE}/`,
+				'manifest.start_url matches root',
+				manifest.start_url === '/',
 				`got "${manifest.start_url}"`
 			);
 			const shots = Array.isArray(manifest.screenshots) ? manifest.screenshots : [];
@@ -222,10 +226,18 @@ if (mode === 'pages') {
 	const swPath = path.join(buildDir, 'sw.js');
 	check('sw.js emitted (PWA)', existsSync(swPath));
 	check(
-		'sw.js registered under subpath scope',
+		'sw.js non-empty',
 		!existsSync(swPath) || readFileSync(swPath, 'utf8').length > 0,
 		'sw.js is empty'
 	);
+	check('CNAME emitted (custom domain)', existsSync(path.join(buildDir, 'CNAME')));
+	if (existsSync(path.join(buildDir, 'CNAME'))) {
+		check(
+			'CNAME points at custom domain',
+			readFileSync(path.join(buildDir, 'CNAME'), 'utf8').includes('time.alpharency.com'),
+			'expected time.alpharency.com in build/CNAME'
+		);
+	}
 	for (const icon of [
 		'pwa-192x192.png',
 		'pwa-512x512.png',
@@ -238,7 +250,7 @@ if (mode === 'pages') {
 	}
 
 	// Bare goto('/...') resolves against the DOMAIN ROOT and escapes the app
-	// under the Pages subpath — all in-app navigation must use gotoApp().
+	// under any subpath — all in-app navigation must use gotoApp().
 	// (src/lib/navigation.ts itself is exempt: it wraps goto.)
 	const bareGotos = findBareGotos();
 	check('no bare goto() outside $lib/navigation', bareGotos.length === 0,
@@ -252,17 +264,17 @@ if (mode === 'pages') {
 
 	if (serve) {
 		console.log(
-			`\nStarting preview — open http://localhost:4173${REPO_BASE}/ and run the manual checklist:`
+			`\nStarting preview — open http://localhost:4173/ and run the manual checklist:`
 		);
 		console.log('  1. App loads, login → dashboard works');
 		console.log('  2. DevTools → Application → Manifest: no errors');
-		console.log('  3. DevTools → Application → Service Workers: sw.js with scope ' + REPO_BASE + '/');
+		console.log('  3. DevTools → Application → Service Workers: sw.js with scope /');
 		console.log('  4. DevTools → Network → Offline → reload /timer → app-shell renders');
-		console.log(`  5. Direct load http://localhost:4173${REPO_BASE}/timer renders (fallback)`);
+		console.log(`  5. Direct load http://localhost:4173/timer renders (fallback)`);
 		console.log('  6. Console has no __TAURI__ / autostart exceptions');
 		run('bun run preview', { BASE_PATH: REPO_BASE });
 	} else {
-		console.log(`\nTip: re-run with --serve, then open http://localhost:4173${REPO_BASE}/ for the manual PWA checklist.`);
+		console.log(`\nTip: re-run with --serve, then open http://localhost:4173/ for the manual PWA checklist.`);
 	}
 } else {
 	console.log('Mode: tauri (desktop regression gate, mirrors release.yml/test-build.yml env)');
@@ -279,7 +291,7 @@ if (mode === 'pages') {
 	check('build/index.html exists', existsSync(indexPath));
 	if (existsSync(indexPath)) {
 		const html = readFileSync(indexPath, 'utf8');
-		check('no Pages subpath leaks into desktop build', !html.includes(REPO_BASE));
+		check('no legacy subpath leaks into desktop build', !html.includes(LEGACY_BASE));
 		// NOTE: the manifest <link> is intentionally present (app.html is
 		// shared); the file itself is absent so Tauri never registers anything.
 	}

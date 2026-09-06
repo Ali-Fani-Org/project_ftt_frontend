@@ -39,25 +39,30 @@ jobs:
       - name: Install dependencies
         run: bun i --frozen-lockfile
 
-      - name: Build web (PWA, Pages subpath)
+      - name: Build web (PWA, custom domain root)
         env:
-          BASE_PATH: '/project_ftt_frontend'
+          BASE_PATH: ''
           ENABLE_PWA: 'true'
-          PWA_ORIGIN: 'https://ali-fani.github.io'
+          PWA_ORIGIN: 'https://time.alpharency.com'
         run: bun run build
 
       # adapter-static is configured with fallback 'index.html' (Tauri canonical).
       # GitHub Pages needs `404.html` for SPA deep-link fallback, so copy it here.
-      # The PWA manifest <link> is injected into both entry shells here too: it
-      # cannot live in src/app.html because the prerender crawler follows it and
-      # 404s in Tauri builds (which ship no manifest), failing `bun run build`.
+      # The PWA manifest <link> is injected into every prerendered HTML here:
+      # it cannot live in src/app.html because the prerender crawler follows it
+      # and 404s in Tauri builds (which ship no manifest), failing `bun run build`.
       # Tauri builds are unaffected — they never run this step.
+      # NOTE: custom domain (time.alpharency.com) serves from the site ROOT,
+      # so BASE_PATH is '' and the manifest href is /manifest.webmanifest.
+      # static/CNAME (time.alpharency.com) is copied to build/CNAME by
+      # adapter-static to keep the custom domain attached on every deploy.
       - name: Add Pages SPA fallback + manifest link
         env:
-          BASE_PATH: '/project_ftt_frontend'
+          BASE_PATH: ''
         run: |
           cp build/index.html build/404.html
-          LINK="<link rel=\"manifest\" href=\"${BASE_PATH}/manifest.webmanifest\" />"
+          BASE_PREFIX="${BASE_PATH:-}"
+          LINK="<link rel=\"manifest\" href=\"${BASE_PREFIX}/manifest.webmanifest\" />"
           # Every prerendered HTML (timer.html, dashboard.html, …) must link the
           # manifest. Android Chrome reports "No manifest detected" on routes
           # that only had the link in index.html / 404.html.
@@ -68,6 +73,8 @@ jobs:
           done
           grep -q 'manifest.webmanifest' build/index.html
           grep -q 'manifest.webmanifest' build/404.html
+          test -f build/CNAME || (echo "missing build/CNAME — static/CNAME was not copied" && exit 1)
+          grep -q 'time.alpharency.com' build/CNAME
           touch build/.nojekyll
 
       - name: Upload Pages artifact

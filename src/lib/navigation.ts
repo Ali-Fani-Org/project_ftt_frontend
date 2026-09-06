@@ -4,10 +4,12 @@ import { base } from '$app/paths';
 /**
  * Prefix an app route with the deployment base path.
  *
- * - Dev / Tauri: `base` is `''`, so this is the identity function and every
- *   call site behaves exactly as before.
- * - GitHub Pages: `base` is `/project_ftt_frontend`, so `/dashboard`
- *   becomes `/project_ftt_frontend/dashboard`.
+ * - Dev / Tauri / custom-domain web: `base` is `''`, so this is the identity
+ *   function and every call site behaves exactly as before.
+ * - Subpath deploys (old GitHub Pages project site): `base` was
+ *   `/project_ftt_frontend`, so `/dashboard` became
+ *   `/project_ftt_frontend/dashboard`. Kept generic so a future subpath
+ *   still works without code changes.
  *
  * Why this exists: SvelteKit's `goto()` resolves `/...` against
  * `document.baseURI` (the DOMAIN ROOT) and treats any pathname outside
@@ -31,7 +33,8 @@ export function gotoApp(path = '/', opts?: GotoOptions): ReturnType<typeof svelt
 /**
  * Strip the deployment base from a browser pathname (`$page.url.pathname`
  * INCLUDES the base) back to the app-relative route the code compares
- * against, e.g. `/project_ftt_frontend/timer` -> `/timer`.
+ * against, e.g. subpath `/project_ftt_frontend/timer` -> `/timer`.
+ * With the current root-domain deploy (`base` is `''`) this is the identity.
  */
 export function stripBase(pathname: string): string {
 	if (base && pathname.startsWith(base)) {

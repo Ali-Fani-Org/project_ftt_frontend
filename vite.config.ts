@@ -30,7 +30,7 @@ export default defineConfig(() => {
 		},
 		plugins: [
 			sveltekit(),
-			// PWA only for the web (GitHub Pages) target. Excluded from Tauri builds.
+			// PWA only for the web (Pages custom-domain) target. Excluded from Tauri builds.
 			...(ENABLE_PWA
 				? [
 						SvelteKitPWA({
@@ -126,7 +126,7 @@ export default defineConfig(() => {
 							},
 							kit: {
 								// Do NOT precache version.json — the client polls it
-								// with cache: 'no-store' to notice GitHub Pages deploys
+								// with cache: 'no-store' to notice Pages deploys
 								// while the old service worker is still in control.
 								includeVersionFile: false
 							}

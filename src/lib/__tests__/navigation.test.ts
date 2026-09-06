@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Regression tests: bare goto('/x') resolves against document.baseURI (the
 // DOMAIN ROOT) and SvelteKit treats anything outside `base` as external, so
-// under the GitHub Pages subpath every bare goto escaped the app to
-// https://ali-fani.github.io/. All in-app navigation must go through
+// under any subpath deploy every bare goto escapes the app to the domain
+// root. All in-app navigation must go through
 // gotoApp()/appPath(), and pathname comparisons must account for the base.
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn()
@@ -16,7 +16,7 @@ async function loadNavigation(base: string) {
 	return await import('../navigation');
 }
 
-describe('navigation helpers (Pages subpath base)', () => {
+describe('navigation helpers (subpath base, e.g. legacy Pages project site)', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});

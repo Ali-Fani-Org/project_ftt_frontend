@@ -25,7 +25,8 @@ const config = {
 		}),
 		paths: {
 			// Tauri builds leave BASE_PATH unset -> '' (identical to previous behavior).
-			// GitHub Pages workflow sets BASE_PATH='/project_ftt_frontend'.
+			// Web (GitHub Pages custom domain time.alpharency.com) serves from the
+			// site ROOT, so the Pages workflow sets BASE_PATH='' as well.
 			base: process.argv.includes('dev') ? '' : (process.env.BASE_PATH ?? '')
 		},
 		// PWA registration is owned by virtual:pwa-register/svelte (PwaPrompt).
