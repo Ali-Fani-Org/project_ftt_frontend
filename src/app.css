@@ -84,11 +84,20 @@ body {
 	.app-bar {
 		position: fixed;
 		left: env(titlebar-area-x, 0px);
+		right: 0;
 		top: env(titlebar-area-y, 0px);
-		width: env(titlebar-area-width, 100%);
 		height: var(--wco-chrome);
 		min-height: var(--wco-chrome);
 		padding-top: 0;
+		/* The OS caption buttons are transparent overlays over the page, but
+		   the bar used to stop at titlebar-area-width — leaving the reserved
+		   zone painted with the manifest's dark splash theme_color. Bleed the
+		   bar full-width behind the buttons instead, and keep our own
+		   controls clear of them with right padding (0 when no buttons are
+		   reserved, e.g. macOS right side or unsupported env()). */
+		padding-right: calc(
+			0.75rem + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%)
+		);
 		app-region: drag;
 		-webkit-app-region: drag;
 	}
